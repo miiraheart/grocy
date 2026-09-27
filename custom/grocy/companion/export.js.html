@@ -1,0 +1,141 @@
+<script>
+(function () {
+	if (!window.GC) return;
+	var ID = GC.IDS;
+	var MODES = {
+		safe: GL.t("mode.safeHint"),
+		bientot: GL.t("mode.bientotHint"),
+		sauver: GL.t("mode.sauverHint")
+	};
+	var CHIPS = [
+		{ key: "all", label: GL.t("chip.all"), test: function () { return true; } },
+		{ key: "fridge", label: GL.t("chip.fridge"), test: function (r) { return +r.e.location_id === ID.locFridge; } },
+		{ key: "pantry", label: GL.t("chip.pantry"), test: function (r) { return +r.e.location_id === ID.locPantry; } },
+		{ key: "freezer", label: GL.t("chip.freezer"), test: function (r) { return +r.e.location_id === ID.locFreezer; } },
+		{ key: "counter", label: GL.t("chip.counter"), test: function (r) { return +r.e.location_id === ID.locCounter; } },
+		{ key: "soon", label: GL.t("chip.soon"), test: function (r) { return r.left != null && r.left >= 0 && r.left <= 5; } },
+		{ key: "expired", label: GL.t("chip.expired"), test: function (r) { return r.left != null && r.left < 0; } },
+		{ key: "dishes", label: GL.t("chip.dishes"), test: function (r) { return r.dish; } }
+	];
+
+	GC.loadStockRows = function () {
+		return Promise.all([
+			GC.api("GET", "objects/stock"),
+			GC.api("GET", "objects/products"),
+			GC.api("GET", "objects/locations"),
+			GC.api("GET", "objects/product_groups"),
+			GC.api("GET", "objects/quantity_units")
+		]).then(function (r) {
+			var P = GC.byId(r[1]), L = GC.byId(r[2]), G = GC.byId(r[3]), Q = GC.byId(r[4]);
+			return (r[0] || []).filter(function (e) { return P[e.product_id]; }).map(function (e) {
+				var p = P[e.product_id], u = p.userfields || {}, q = Q[p.qu_id_stock] || {};
+				var dish = +p.product_group_id === ID.groupDishes;
+				var age = -GC.daysLeft(e.purchased_date);
+				var notes = [GL.inLang(u.shelf_notes) ? u.shelf_notes || "" : ""];
+				if (dish && age >= 1 && +e.location_id !== ID.locFreezer) notes.push(GL.t("exp.leftover24"));
+				return {
+					e: e, p: p, dish: dish, left: GC.daysLeft(e.best_before_date),
+					name: p.name, qty: GC.num(e.amount), unit: GC.num(e.amount) > 1 ? (q.name_plural || q.name || "") : (q.name || ""),
+					location: (L[e.location_id] || {}).name || "", due: e.best_before_date || "", opened: String(e.open) === "1",
+					group: (G[p.product_group_id] || {}).name || "", ingredients: u.ingredients || "", notes: notes.filter(Boolean).join(" ; ")
+				};
+			}).sort(function (a, b) { return a.left - b.left; });
+		});
+	};
+
+	function csvCell(v) {
+		var s = String(v == null ? "" : v);
+		return /[",\n;]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+	}
+
+	GC.toCsv = function (rows) {
+		var head = ["name", "quantity", "unit", "location", "due_date", "days_left", "opened", "group", "ingredients", "notes"];
+		var lines = rows.map(function (r) {
+			return [r.name, r.qty, r.unit, r.location, r.due, r.left >= 99999 ? "" : r.left, GL.t(r.opened ? "yes" : "no"), r.group, r.ingredients, r.notes].map(csvCell).join(",");
+		});
+		return [head.join(",")].concat(lines).join("\n") + "\n";
+	};
+
+	GC.toMarkdown = function (rows, mode) {
+		var cell = function (s) { return String(s == null ? "" : s).replace(/\|/g, "/").replace(/\n/g, " "); };
+		var out = [
+			"# " + GL.t("exp.mdTitle", { date: moment().format("DD/MM/YYYY") }),
+			"",
+			GL.t("exp.mdMode", { m: MODES[mode] }),
+			GL.t("exp.mdRules", { d: GC.DIET }),
+			GL.t("exp.mdLeftovers", { h: GC.HISTAMINE }),
+			"",
+			GL.t("exp.mdHead"),
+			"|---|---|---|---|---|---|---|---|---|"
+		];
+		rows.forEach(function (r) {
+			out.push("| " + [r.name, r.qty + " " + r.unit, r.location, r.due, r.left >= 99999 ? "-" : r.left, GL.t(r.opened ? "yes" : "no"), r.group, r.ingredients, r.notes].map(cell).join(" | ") + " |");
+		});
+		return out.join("\n") + "\n";
+	};
+
+	GC.exportTab = function ($p) {
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("loading")));
+		GC.loadStockRows().then(function (rows) {
+			$p.empty();
+			var filter = "all", mode = "bientot", picked = {};
+			rows.forEach(function (r) { picked[r.e.id] = true; });
+			var $card = $('<section class="gc-card"></section>').appendTo($p);
+			var $chips = $('<div class="gc-chips" role="group"></div>').attr("aria-label", GL.t("chip.filters")).appendTo($card);
+			CHIPS.forEach(function (c) {
+				var n = rows.filter(c.test).length;
+				$('<button type="button" class="gc-chip"></button>').attr("data-key", c.key).text(c.label).append($('<span class="gc-chip-n"></span>').text(n)).appendTo($chips);
+			});
+			var $modes = $('<div class="gc-seg" role="group"></div>').attr("aria-label", GL.t("chip.mode")).appendTo($card);
+			[["safe", GL.t("mode.safe")], ["bientot", GL.t("mode.bientot")], ["sauver", GL.t("mode.sauver")]].forEach(function (m) {
+				$('<button type="button"></button>').attr("data-mode", m[0]).text(m[1]).appendTo($modes);
+			});
+			var $modeHint = $('<div class="gc-sub gc-mode-hint"></div>').appendTo($card);
+			var $bar = $('<div class="gc-inline gc-export-bar"></div>').appendTo($card);
+			var $all = $('<label class="gc-check"><input type="checkbox" checked> </label>').appendTo($bar);
+			$all.append(document.createTextNode(GL.t("exp.selectAll")));
+			var $count = $('<span class="gc-sub"></span>').appendTo($bar);
+			$('<span class="gc-grow"></span>').appendTo($bar);
+			var $copy = $('<button type="button" class="btn btn-primary"><i class="fa-regular fa-copy"></i><span></span></button>').appendTo($bar);
+			$copy.find("span").text(GL.t("exp.copyMd"));
+			var $csv = $('<button type="button" class="btn btn-outline-secondary"><i class="fa-solid fa-file-csv"></i><span></span></button>').appendTo($bar);
+			$csv.find("span").text(GL.t("exp.csv"));
+			var $list = $('<div class="gc-checklist"></div>').appendTo($card);
+
+			function visible() { var c = CHIPS.filter(function (x) { return x.key === filter; })[0]; return rows.filter(c.test); }
+			function chosen() { return visible().filter(function (r) { return picked[r.e.id]; }); }
+			function paint() {
+				$chips.children().each(function () { $(this).attr("aria-pressed", $(this).data("key") === filter ? "true" : "false"); });
+				$modes.children().each(function () { $(this).attr("aria-pressed", $(this).data("mode") === mode ? "true" : "false"); });
+				$modeHint.text(MODES[mode]);
+				$list.empty();
+				var vis = visible();
+				if (!vis.length) $list.append($('<div class="gc-empty gc-empty-sm"></div>').text(GL.t("exp.empty")));
+				vis.forEach(function (r) {
+					var $l = $('<label class="gc-check-row"></label>').appendTo($list);
+					$('<input type="checkbox">').prop("checked", !!picked[r.e.id]).on("change", function () { picked[r.e.id] = this.checked; paint(); }).appendTo($l);
+					$('<span class="gc-check-name"></span>').text(r.name).appendTo($l);
+					$('<span class="gc-sub"></span>').text(r.qty + " " + r.unit + " · " + r.location).appendTo($l);
+					$('<span class="gc-left"></span>').attr("data-tone", GC.leftTone(r.left)).text(GC.leftLabel(r.left)).appendTo($l);
+				});
+				var sel = chosen().length;
+				$count.text(GL.t("exp.nSelected", { a: sel, b: vis.length }));
+				$all.find("input").prop("checked", sel === vis.length && vis.length > 0);
+				$copy.prop("disabled", !sel);
+				$csv.prop("disabled", !sel);
+			}
+			$chips.on("click", ".gc-chip", function () { filter = $(this).data("key"); paint(); });
+			$modes.on("click", "button", function () { mode = $(this).data("mode"); paint(); });
+			$all.find("input").on("change", function () { var on = this.checked; visible().forEach(function (r) { picked[r.e.id] = on; }); paint(); });
+			$copy.on("click", function () {
+				var md = GC.toMarkdown(chosen(), mode);
+				GC.copy(md).then(function () { GC.toast("success", GL.t("exp.copied", { n: chosen().length })); }, function () {
+					GC.sheet(GL.t("exp.copyText"), $('<textarea class="form-control gc-copy-area" rows="14" readonly></textarea>').val(md), [{ label: GL.t("close"), onClick: function (close) { close(); } }]);
+				});
+			});
+			$csv.on("click", function () { GC.download(GL.t("exp.file") + "-" + GC.today() + ".csv", GC.toCsv(chosen()), "text/csv;charset=utf-8"); });
+			paint();
+		}, function (err) { $p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(err.message); });
+	};
+})();
+</script>

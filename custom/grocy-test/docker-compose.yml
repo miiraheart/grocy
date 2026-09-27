@@ -1,0 +1,43 @@
+services:
+  grocy-test:
+    image: lscr.io/linuxserver/grocy@sha256:71226f43e18b15836833075c15c9d5d51d81a2a4fc38d56bb1dc05f34970cc80
+    container_name: grocy-test
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: Europe/Paris
+      GROCY_DEFAULT_LOCALE: fr
+      GROCY_CURRENCY: EUR
+      GROCY_STOCK_BARCODE_LOOKUP_PLUGIN: ChainedBarcodeLookupPlugin
+    volumes:
+      - ./config:/config
+    networks:
+      - t2_proxy
+
+  grocy-test-reset:
+    image: python:3.12-slim
+    container_name: grocy-test-reset
+    restart: unless-stopped
+    user: "1000:1000"
+    command: ["python", "-u", "/app/server.py"]
+    environment:
+      RESET_SOCKET: /run/reset/reset.sock
+      RESET_SECRET_FILE: /run/secrets/reset.secret
+      RESET_MIN_INTERVAL: "30"
+    volumes:
+      - ./reset/server.py:/app/server.py:ro
+      - ./run:/run/reset
+      - /home/miira/apps/docker/n8n-templates/webhook.secret:/run/secrets/reset.secret:ro
+    networks:
+      - t2_proxy
+    labels:
+      - caddy=grocy-test.audibox.cc
+      - caddy.import=tspriv
+      - caddy.handle=/_reset
+      - caddy.handle.reverse_proxy={{upstreams 8080}}
+      - caddy.reverse_proxy=grocy-test:80
+
+networks:
+  t2_proxy:
+    external: true

@@ -1,0 +1,11 @@
+const QUOTA_RESERVE = 15;
+const prepared = $("Prepare").first().json;
+const quota = $input.first().json || {};
+const daily = quota.data && quota.data.free_model_daily_requests;
+const remaining = daily && typeof daily.remaining === "number" ? daily.remaining : null;
+const reachable = !quota.error;
+const ctx = prepared.ctx || {};
+const only = ctx.provider_only ? ctx.provider : null;
+const reserve = ctx.provider === "openrouter" ? 0 : QUOTA_RESERVE;
+const use_openrouter = (!only || only === "openrouter") && reachable && (remaining === null || remaining > reserve);
+return [{ json: { ...prepared, use_openrouter, quota_remaining: remaining } }];

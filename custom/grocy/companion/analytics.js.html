@@ -1,0 +1,184 @@
+<script>
+(function () {
+	if (!window.GC || !GC.chart || Grocy.View !== "userobjects" || GC.entityName() !== "tickets" || GC.subview() !== "analytics") return;
+	var PERIODS = [["3", "tk.last3"], ["12", "tk.last12"], ["year", "an.thisYear"], ["all", "tk.allTime"], ["custom", "an.custom"]];
+	var state = { period: "12", from: "", to: "", store: "", tag: "", grain: "month", product: "" };
+	try { $.extend(state, JSON.parse(sessionStorage.getItem("gc-analytics") || "{}")); } catch (e) {}
+	var dataP = null;
+
+	document.title = GL.t("an.title") + " | Grocy";
+	var ui = GC.page({
+		eyebrow: GL.t("sec.cooking"),
+		title: GL.t("an.title"),
+		tabs: [{ key: "spend", label: GL.t("an.tabSpend") }, { key: "product", label: GL.t("an.tabProduct") }],
+		onTab: function (key, $p) { render(key, $p); }
+	});
+	var $filters = $('<div class="gc-inline gc-an-filters"></div>').insertAfter(ui.$root.children(".gc-tabs"));
+
+	function save() { try { sessionStorage.setItem("gc-analytics", JSON.stringify(state)); } catch (e) {} }
+
+	function load() {
+		if (!dataP) dataP = Promise.all([GC.loadPriceData(), GC.api("GET", "objects/product_groups")]).then(function (r) {
+			var d = r[0];
+			d.groups = GC.byId(r[1]);
+			d.stores = d.tickets.map(function (t) { return t.store; }).concat(d.obs.map(function (o) { return o.store; }))
+				.filter(function (s, i, a) { return s && a.indexOf(s) === i; }).sort();
+			d.tagsOf = function (pid) {
+				var p = d.names[pid], raw = p && p.userfields ? p.userfields.tags || "" : "";
+				return raw.split(/[,;\n]/).map($.trim).filter(Boolean);
+			};
+			d.allTags = [];
+			d.products.forEach(function (p) { d.tagsOf(p.id).forEach(function (t) { if (d.allTags.indexOf(t) === -1) d.allTags.push(t); }); });
+			d.allTags.sort();
+			buildFilters(d);
+			return d;
+		});
+		return dataP;
+	}
+
+	function range() {
+		var p = state.period, to = GC.today();
+		if (p === "custom") return { from: state.from || "0000-00-00", to: state.to || "9999-12-31" };
+		if (p === "all") return { from: "0000-00-00", to: to };
+		if (p === "year") return { from: moment().format("YYYY") + "-01-01", to: to };
+		return { from: moment().subtract(+p, "months").add(1, "days").format("YYYY-MM-DD"), to: to };
+	}
+
+	function tagOk(d, pid) {
+		if (!state.tag) return true;
+		if (!pid || !d.names[pid]) return false;
+		return state.tag.indexOf("g:") === 0 ? String(d.names[pid].product_group_id) === state.tag.slice(2) : d.tagsOf(pid).indexOf(state.tag.slice(2)) !== -1;
+	}
+
+	function select(opts, val, onChange) {
+		var $s = $('<select class="form-control"></select>');
+		opts.forEach(function (o) {
+			if (o.group) { var $g = $("<optgroup></optgroup>").attr("label", o.group).appendTo($s); o.items.forEach(function (i) { $g.append($("<option></option>").val(i[0]).text(i[1])); }); }
+			else $s.append($("<option></option>").val(o[0]).text(o[1]));
+		});
+		return $s.val(val).on("change", function () { onChange($(this).val()); });
+	}
+
+	function buildFilters(d) {
+		$filters.empty();
+		var $custom = $('<span class="gc-inline gc-an-dates"></span>');
+		$filters.append(select(PERIODS.map(function (p) { return [p[0], GL.t(p[1])]; }), state.period, function (v) { state.period = v; $custom.prop("hidden", v !== "custom"); changed(); }).attr("aria-label", GL.t("an.period")));
+		["from", "to"].forEach(function (k) {
+			$("<label></label>").text(GL.t("an." + k)).append($('<input type="date" class="form-control">').val(state[k]).on("change", function () { state[k] = this.value; changed(); })).appendTo($custom);
+		});
+		$filters.append($custom.prop("hidden", state.period !== "custom"));
+		$filters.append(select([["", GL.t("tk.allStores")]].concat(d.stores.map(function (s) { return [s, s]; })), state.store, function (v) { state.store = v; changed(); }).attr("aria-label", GL.t("store")));
+		var tagOpts = [["", GL.t("an.allTags")], { group: GL.t("an.groups"), items: Object.keys(d.groups).map(function (id) { return ["g:" + id, d.groups[id].name]; }) }];
+		if (d.allTags.length) tagOpts.push({ group: GL.t("an.tags"), items: d.allTags.map(function (t) { return ["t:" + t, t]; }) });
+		$filters.append(select(tagOpts, state.tag, function (v) { state.tag = v; changed(); }).attr("aria-label", GL.t("an.tags")));
+	}
+
+	function changed() { save(); ui.refresh("spend"); ui.refresh("product"); }
+	GC.analyticsState = state;
+	GC.analyticsOpen = function (key) { state.product = key; save(); ui.refresh("product"); ui.show("product"); };
+
+	function render(key, $p) {
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("loading")));
+		load().then(function (d) {
+			$p.empty();
+			var ctx = { d: d, range: range(), state: state, tagOk: function (pid) { return tagOk(d, pid); } };
+			if (key === "spend") spend($p, ctx); else GC.analyticsProduct($p, ctx);
+		}, function (err) { $p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(err.message); });
+	}
+
+	var resizeT = null, lastW = $(window).width();
+	$(window).on("resize", function () {
+		clearTimeout(resizeT);
+		resizeT = setTimeout(function () { if ($(window).width() === lastW) return; lastW = $(window).width(); changed(); }, 250);
+	});
+
+	function entries(ctx) {
+		var d = ctx.d, r = ctx.range, out = { lines: [], tickets: [] };
+		d.tickets.forEach(function (t) {
+			if (t.date < r.from || t.date > r.to || (state.store && t.store !== state.store)) return;
+			var sum = 0, n = 0;
+			t.lines.forEach(function (l) {
+				var total = GC.num(l.total) || GC.num(l.qty || 1) * GC.num(l.unit_price);
+				if (l.is_discount) { if (!state.tag) sum += total; return; }
+				if (!ctx.tagOk(l.product_id)) return;
+				var pid = l.product_id && d.names[l.product_id] ? l.product_id : null;
+				out.lines.push({ date: t.date, store: t.store, pid: pid, key: pid ? "p" + pid : "k" + GC.receipt.normalizeLabel(l.label || "").key, label: pid ? d.names[pid].name : l.label, total: total });
+				sum += total; n++;
+			});
+			var spent = state.tag ? sum : (t.total || sum);
+			if (n || (!state.tag && spent)) out.tickets.push({ date: t.date, store: t.store, spent: spent });
+		});
+		return out;
+	}
+
+	function sumBy(list, keyFn, valFn) {
+		var m = {};
+		list.forEach(function (x) { var k = keyFn(x); m[k] = m[k] || { key: k, value: 0, n: 0, sample: x }; m[k].value += valFn(x); m[k].n++; });
+		return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return b.value - a.value; });
+	}
+
+	function card($p, title, sub) {
+		var $c = $('<section class="gc-card"><div class="gc-card-hd"><h3></h3><span class="gc-sub"></span></div></section>').appendTo($p);
+		$c.find("h3").text(title).end().find(".gc-sub").text(sub || "");
+		return $c;
+	}
+
+	function spend($p, ctx) {
+		var e = entries(ctx), d = ctx.d;
+		if (!e.tickets.length) { $('<div class="gc-empty"><i class="fa-solid fa-chart-column"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("an.empty")).end().find("span").text(GL.t("an.emptySub")); return; }
+		var total = e.tickets.reduce(function (s, t) { return s + t.spent; }, 0);
+		var stores = sumBy(e.tickets, function (t) { return t.store; }, function (t) { return t.spent; });
+		GC.tiles([
+			{ kind: "spent", label: GL.t("an.spent"), value: GL.money(total) },
+			{ kind: "receipts", label: GL.t("an.receipts"), value: String(e.tickets.length) },
+			{ kind: "avg", label: GL.t("an.avgReceipt"), value: GL.money(total / e.tickets.length) },
+			{ kind: "stores", label: GL.t("an.stores"), value: String(stores.length) }
+		]).addClass("gc-an-tiles").appendTo($p);
+
+		var $time = card($p, GL.t("an.overTime"));
+		var $seg = $('<div class="gc-seg gc-an-grain"></div>').appendTo($time.find(".gc-card-hd"));
+		[["month", "an.byMonth"], ["week", "an.byWeek"]].forEach(function (g) {
+			$('<button type="button"></button>').attr("aria-pressed", state.grain === g[0] ? "true" : "false").text(GL.t(g[1])).on("click", function () { state.grain = g[0]; save(); ui.refresh("spend"); }).appendTo($seg);
+		});
+		var $chart = $("<div></div>").appendTo($time);
+		GC.chart.bars($chart, buckets(e.tickets, ctx.range));
+
+		var $grid = $('<div class="gc-an-grid"></div>').appendTo($p);
+		var palette = function (s) { return GC.chart.colorVar(d.stores.indexOf(s)); };
+		card($grid, GL.t("an.byStore")).append(GC.chart.hbars(stores.map(function (s) {
+			return { label: s.key, value: s.value, text: GL.money(s.value), sub: GL.t("an.nReceipts", { n: s.n }), color: palette(s.key) };
+		})));
+		var groups = sumBy(e.lines, function (l) { return l.pid ? String(d.names[l.pid].product_group_id || "") : "?"; }, function (l) { return l.total; });
+		card($grid, GL.t("an.byGroup"), GL.t("an.beforeDisc")).append(GC.chart.hbars(groups.map(function (g) {
+			var name = g.key === "?" ? GL.t("an.unlinked") : d.groups[g.key] ? d.groups[g.key].name : GL.t("an.noGroup");
+			return { label: name, value: g.value, text: GL.money(g.value), onClick: g.key && g.key !== "?" && d.groups[g.key] ? function () { state.tag = "g:" + g.key; buildFilters(d); changed(); } : null };
+		})));
+		if (d.allTags.length) {
+			var tagRows = [];
+			d.allTags.forEach(function (t) {
+				var v = e.lines.filter(function (l) { return l.pid && d.tagsOf(l.pid).indexOf(t) !== -1; }).reduce(function (s, l) { return s + l.total; }, 0);
+				if (v) tagRows.push({ label: t, value: v, text: GL.money(v), onClick: function () { state.tag = "t:" + t; buildFilters(d); changed(); } });
+			});
+			if (tagRows.length) card($grid, GL.t("an.byTag"), GL.t("an.beforeDisc")).append(GC.chart.hbars(tagRows.sort(function (a, b) { return b.value - a.value; })));
+		}
+		var top = sumBy(e.lines, function (l) { return l.key; }, function (l) { return l.total; }).slice(0, 10);
+		card($grid, GL.t("an.top"), GL.t("an.topSub")).append(GC.chart.hbars(top.map(function (x) {
+			return { label: x.sample.label, value: x.value, text: GL.money(x.value), sub: GL.t("an.nBuys", { n: x.n }), onClick: function () { GC.analyticsOpen(x.key); } };
+		})));
+	}
+
+	function buckets(tickets, r) {
+		var unit = state.grain === "week" ? "isoWeek" : "month";
+		var first = tickets.reduce(function (m, t) { return t.date < m ? t.date : m; }, "9999");
+		var start = moment(r.from > first ? r.from : first, "YYYY-MM-DD").startOf(unit);
+		var end = moment(r.to < "9999" ? r.to : GC.today(), "YYYY-MM-DD").startOf(unit);
+		var m = {}, out = [];
+		tickets.forEach(function (t) { var k = moment(t.date, "YYYY-MM-DD").startOf(unit).format("YYYY-MM-DD"); m[k] = (m[k] || 0) + t.spent; });
+		for (var c = start.clone(); !c.isAfter(end) && out.length < 400; c.add(1, unit === "month" ? "months" : "weeks")) {
+			var k = c.format("YYYY-MM-DD"), v = m[k] || 0, label = GC.dateLabel(k, unit === "month" ? "month" : "week");
+			out.push({ label: label, value: v, tip: "<b>" + GC.esc(unit === "month" ? label : GL.t("an.weekOf", { d: label })) + "</b><br>" + GC.esc(GL.money(v)) });
+		}
+		return out;
+	}
+})();
+</script>

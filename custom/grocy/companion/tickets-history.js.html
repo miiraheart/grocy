@@ -1,0 +1,171 @@
+<script>
+(function () {
+	if (!window.GC) return;
+	var ENTITY = "userentity-tickets";
+	var CACHE = "gc-tickets-v1";
+	var FIELDS = ["store", "purchased_at", "total", "currency", "status", "lines_json", "raw_ocr", "image", "parser"];
+	var STATUS = { parsed: GL.t("tk.parsed"), confirmed: GL.t("tk.confirmed"), applied: GL.t("tk.applied") };
+
+	function parseLines(s) { try { var a = JSON.parse(s || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } }
+
+	GC.ticketsClearCache = function () { try { sessionStorage.removeItem(CACHE); } catch (e) {} };
+
+	GC.loadTickets = function () {
+		return GC.api("GET", "objects/userobjects?query[]=userentity_id=" + GC.IDS.entityTickets).then(function (objs) {
+			var cache = {};
+			try { cache = JSON.parse(sessionStorage.getItem(CACHE) || "{}"); } catch (e) {}
+			var fresh = Date.now() - (cache.t || 0) < 600000 && cache.items;
+			return Promise.all((objs || []).map(function (o) {
+				var c = fresh && cache.items[o.id];
+				if (c && c.ts === o.row_created_timestamp) return c;
+				return GC.api("GET", "userfields/" + ENTITY + "/" + o.id).then(function (f) { return { id: o.id, ts: o.row_created_timestamp, f: f || {} }; });
+			})).then(function (items) {
+				var map = {};
+				items.forEach(function (i) { map[i.id] = i; });
+				try { sessionStorage.setItem(CACHE, JSON.stringify({ t: fresh ? cache.t : Date.now(), items: map })); } catch (e) {}
+				return items.map(function (i) {
+					return { id: i.id, store: i.f.store || GL.t("tk.unknownStore"), date: (i.f.purchased_at || i.ts || "").slice(0, 10), total: GC.num(i.f.total), status: i.f.status || "confirmed", lines: parseLines(i.f.lines_json) };
+				}).sort(function (a, b) { return b.date.localeCompare(a.date) || b.id - a.id; });
+			});
+		});
+	};
+
+	GC.deleteTicket = function (id) {
+		var clear = {};
+		FIELDS.forEach(function (f) { clear[f] = ""; });
+		return GC.api("PUT", "userfields/" + ENTITY + "/" + id, clear).then(function () {
+			return GC.api("DELETE", "objects/userobjects/" + id);
+		}).then(GC.ticketsClearCache);
+	};
+
+	function money(v) { return v == null || v === "" ? "-" : GL.money(GC.num(v)); }
+	GC.money = money;
+
+	GC.ticketsHistory = function ($p) {
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("loading")));
+		Promise.all([GC.loadTickets(), GC.api("GET", "objects/products")]).then(function (r) {
+			var names = GC.byId(r[1]);
+			$p.empty();
+			if (!r[0].length) { $('<div class="gc-empty"><i class="fa-solid fa-receipt"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("tk.empty")).end().find("span").text(GL.t("tk.emptySub")); return; }
+			var $ul = $('<div class="gc-list"></div>').appendTo($p);
+			r[0].forEach(function (t) {
+				var $r = $('<div class="gc-row gc-ticket"></div>').appendTo($ul);
+				var $m = $('<div class="gc-row-main"></div>').appendTo($r);
+				var $title = $('<div class="gc-row-title"></div>').appendTo($m);
+				$("<b></b>").text(t.store).appendTo($title);
+				$('<span class="gc-status"></span>').attr("data-s", t.status === "applied" ? "done" : "none").text(STATUS[t.status] || t.status).appendTo($title);
+				$('<div class="gc-row-meta"></div>').text(GC.fmtDate(t.date) + "/" + t.date.slice(0, 4) + " · " + GL.t("tk.nLines", { n: t.lines.length }) + " · " + money(t.total)).appendTo($m);
+				var $a = $('<div class="gc-row-act"></div>').appendTo($r);
+				var $lines = $('<div class="gc-ticket-lines" hidden></div>').appendTo($m);
+				$('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-list"></i><span></span></button>').appendTo($a).find("span").text(GL.t("tk.lines")).end().on("click", function () {
+					if (!$lines.children().length) {
+						var $tb = $('<table class="table gc-table"><thead><tr><th></th><th></th><th class="gc-num"></th><th class="gc-num"></th><th class="gc-num"></th></tr></thead><tbody></tbody></table>');
+						["tk.label", "product", "tk.qty", "tk.price", "total"].forEach(function (k, n) { $tb.find("th").eq(n).text(GL.t(k)); });
+						t.lines.forEach(function (l) {
+							var $tr = $("<tr></tr>").appendTo($tb.find("tbody"));
+							$("<td></td>").text(l.label).appendTo($tr);
+							$("<td></td>").text(l.product_id && names[l.product_id] ? names[l.product_id].name : (l.is_discount ? GL.t("tk.discount") : "-")).appendTo($tr);
+							$('<td class="gc-num"></td>').text((l.qty || 1) + (l.unit === "kg" ? " kg" : "")).appendTo($tr);
+							$('<td class="gc-num"></td>').text(money(l.unit_price)).appendTo($tr);
+							$('<td class="gc-num"></td>').text(money(l.total)).appendTo($tr);
+						});
+						$('<div class="gc-scroll"></div>').append($tb).appendTo($lines);
+					}
+					$lines.prop("hidden", !$lines.prop("hidden"));
+				});
+				$('<button type="button" class="btn btn-sm btn-outline-secondary gc-danger"><i class="fa-solid fa-trash"></i><span></span></button>').appendTo($a).find("span").text(GL.t("delete")).end().on("click", function () {
+					var $b = $(this);
+					GC.confirmClick($b, GL.t("confirm"), function () {
+						GC.deleteTicket(t.id).then(function () { GC.toast("info", GL.t("tk.deleted")); GC.ticketsHistory($p); }, function (e) { GC.toast("error", e.message); });
+					});
+				});
+			});
+		}, function (err) { $p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(err.message); });
+	};
+
+	function spark(months) {
+		if (!months || months.length < 2) return "";
+		var vals = months.map(function (m) { return m.avg; });
+		var t0 = moment(months[0].month + "-01"), span = Math.max(1, moment(months[months.length - 1].month + "-01").diff(t0, "months"));
+		var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), rng = hi - lo || 1;
+		var pts = months.map(function (m) {
+			var x = 2 + 86 * moment(m.month + "-01").diff(t0, "months") / span;
+			var y = 22 - 20 * (m.avg - lo) / rng;
+			return x.toFixed(1) + "," + y.toFixed(1);
+		});
+		return '<svg class="gc-spark" viewBox="0 0 90 24" width="90" height="24" aria-hidden="true"><polyline points="' + pts.join(" ") + '"/></svg>';
+	}
+
+	GC.loadPriceData = function () {
+		return Promise.all([GC.loadTickets(), GC.api("GET", "objects/products")]).then(function (r) {
+			var tickets = r[0], names = GC.byId(r[1]);
+			var ids = {};
+			tickets.forEach(function (t) { t.lines.forEach(function (l) { if (l.product_id && names[l.product_id]) ids[l.product_id] = true; }); });
+			return Promise.all(Object.keys(ids).map(function (id) {
+				return GC.api("GET", "stock/products/" + id + "/price-history").then(function (h) { return { id: id, h: h || [] }; }, function () { return { id: id, h: [] }; });
+			})).then(function (hist) { return { tickets: tickets, products: r[1], names: names, obs: GC.receipt.observations(tickets, names, hist) }; });
+		});
+	};
+
+	GC.ticketsTrends = function ($p) {
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("loading")));
+		GC.loadPriceData().then(function (d) { draw($p, d.names, d.obs); }, function (err) { $p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(err.message); });
+	};
+
+	function draw($p, names, obs) {
+		$p.empty();
+		if (!obs.length) { $('<div class="gc-empty"><i class="fa-solid fa-chart-line"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("tk.noPrices")).end().find("span").text(GL.t("tk.noPricesSub")); return; }
+		var stores = obs.map(function (o) { return o.store; }).filter(function (s, i, a) { return s && a.indexOf(s) === i; }).sort();
+		var $f = $('<div class="gc-inline gc-trend-filters"></div>').appendTo($p);
+		var $store = $('<select class="form-control"><option value=""></option></select>').appendTo($f);
+		$store.find("option").text(GL.t("tk.allStores"));
+		stores.forEach(function (s) { $store.append($("<option></option>").val(s).text(s)); });
+		var $period = $('<select class="form-control"></select>').appendTo($f);
+		[["0", "tk.allTime"], ["12", "tk.last12"], ["3", "tk.last3"], ["1", "tk.thisMonth"]].forEach(function (o) { $period.append($("<option></option>").val(o[0]).text(GL.t(o[1]))); });
+		var $wrap = $('<div class="gc-scroll gc-card gc-card-flush"></div>').appendTo($p);
+		var sort = { col: "change", dir: -1 };
+		var COLS = [["name", GL.t("product")], ["last", GL.t("tk.last")], ["prev", GL.t("tk.prev")], ["change", GL.t("tk.change")], ["min", GL.t("tk.min")], ["max", GL.t("tk.max")], ["count", GL.t("tk.count")], ["spark", GL.t("tk.spark")]];
+		function render() {
+			var st = $store.val(), per = +$period.val();
+			var since = per === 1 ? moment().format("YYYY-MM") + "-01" : per ? moment().subtract(per, "months").format("YYYY-MM-DD") : "";
+			var groups = {};
+			obs.forEach(function (o) { if ((!st || o.store === st) && o.date >= since) (groups[o.key] = groups[o.key] || []).push(o); });
+			var rows = Object.keys(groups).map(function (k) {
+				var t = GC.receipt.productTrend(k, groups[k]);
+				t.name = k[0] === "p" ? names[k.slice(1)].name : k.slice(1);
+				return t;
+			}).filter(function (t) { return t.count; });
+			var val = { name: function (t) { return t.name.toLowerCase(); }, last: function (t) { return t.last.price; }, prev: function (t) { return t.previous ? t.previous.price : -1; }, change: function (t) { return Math.abs(t.change_pct || 0); }, min: function (t) { return t.min.price; }, max: function (t) { return t.max.price; }, count: function (t) { return t.count; }, spark: function (t) { return t.months.length; } }[sort.col];
+			rows.sort(function (a, b) { var x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * sort.dir; });
+			var $t = $('<table class="table gc-table gc-trends"><thead><tr></tr></thead><tbody></tbody></table>');
+			COLS.forEach(function (c) {
+				$('<th></th>').attr({ "data-col": c[0], "aria-sort": sort.col === c[0] ? (sort.dir > 0 ? "ascending" : "descending") : "none" }).toggleClass("gc-num", c[0] !== "name" && c[0] !== "spark").text(c[1]).appendTo($t.find("thead tr"));
+			});
+			rows.forEach(function (t) {
+				var dir = t.direction, unit = t.unit === "piece" ? "" : " /" + t.unit;
+				var arrow = dir === "up" ? "fa-arrow-trend-up" : dir === "down" ? "fa-arrow-trend-down" : "fa-minus";
+				var $tr = $("<tr></tr>").appendTo($t.find("tbody"));
+				var $name = $("<td></td>").text(t.name).appendTo($tr);
+				if ((t.by_store || []).length > 1) t.by_store.forEach(function (s) { $('<div class="gc-sub"></div>').text(s.store + " " + money(s.avg) + unit).appendTo($name); });
+				var storeSub = function (x) { return x && x.store && t.by_store.length > 1 ? $('<div class="gc-sub"></div>').text(x.store) : null; };
+				$('<td class="gc-num"></td>').text(money(t.last.price) + unit).attr("title", t.last.date + (t.last.store ? " · " + t.last.store : "")).append(storeSub(t.last)).appendTo($tr);
+				$('<td class="gc-num"></td>').text(t.previous ? money(t.previous.price) + unit : "-").attr("title", t.previous ? t.previous.date + (t.previous.store ? " · " + t.previous.store : "") : null).append(storeSub(t.previous)).appendTo($tr);
+				$('<td class="gc-num gc-delta"></td>').attr("data-dir", dir).html(t.change_pct == null ? "-" : '<i class="fa-solid ' + arrow + '"></i> ' + GC.esc((t.change_pct > 0 ? "+" : "") + (GL.lang === "fr" ? String(t.change_pct).replace(".", ",") : String(t.change_pct)) + " %")).appendTo($tr);
+				$('<td class="gc-num"></td>').text(money(t.min.price)).appendTo($tr);
+				$('<td class="gc-num"></td>').text(money(t.max.price)).appendTo($tr);
+				$('<td class="gc-num"></td>').text(t.count).appendTo($tr);
+				$("<td></td>").html(spark(t.months)).appendTo($tr);
+			});
+			if (!rows.length) $t.find("tbody").append($('<tr><td colspan="8" class="gc-sub"></td></tr>').find("td").text(GL.t("tk.noneFilter")).end());
+			$wrap.empty().append($t);
+		}
+		$wrap.on("click", "th", function () {
+			var c = $(this).data("col");
+			sort = { col: c, dir: sort.col === c ? -sort.dir : (c === "name" ? 1 : -1) };
+			render();
+		});
+		$store.add($period).on("change", render);
+		render();
+	}
+})();
+</script>

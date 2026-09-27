@@ -1,0 +1,3754 @@
+{
+"version": 1,
+"units": "days",
+"conventions": {
+"fridge_days": "0-4 C, from purchase or preparation, unopened; low end of the cited range; null = follow the printed date or not applicable",
+"freezer_days": "-18 C, best quality (safe indefinitely at -18 C per USDA); null = does not freeze well",
+"counter_days": "about 20 C; 0 = max 2 h out of the fridge; null = not applicable",
+"after_open_days": "after opening, kept where the product normally lives once opened (fridge for perishables and sauces, cupboard for dry goods, oils, chips); null = not applicable",
+"due_type": "Grocy due_type: 1 = best before (DDM), 2 = expiration (DLC)",
+"risk": "high = pathogen risk if exceeded (Listeria, Salmonella, B. cereus, botulism); medium; low = quality only",
+"source": "FK#id = USDA FoodKeeper product id; ST#id = stilltasty.com/fooditems/index/id; ANSES; FSA; USDA cold storage chart; HOUSE = conservative house rule, no single official figure"
+},
+"items": [
+{
+"key": "lait_frais",
+"name": "Lait frais pasteurise",
+"aliases": [
+"lait frais",
+"lait pasteurise",
+"lait microfiltre",
+"lait entier frais",
+"lait demi-ecreme frais"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "high",
+"due_type": 2,
+"notes": "Suivre la DLC fermee. Apres ouverture: 3 j (consigne usuelle des briques FR). Congelation possible, texture change.",
+"source": "FK#27 (freezer); after_open = HOUSE"
+},
+{
+"key": "lait_uht",
+"name": "Lait UHT",
+"aliases": [
+"lait uht",
+"lait demi-ecreme",
+"lait longue conservation",
+"brique de lait"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 180,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ferme: placard jusqu'a la DDM. Ouvert: frigo.",
+"source": "FK#644 (P 6-12 mo, RO 5-7 j)"
+},
+{
+"key": "lait_sans_lactose",
+"name": "Lait sans lactose",
+"aliases": [
+"lait sans lactose",
+"lait delactose"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": null,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ouvert: frigo 7 j.",
+"source": "FK#543 (RO 1 sem)"
+},
+{
+"key": "lait_vegetal",
+"name": "Boisson vegetale",
+"aliases": [
+"lait d'amande",
+"lait d'avoine",
+"boisson soja",
+"lait de riz",
+"boisson vegetale",
+"lait vegetal"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "Brique UHT fermee au placard (DDM). Ouverte: 7 a 10 j au frigo.",
+"source": "FK#427, FK#428 (RO 7-10 j); ST#19074"
+},
+{
+"key": "lait_coco",
+"name": "Lait de coco",
+"aliases": [
+"lait de coco",
+"creme de coco"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 30,
+"counter_days": 365,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "Boite fermee: placard. Ouverte: transvaser, frigo 7 a 10 j.",
+"source": "FK#429 (RO 7-10 j); ST#19080"
+},
+{
+"key": "creme_fraiche",
+"name": "Creme fraiche",
+"aliases": [
+"creme fraiche",
+"creme epaisse",
+"creme fraiche epaisse",
+"creme fraiche legere",
+"creme fraiche sans lactose"
+],
+"category": "laitier",
+"fridge_days": 30,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "Fermee: DLC (ST ~1 mois). Ouverte: 5 a 7 j. Congelee: texture granuleuse, reserver a la cuisson.",
+"source": "ST#17049 (fermee 1 mois), ST#17048 (ouverte 5-7 j), FK#15 (freezer 3-4 mo)"
+},
+{
+"key": "creme_liquide",
+"name": "Creme liquide UHT",
+"aliases": [
+"creme liquide",
+"creme entiere liquide",
+"creme a fouetter",
+"creme uht"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 180,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 1,
+"notes": "Brique UHT fermee au placard. Ouverte: 5 a 7 j.",
+"source": "FK#11 (RO 1 sem), ST#19086 (ouverte 5-7 j)"
+},
+{
+"key": "chantilly_bombe",
+"name": "Chantilly en bombe",
+"aliases": [
+"chantilly",
+"creme chantilly",
+"bombe chantilly"
+],
+"category": "laitier",
+"fridge_days": 21,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 21,
+"risk": "medium",
+"due_type": 2,
+"notes": "Garder au frigo.",
+"source": "FK#30 (3-4 sem)"
+},
+{
+"key": "beurre",
+"name": "Beurre",
+"aliases": [
+"beurre",
+"beurre doux",
+"beurre demi-sel",
+"beurre moule",
+"beurre sale",
+"beurre bio"
+],
+"category": "laitier",
+"fridge_days": 30,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": 30,
+"risk": "low",
+"due_type": 1,
+"notes": "Temperature ambiante 1 a 2 j max (beurrier).",
+"source": "FK#1 (R 1-2 mo, F 6-9 mo, tip 1-2 j ambiant); ST#16649"
+},
+{
+"key": "margarine",
+"name": "Margarine",
+"aliases": [
+"margarine",
+"matiere grasse a tartiner"
+],
+"category": "laitier",
+"fridge_days": 180,
+"freezer_days": 365,
+"counter_days": null,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#26"
+},
+{
+"key": "ghee",
+"name": "Ghee",
+"aliases": [
+"ghee",
+"beurre clarifie"
+],
+"category": "laitier",
+"fridge_days": 365,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#649 (P 6-8 mo, R 1-2 ans)"
+},
+{
+"key": "yaourt",
+"name": "Yaourt",
+"aliases": [
+"yaourt",
+"yogourt",
+"yaourt nature",
+"yaourt aux fruits",
+"skyr",
+"yaourt grec",
+"yaourt vegetal"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "Pot individuel: a finir a l'ouverture. Grand pot ouvert: 5 a 7 j.",
+"source": "FK#33 (R 1-2 sem, F 1-2 mo); ST#18717"
+},
+{
+"key": "fromage_blanc",
+"name": "Fromage blanc",
+"aliases": [
+"fromage blanc",
+"faisselle",
+"petit-suisse",
+"petits suisses",
+"quark"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 2,
+"notes": "Apres ouverture: 3 j (analogue cottage cheese RO 1 sem, borne prudente).",
+"source": "FK#546 (R 7-10 j); FK#9 (RO 1 sem)"
+},
+{
+"key": "kefir",
+"name": "Kefir",
+"aliases": [
+"kefir",
+"lait fermente",
+"lait ribot"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 1,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#25 (R 1 sem, RO 1-2 j)"
+},
+{
+"key": "fromage_frais_tartiner",
+"name": "Fromage frais a tartiner",
+"aliases": [
+"st moret",
+"saint moret",
+"philadelphia",
+"kiri",
+"fromage a tartiner",
+"cream cheese",
+"carre frais"
+],
+"category": "laitier",
+"fridge_days": 14,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#10 (R 2 sem); ST#17013 (ouvert 1-2 sem, F 2 mo)"
+},
+{
+"key": "ricotta",
+"name": "Ricotta",
+"aliases": [
+"ricotta",
+"brousse"
+],
+"category": "laitier",
+"fridge_days": 14,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#490 (R 2 sem, RO 1 sem)"
+},
+{
+"key": "mascarpone",
+"name": "Mascarpone",
+"aliases": [
+"mascarpone"
+],
+"category": "laitier",
+"fridge_days": 14,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "StillTasty donne 2 mois ferme; on retient la DLC et 5 j apres ouverture (analogue creme ouverte).",
+"source": "ST#17667 (R 2 mo, F 3 mo); after_open = ST#17048 analogue"
+},
+{
+"key": "mozzarella",
+"name": "Mozzarella fraiche",
+"aliases": [
+"mozzarella",
+"mozzarella di bufala",
+"burrata",
+"boule de mozzarella"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "high",
+"due_type": 2,
+"notes": "Fermee: DLC. Ouverte dans sa saumure: StillTasty 7-14 j, emballages FR 1-3 j: on retient 3 j. Burrata: 1 j.",
+"source": "ST#17732 (1-2 sem, F 3-6 mo); after_open = HOUSE"
+},
+{
+"key": "fromage_rape",
+"name": "Fromage rape",
+"aliases": [
+"emmental rape",
+"gruyere rape",
+"fromage rape",
+"mozzarella rapee",
+"parmesan rape",
+"sachet de fromage rape"
+],
+"category": "laitier",
+"fridge_days": 30,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "Sachet ouvert: 5 a 7 j.",
+"source": "FK#5 (R 1 mo, F 3-4 mo); ST#17875 (ouvert 5-7 j)"
+},
+{
+"key": "pate_pressee_cuite",
+"name": "Fromage a pate pressee cuite",
+"aliases": [
+"comte",
+"beaufort",
+"gruyere",
+"emmental",
+"abondance",
+"fromage a pate dure"
+],
+"category": "laitier",
+"fridge_days": 180,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": 21,
+"risk": "low",
+"due_type": 1,
+"notes": "Morceau entame: 3 a 4 sem bien emballe.",
+"source": "FK#3 (R 6 mo, RO 3-4 sem, F 6 mo); ST#16476"
+},
+{
+"key": "parmesan",
+"name": "Parmesan en morceau",
+"aliases": [
+"parmesan",
+"parmigiano",
+"grana padano",
+"pecorino"
+],
+"category": "laitier",
+"fridge_days": 180,
+"freezer_days": 365,
+"counter_days": 1,
+"after_open_days": 28,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#3; ST#19125 (ouvert 4-6 sem, F 12-18 mo)"
+},
+{
+"key": "pate_pressee",
+"name": "Fromage a pate pressee non cuite",
+"aliases": [
+"tomme",
+"cantal",
+"mimolette",
+"saint-nectaire",
+"morbier",
+"cheddar",
+"gouda",
+"edam",
+"raclette"
+],
+"category": "laitier",
+"fridge_days": 60,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": 21,
+"risk": "low",
+"due_type": 1,
+"notes": "Tomme et cantal: croute naturelle, garder dans papier.",
+"source": "FK#3 (RO 3-4 sem)"
+},
+{
+"key": "pate_molle_fleurie",
+"name": "Fromage a pate molle croute fleurie",
+"aliases": [
+"camembert",
+"brie",
+"coulommiers",
+"chaource",
+"brillat-savarin",
+"neufchatel"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": 90,
+"counter_days": 1,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "Continue d'affiner; lait cru: deconseille aux femmes enceintes (ANSES).",
+"source": "ST#16666, ST#16631 (1-2 sem, F 3-6 mo); FK#7"
+},
+{
+"key": "pate_molle_lavee",
+"name": "Fromage a pate molle croute lavee",
+"aliases": [
+"reblochon",
+"munster",
+"maroilles",
+"epoisses",
+"livarot",
+"pont-l'eveque",
+"mont d'or",
+"vacherin"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": 90,
+"counter_days": 1,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "",
+"source": "FK#7 (R 1-2 sem, F 6 mo); ST#16666 analogue"
+},
+{
+"key": "chevre_frais",
+"name": "Fromage de chevre frais",
+"aliases": [
+"chevre frais",
+"buche de chevre",
+"crottin",
+"sainte-maure",
+"chevre",
+"fromage de chevre"
+],
+"category": "laitier",
+"fridge_days": 7,
+"freezer_days": 90,
+"counter_days": 1,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "Chevre sec affine: se garde plus longtemps.",
+"source": "ST#17270 (1-2 sem, F 3-6 mo); FK#7"
+},
+{
+"key": "bleu",
+"name": "Fromage bleu",
+"aliases": [
+"roquefort",
+"bleu d'auvergne",
+"fourme d'ambert",
+"gorgonzola",
+"bleu"
+],
+"category": "laitier",
+"fridge_days": 30,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": 21,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "ST#16575 (1-2 mo, F 6-8 mo)"
+},
+{
+"key": "feta_saumure",
+"name": "Feta en saumure",
+"aliases": [
+"feta",
+"feta en saumure"
+],
+"category": "laitier",
+"fridge_days": 60,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 28,
+"risk": "low",
+"due_type": 2,
+"notes": "Garder immergee dans la saumure.",
+"source": "ST#17174 (ouverte 4-6 sem), ST#19130 (morceau 1-2 sem)"
+},
+{
+"key": "fromage_fondu",
+"name": "Fromage fondu",
+"aliases": [
+"vache qui rit",
+"fromage fondu",
+"tranches de fromage fondu",
+"cheddar en tranches"
+],
+"category": "laitier",
+"fridge_days": 21,
+"freezer_days": null,
+"counter_days": 1,
+"after_open_days": 21,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#6 (R 3-4 sem)"
+},
+{
+"key": "cottage",
+"name": "Cottage cheese",
+"aliases": [
+"cottage cheese",
+"cottage"
+],
+"category": "laitier",
+"fridge_days": 14,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#9; ST#16978 (ouvert 7-10 j)"
+},
+{
+"key": "oeufs",
+"name": "Oeufs frais",
+"aliases": [
+"oeufs",
+"oeuf",
+"oeufs frais",
+"oeufs bio",
+"oeufs plein air",
+"oeufs frais gros"
+],
+"category": "oeufs",
+"fridge_days": 21,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 1,
+"notes": "FR: DCR = 28 j apres ponte, vendus hors froid; au frigo a la maison. Ne pas congeler en coquille.",
+"source": "FK#21 (R 3-5 sem); USDA cold storage chart"
+},
+{
+"key": "oeufs_durs",
+"name": "Oeufs durs",
+"aliases": [
+"oeuf dur",
+"oeufs durs",
+"oeufs mimosa"
+],
+"category": "oeufs",
+"fridge_days": 7,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#23 (R 1 sem)"
+},
+{
+"key": "blancs_jaunes",
+"name": "Blancs ou jaunes d'oeuf crus",
+"aliases": [
+"blancs d'oeuf",
+"jaunes d'oeuf",
+"oeufs battus"
+],
+"category": "oeufs",
+"fridge_days": 2,
+"freezer_days": 365,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#22 (R 2-4 j, F 12 mo)"
+},
+{
+"key": "preparation_oeufs_crus",
+"name": "Preparation aux oeufs crus",
+"aliases": [
+"mayonnaise maison",
+"mousse au chocolat",
+"tiramisu",
+"aioli maison",
+"sauce bearnaise"
+],
+"category": "plat_cuisine",
+"fridge_days": 1,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "ANSES: mettre immediatement au frais. Regle prudente 24 h (FoodKeeper aioli maison: 3-4 j).",
+"source": "ANSES MIC2012sa0005Fi; FK#670; fridge = HOUSE"
+},
+{
+"key": "plat_oeufs",
+"name": "Plat aux oeufs cuits",
+"aliases": [
+"omelette",
+"oeufs brouilles",
+"flan",
+"clafoutis",
+"creme brulee",
+"creme renversee"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#24 (R 3-4 j, F 2-3 mo); ANSES < 3 j"
+},
+{
+"key": "dessert_lacte",
+"name": "Dessert lacte",
+"aliases": [
+"creme dessert",
+"danette",
+"riz au lait",
+"semoule au lait",
+"pudding"
+],
+"category": "laitier",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 2,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC.",
+"source": "FK#28 (RO 2 j)"
+},
+{
+"key": "viande_hachee",
+"name": "Viande hachee crue",
+"aliases": [
+"steak hache",
+"viande hachee",
+"hache de boeuf",
+"chair a saucisse",
+"hache de veau"
+],
+"category": "viande",
+"fridge_days": 1,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Cuire a coeur (ANSES).",
+"source": "FK#43 (R 1-2 j, F 3-4 mo)"
+},
+{
+"key": "viande_piece",
+"name": "Piece de viande crue",
+"aliases": [
+"steak",
+"entrecote",
+"roti de boeuf",
+"cote de porc",
+"roti de porc",
+"gigot",
+"cotelettes d'agneau",
+"escalope de veau",
+"filet mignon",
+"bavette",
+"paleron"
+],
+"category": "viande",
+"fridge_days": 3,
+"freezer_days": 120,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#40 (R 3-5 j, F 4-12 mo)"
+},
+{
+"key": "viande_morceaux",
+"name": "Viande crue en morceaux",
+"aliases": [
+"boeuf bourguignon cru",
+"saute de porc",
+"emince de boeuf",
+"blanquette crue",
+"brochettes crues"
+],
+"category": "viande",
+"fridge_days": 3,
+"freezer_days": 120,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Brochettes avec legumes: 1-2 j.",
+"source": "FK#41 (R 3-5 j); FK#106"
+},
+{
+"key": "abats",
+"name": "Abats crus",
+"aliases": [
+"foie",
+"rognons",
+"langue",
+"coeur",
+"ris de veau",
+"abats"
+],
+"category": "viande",
+"fridge_days": 1,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#77 (R 1-2 j, F 3-4 mo)"
+},
+{
+"key": "poulet_entier",
+"name": "Poulet entier cru",
+"aliases": [
+"poulet",
+"poulet fermier",
+"pintade",
+"chapon",
+"coquelet"
+],
+"category": "volaille",
+"fridge_days": 1,
+"freezer_days": 365,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#113, FK#128 (R 1-2 j, F 12 mo)"
+},
+{
+"key": "volaille_morceaux",
+"name": "Morceaux de volaille crus",
+"aliases": [
+"filet de poulet",
+"blanc de poulet",
+"cuisses de poulet",
+"escalope de dinde",
+"aiguillettes de poulet",
+"pilons"
+],
+"category": "volaille",
+"fridge_days": 1,
+"freezer_days": 270,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#116-121 (R 1-2 j, F 9 mo)"
+},
+{
+"key": "canard",
+"name": "Canard cru",
+"aliases": [
+"magret",
+"canard",
+"cuisse de canard",
+"oie"
+],
+"category": "volaille",
+"fridge_days": 1,
+"freezer_days": 180,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#123 (R 1-2 j, F 6 mo)"
+},
+{
+"key": "volaille_hachee",
+"name": "Volaille hachee crue",
+"aliases": [
+"dinde hachee",
+"poulet hache"
+],
+"category": "volaille",
+"fridge_days": 1,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#115"
+},
+{
+"key": "saucisses_crues",
+"name": "Saucisses crues",
+"aliases": [
+"chipolatas",
+"merguez",
+"saucisse de toulouse",
+"saucisses fraiches",
+"saucisse crue",
+"chorizo frais"
+],
+"category": "viande",
+"fridge_days": 1,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#102 (R 1-2 j, F 1-2 mo); FK#630"
+},
+{
+"key": "saucisses_cuites",
+"name": "Saucisses cuites ou fumees",
+"aliases": [
+"saucisses de strasbourg",
+"knacki",
+"francfort",
+"saucisse de montbeliard",
+"saucisse de morteau",
+"hot dog"
+],
+"category": "charcuterie",
+"fridge_days": 14,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "Fermees: DLC (USDA 2 sem). Ouvertes: 7 j.",
+"source": "FK#98; USDA cold storage chart (hot dogs)"
+},
+{
+"key": "lardons",
+"name": "Lardons et bacon crus",
+"aliases": [
+"lardons",
+"bacon",
+"poitrine fumee",
+"allumettes de bacon"
+],
+"category": "charcuterie",
+"fridge_days": 7,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#79 (R 1 sem, RO 1 sem, F 1 mo); ST#16431"
+},
+{
+"key": "jambon_blanc",
+"name": "Jambon cuit tranche",
+"aliases": [
+"jambon blanc",
+"jambon de paris",
+"jambon cuit",
+"blanc de poulet tranche",
+"blanc de dinde",
+"roti de porc tranche"
+],
+"category": "charcuterie",
+"fridge_days": 14,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "high",
+"due_type": 2,
+"notes": "Ferme: DLC. Ouvert ou a la coupe: 3 a 5 j (Listeria).",
+"source": "FK#192, FK#184; USDA cold storage chart (luncheon meat)"
+},
+{
+"key": "jambon_cru",
+"name": "Jambon cru tranche",
+"aliases": [
+"jambon cru",
+"jambon de bayonne",
+"prosciutto",
+"jambon serrano",
+"coppa",
+"bresaola",
+"viande des grisons"
+],
+"category": "charcuterie",
+"fridge_days": 60,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "Barquette ouverte: 5 j (analogue charcuterie tranchee ouverte).",
+"source": "FK#675 (R 2-3 mo, F 1 mo); ST#18241 (ouvert 5-7 j)"
+},
+{
+"key": "saucisson_entier",
+"name": "Saucisson sec entier",
+"aliases": [
+"saucisson",
+"saucisson sec",
+"rosette",
+"jesus",
+"chorizo sec",
+"fuet",
+"salami entier"
+],
+"category": "charcuterie",
+"fridge_days": 180,
+"freezer_days": 240,
+"counter_days": 28,
+"after_open_days": 14,
+"risk": "low",
+"due_type": 1,
+"notes": "Entame: au frais, 2 a 3 sem.",
+"source": "ST#18242 (placard 4-6 sem, R 6 mo, F 8-10 mo), ST#18243 (entame 2-3 sem)"
+},
+{
+"key": "saucisson_tranche",
+"name": "Charcuterie seche tranchee",
+"aliases": [
+"chorizo tranche",
+"salami tranche",
+"rosette tranchee",
+"pepperoni"
+],
+"category": "charcuterie",
+"fridge_days": 14,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 5,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#104 (R 2-3 sem, F 1-2 mo); ST#18241 (ouvert 5-7 j)"
+},
+{
+"key": "pate_traiteur",
+"name": "Pate ou terrine du traiteur",
+"aliases": [
+"pate",
+"terrine",
+"pate de campagne",
+"rillettes a la coupe",
+"pate en croute",
+"mousse de canard",
+"foie gras mi-cuit"
+],
+"category": "charcuterie",
+"fridge_days": 1,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": 1,
+"risk": "high",
+"due_type": 2,
+"notes": "Produit a la coupe: ANSES < 3 j; FoodKeeper pate 1-2 j.",
+"source": "FK#188 (R 1-2 j, F 1-2 mo); ANSES fiche hygiene"
+},
+{
+"key": "conserve_viande_poisson",
+"name": "Conserve de viande ou poisson",
+"aliases": [
+"thon en boite",
+"sardines",
+"maquereau en boite",
+"rillettes en bocal",
+"pate en boite",
+"cassoulet en boite",
+"conserve"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 730,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "Fermee: placard (DDM). Ouverte: transvaser, frigo 3 a 4 j. Boite bombee: jeter (ANSES).",
+"source": "FK#372 (P 2-5 ans, RO 3-4 j)"
+},
+{
+"key": "anchois",
+"name": "Anchois",
+"aliases": [
+"anchois",
+"anchois a l'huile",
+"filets d'anchois"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 1825,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#673"
+},
+{
+"key": "poisson_maigre",
+"name": "Poisson maigre cru",
+"aliases": [
+"cabillaud",
+"colin",
+"merlu",
+"lieu",
+"sole",
+"limande",
+"dorade",
+"bar",
+"loup",
+"filet de poisson"
+],
+"category": "poisson",
+"fridge_days": 1,
+"freezer_days": 180,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#144 (R 1-2 j, F 6-8 mo)"
+},
+{
+"key": "poisson_gras",
+"name": "Poisson gras cru",
+"aliases": [
+"saumon frais",
+"pave de saumon",
+"maquereau",
+"sardines fraiches",
+"thon frais",
+"truite"
+],
+"category": "poisson",
+"fridge_days": 1,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#146 (R 1-2 j, F 2-3 mo)"
+},
+{
+"key": "crustaces_crus",
+"name": "Crustaces et calamars crus",
+"aliases": [
+"crevettes crues",
+"gambas",
+"saint-jacques",
+"noix de saint-jacques",
+"calamars",
+"encornets"
+],
+"category": "poisson",
+"fridge_days": 1,
+"freezer_days": 180,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#150-152 (R 1-3 j, F 6-18 mo)"
+},
+{
+"key": "coquillages_vivants",
+"name": "Coquillages vivants",
+"aliases": [
+"moules",
+"huitres",
+"palourdes",
+"coques",
+"bulots"
+],
+"category": "poisson",
+"fridge_days": 1,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Jeter les coquilles ouvertes avant cuisson.",
+"source": "FK#157 (R 1-2 j)"
+},
+{
+"key": "poisson_cuit",
+"name": "Poisson cuit",
+"aliases": [
+"reste de poisson",
+"poisson cuit",
+"brandade",
+"parmentier de poisson"
+],
+"category": "plat_cuisine",
+"fridge_days": 2,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "FSA: restes 2 j; FoodKeeper 3-4 j; ANSES < 3 j.",
+"source": "FK#148; FSA chill guide; ANSES"
+},
+{
+"key": "fruits_mer_cuits",
+"name": "Fruits de mer cuits",
+"aliases": [
+"crevettes cuites",
+"crevettes roses",
+"bulots cuits",
+"tourteau cuit",
+"langoustines cuites"
+],
+"category": "poisson",
+"fridge_days": 2,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#162 (R 3-4 j, F 1-3 mo); FSA 2 j"
+},
+{
+"key": "saumon_fume",
+"name": "Poisson fume",
+"aliases": [
+"saumon fume",
+"truite fumee",
+"haddock",
+"hareng fume"
+],
+"category": "poisson",
+"fridge_days": 14,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "high",
+"due_type": 2,
+"notes": "Ferme: DLC (ST 2-3 sem). Ouvert: ST 1 sem; emballages FR 2-3 j; on retient 3 j (Listeria).",
+"source": "ST#18253, ST#18252; FK#167; after_open = HOUSE"
+},
+{
+"key": "surimi",
+"name": "Surimi",
+"aliases": [
+"surimi",
+"batonnets de surimi",
+"bouchees au crabe"
+],
+"category": "poisson",
+"fridge_days": null,
+"freezer_days": 270,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC.",
+"source": "FK#149 (F 9 mo); after_open = HOUSE"
+},
+{
+"key": "hareng_marine",
+"name": "Hareng marine",
+"aliases": [
+"rollmops",
+"harengs marines",
+"hareng a l'huile"
+],
+"category": "poisson",
+"fridge_days": 120,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#163 (R 4-6 mo)"
+},
+{
+"key": "oeufs_poisson",
+"name": "Oeufs de poisson",
+"aliases": [
+"tarama",
+"oeufs de lump",
+"caviar",
+"oeufs de saumon"
+],
+"category": "poisson",
+"fridge_days": 7,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 2,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#147 (R 1-4 sem, RO 2 j)"
+},
+{
+"key": "tofu",
+"name": "Tofu",
+"aliases": [
+"tofu",
+"tofu ferme",
+"tofu soyeux",
+"tofu fume"
+],
+"category": "vegetal",
+"fridge_days": 5,
+"freezer_days": 120,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ouvert: couvrir d'eau fraiche, changer l'eau chaque jour.",
+"source": "ST#18509 (5-7 j), ST#19123 (ouvert 3-5 j, F 4-6 mo); FK#168"
+},
+{
+"key": "tempeh_seitan",
+"name": "Tempeh ou seitan",
+"aliases": [
+"tempeh",
+"seitan",
+"steak vegetal",
+"galette vegetale"
+],
+"category": "vegetal",
+"fridge_days": 3,
+"freezer_days": 180,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#328 (R 3-4 j, F 6 mo); FK#327"
+},
+{
+"key": "houmous",
+"name": "Houmous du commerce",
+"aliases": [
+"houmous",
+"hummus",
+"caviar d'aubergine",
+"tzatziki",
+"tartinable"
+],
+"category": "traiteur",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC.",
+"source": "FK#181 (RO 7 j)"
+},
+{
+"key": "restes_viande",
+"name": "Viande cuite",
+"aliases": [
+"reste de viande",
+"poulet roti",
+"roti cuit",
+"viande cuite",
+"reste de roti"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "ANSES < 3 j; FSA 2 j; USDA 3-4 j.",
+"source": "FK#173, FK#141; USDA cold storage chart; ANSES MIC2012sa0005Fi"
+},
+{
+"key": "plat_sauce",
+"name": "Plat mijote en sauce",
+"aliases": [
+"boeuf bourguignon",
+"blanquette",
+"pot-au-feu",
+"ragout",
+"chili con carne",
+"curry",
+"tajine",
+"daube",
+"navarin",
+"coq au vin",
+"bolognaise"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Refroidir vite et au frais sous 2 h (ANSES).",
+"source": "FK#186, FK#193 (R 3-4 j, F 2-3 mo); ANSES"
+},
+{
+"key": "soupe_maison",
+"name": "Soupe maison",
+"aliases": [
+"soupe",
+"veloute",
+"potage",
+"gaspacho",
+"bouillon de legumes maison",
+"minestrone"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#193, FK#629 (R 3-4 j, F 2-3 mo)"
+},
+{
+"key": "soupe_brique",
+"name": "Soupe ou bouillon en brique",
+"aliases": [
+"soupe en brique",
+"bouillon en brique",
+"veloute du commerce",
+"fond de volaille liquide"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 365,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ouverte: frigo 3 a 4 j.",
+"source": "FK#486 (RO 3-4 j, F 2-3 mo); ST#16482"
+},
+{
+"key": "bouillon_maison",
+"name": "Bouillon maison",
+"aliases": [
+"bouillon maison",
+"fond maison",
+"bouillon de poule"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#484 (R 3-4 j, F 2-3 mo)"
+},
+{
+"key": "bouillon_cube",
+"name": "Bouillon cube",
+"aliases": [
+"bouillon cube",
+"kub",
+"bouillon deshydrate"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 730,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "ST#16596 (2 ans)"
+},
+{
+"key": "gratin",
+"name": "Plat au four",
+"aliases": [
+"gratin",
+"gratin dauphinois",
+"lasagnes",
+"hachis parmentier",
+"moussaka",
+"tian",
+"gratin de pates",
+"endives au jambon"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "",
+"source": "FK#194, FK#185 (R 3-4 j, F 2-3 mo)"
+},
+{
+"key": "quiche",
+"name": "Quiche ou tarte salee",
+"aliases": [
+"quiche",
+"quiche lorraine",
+"tarte salee",
+"tarte aux poireaux",
+"feuillete"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Pas plus de 2 h a temperature ambiante.",
+"source": "FK#211 (P 2 h, R 3-5 j, F 2-3 mo)"
+},
+{
+"key": "pizza_restes",
+"name": "Pizza (restes)",
+"aliases": [
+"pizza",
+"reste de pizza",
+"part de pizza"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#175; USDA cold storage chart"
+},
+{
+"key": "pizza_surgelee",
+"name": "Pizza surgelee",
+"aliases": [
+"pizza surgelee"
+],
+"category": "surgele",
+"fridge_days": 3,
+"freezer_days": 365,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Decongelee: 3 j.",
+"source": "FK#571 (R 3-4 j, F 12 mo)"
+},
+{
+"key": "pates_cuites",
+"name": "Pates cuites",
+"aliases": [
+"pates cuites",
+"reste de pates",
+"spaghetti cuits",
+"gnocchis cuits",
+"raviolis cuits"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#177 (R 3-5 j, F 1-2 mo)"
+},
+{
+"key": "riz_cuit",
+"name": "Riz cuit",
+"aliases": [
+"riz cuit",
+"reste de riz",
+"riz cantonais",
+"riz pilaf",
+"risotto",
+"sushi maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 1,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "FSA: frigo sous 1 h, consommer sous 24 h (Bacillus cereus); FoodKeeper 4-6 j. Congeler sous 1 h.",
+"source": "FSA chill guide; FK#178"
+},
+{
+"key": "cereales_cuites",
+"name": "Cereales cuites",
+"aliases": [
+"quinoa cuit",
+"boulgour cuit",
+"semoule cuite",
+"couscous cuit",
+"ble cuit",
+"polenta cuite"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "FoodKeeper quinoa cuit 6-7 j; on applique la regle restes ANSES < 3 j.",
+"source": "FK#426; ANSES"
+},
+{
+"key": "legumes_cuits",
+"name": "Legumes cuits",
+"aliases": [
+"legumes cuits",
+"poelee de legumes",
+"ratatouille",
+"puree",
+"puree de pommes de terre",
+"haricots verts cuits",
+"legumes rotis"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#174 (R 3-4 j, F 1-2 mo)"
+},
+{
+"key": "legumineuses_cuites",
+"name": "Legumineuses cuites",
+"aliases": [
+"lentilles cuites",
+"pois chiches cuits",
+"haricots rouges cuits",
+"dal",
+"flageolets"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#174"
+},
+{
+"key": "salade_composee",
+"name": "Salade composee",
+"aliases": [
+"taboule",
+"salade de pates",
+"salade piemontaise",
+"salade de riz",
+"coleslaw",
+"celeri remoulade",
+"carottes rapees",
+"salade de lentilles",
+"salade nicoise"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Ne se congele pas bien. Avec mayonnaise: au frais immediatement.",
+"source": "USDA cold storage chart (salads 3-4 j); ANSES"
+},
+{
+"key": "plat_traiteur",
+"name": "Plat traiteur ou plat prepare",
+"aliases": [
+"plat prepare",
+"plat traiteur",
+"plat cuisine du commerce",
+"salade traiteur",
+"plat a emporter",
+"sandwich"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "ANSES: produits traiteurs, plats cuisines consommes dans les 3 j apres achat (si pas de DLC).",
+"source": "ANSES fiche hygiene domestique; FK#185"
+},
+{
+"key": "guacamole",
+"name": "Guacamole",
+"aliases": [
+"guacamole"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#180 (R 3-4 j, F 3-4 mo)"
+},
+{
+"key": "houmous_maison",
+"name": "Houmous maison",
+"aliases": [
+"houmous maison",
+"hummus maison",
+"tartinade maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "FoodKeeper 7 j; regle restes ANSES < 3 j.",
+"source": "FK#183; ANSES"
+},
+{
+"key": "sauce_tomate_maison",
+"name": "Sauce tomate maison",
+"aliases": [
+"sauce tomate maison",
+"coulis maison",
+"sauce maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#174"
+},
+{
+"key": "pesto_maison",
+"name": "Pesto maison",
+"aliases": [
+"pesto maison",
+"sauce verte",
+"pistou"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 30,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "Couvrir d'huile.",
+"source": "FK#354 (RO 3 j, F 1 mo)"
+},
+{
+"key": "vinaigrette_maison",
+"name": "Vinaigrette maison",
+"aliases": [
+"vinaigrette maison",
+"sauce salade maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 14,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Avec ail ou herbes fraiches: raccourcir.",
+"source": "FK#624 (R 2-3 sem)"
+},
+{
+"key": "legumes_huile_maison",
+"name": "Legumes marines a l'huile maison",
+"aliases": [
+"legumes a l'huile maison",
+"ail confit maison",
+"poivrons marines maison",
+"tomates confites maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "Risque botulique si garde a temperature ambiante.",
+"source": "FK#570 (R 3-4 j)"
+},
+{
+"key": "crepes",
+"name": "Crepes ou galettes maison",
+"aliases": [
+"crepes",
+"galettes",
+"pancakes",
+"blinis"
+],
+"category": "plat_cuisine",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#173 (plat avec oeuf R 3-4 j); FK#321 (F 3 mo)"
+},
+{
+"key": "compote_maison",
+"name": "Compote maison",
+"aliases": [
+"compote maison",
+"compote de pommes maison",
+"puree de fruits maison"
+],
+"category": "plat_cuisine",
+"fridge_days": 7,
+"freezer_days": 240,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "low",
+"due_type": 2,
+"notes": "FoodKeeper donne 3 sem; on retient 7 j pour une compote sans sucre.",
+"source": "FK#562 (R 3 sem, F 8-12 mo); fridge = HOUSE"
+},
+{
+"key": "patisserie_creme",
+"name": "Patisserie a la creme",
+"aliases": [
+"eclair",
+"mille-feuille",
+"religieuse",
+"paris-brest",
+"tarte au citron meringuee",
+"chou a la creme",
+"fraisier",
+"profiteroles",
+"saint-honore"
+],
+"category": "boulangerie",
+"fridge_days": 2,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "high",
+"due_type": 2,
+"notes": "ANSES: patisseries a base de creme sous 3 j apres achat.",
+"source": "FK#201 (RO 2-3 j, F 3 mo); ANSES fiche hygiene"
+},
+{
+"key": "gateau",
+"name": "Gateau sans creme",
+"aliases": [
+"gateau",
+"cake",
+"quatre-quarts",
+"gateau au yaourt",
+"brownie",
+"madeleines",
+"financiers",
+"muffins",
+"gateau au chocolat"
+],
+"category": "boulangerie",
+"fridge_days": 7,
+"freezer_days": 180,
+"counter_days": 3,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#197 (P 3-7 j, R 7-10 j, F 6 mo)"
+},
+{
+"key": "tarte_fruits",
+"name": "Tarte aux fruits",
+"aliases": [
+"tarte aux pommes",
+"tarte aux fraises",
+"tarte tatin",
+"tarte aux prunes",
+"clafoutis aux fruits"
+],
+"category": "boulangerie",
+"fridge_days": 7,
+"freezer_days": 240,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "Tarte avec creme patissiere: 2 j.",
+"source": "FK#207 (P 1-2 j, R 1 sem, F 8 mo)"
+},
+{
+"key": "cheesecake",
+"name": "Cheesecake",
+"aliases": [
+"cheesecake",
+"gateau au fromage blanc"
+],
+"category": "boulangerie",
+"fridge_days": 5,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#198 (R 5-7 j, F 3-6 mo)"
+},
+{
+"key": "pain_frais",
+"name": "Pain frais",
+"aliases": [
+"baguette",
+"pain",
+"pain de campagne",
+"pain complet",
+"pain aux cereales",
+"boule",
+"tradition",
+"pain au levain"
+],
+"category": "boulangerie",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 2,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Ne pas mettre au frigo (rassit). Baguette: meilleure le jour meme.",
+"source": "FK#460 (P 3-5 j, F 3 mo); FSA (baked goods frozen 3-4 mo)"
+},
+{
+"key": "pain_mie",
+"name": "Pain de mie industriel",
+"aliases": [
+"pain de mie",
+"pain burger",
+"pain a hot dog",
+"pain brioche",
+"wraps",
+"tortillas"
+],
+"category": "boulangerie",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 14,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Tortillas: 3 mo placard (FK#196).",
+"source": "FK#195 (P 14-18 j, F 3-5 mo)"
+},
+{
+"key": "viennoiseries",
+"name": "Viennoiseries",
+"aliases": [
+"croissant",
+"pain au chocolat",
+"chocolatine",
+"brioche",
+"pain aux raisins",
+"chausson aux pommes"
+],
+"category": "boulangerie",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#202 (P 1-2 j); FSA (baked goods frozen 3-4 mo)"
+},
+{
+"key": "pate_crue",
+"name": "Pate a tarte crue",
+"aliases": [
+"pate feuilletee",
+"pate brisee",
+"pate sablee",
+"pate a pizza",
+"pate a crepes"
+],
+"category": "boulangerie",
+"fridge_days": null,
+"freezer_days": 365,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "Rouleau ferme: DLC. Pate a crepes maison (oeuf): 1 j.",
+"source": "FK#309 (R 3-4 j, F 12 mo)"
+},
+{
+"key": "glace",
+"name": "Glace ou sorbet",
+"aliases": [
+"glace",
+"creme glacee",
+"sorbet",
+"esquimau",
+"batonnet glace"
+],
+"category": "surgele",
+"fridge_days": null,
+"freezer_days": 180,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Sorbet: 9 mo.",
+"source": "FK#317 (F 6 mo), FK#324 (F 9 mo)"
+},
+{
+"key": "pommes",
+"name": "Pommes",
+"aliases": [
+"pomme",
+"pommes",
+"pommes golden",
+"pommes gala"
+],
+"category": "fruit",
+"fridge_days": 28,
+"freezer_days": 240,
+"counter_days": 21,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#248 (P 3 sem, R 4-6 sem, F 8 mo cuite)"
+},
+{
+"key": "fruits_noyau",
+"name": "Fruits a noyau et poires",
+"aliases": [
+"poires",
+"peches",
+"nectarines",
+"prunes",
+"abricots",
+"brugnons",
+"mirabelles",
+"reine-claude"
+],
+"category": "fruit",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Laisser murir a temperature ambiante, puis frigo 3 a 5 j.",
+"source": "FK#266 (R 3-5 j, F 2 mo)"
+},
+{
+"key": "bananes",
+"name": "Bananes",
+"aliases": [
+"banane",
+"bananes"
+],
+"category": "fruit",
+"fridge_days": 3,
+"freezer_days": 60,
+"counter_days": 3,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Maturation a temperature ambiante (3 j une fois mures); au frigo la peau noircit.",
+"source": "FK#251 (R 3 j, F 2-3 mo); counter = HOUSE"
+},
+{
+"key": "agrumes",
+"name": "Agrumes",
+"aliases": [
+"orange",
+"oranges",
+"citron",
+"citrons",
+"clementines",
+"mandarines",
+"pamplemousse",
+"citron vert"
+],
+"category": "fruit",
+"fridge_days": 10,
+"freezer_days": null,
+"counter_days": 10,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#256 (P 10 j, R 10-21 j)"
+},
+{
+"key": "fruits_rouges",
+"name": "Fruits rouges",
+"aliases": [
+"fraises",
+"framboises",
+"cerises",
+"mures",
+"groseilles",
+"cassis"
+],
+"category": "fruit",
+"fridge_days": 2,
+"freezer_days": 240,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Laver au dernier moment.",
+"source": "FK#481-483 (R 2-3 j, F 8-12 mo)"
+},
+{
+"key": "myrtilles",
+"name": "Myrtilles",
+"aliases": [
+"myrtilles",
+"bleuets"
+],
+"category": "fruit",
+"fridge_days": 7,
+"freezer_days": 240,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#254 (R 1-2 sem, F 8-12 mo)"
+},
+{
+"key": "raisin",
+"name": "Raisin",
+"aliases": [
+"raisin",
+"grappe de raisin",
+"raisins frais"
+],
+"category": "fruit",
+"fridge_days": 7,
+"freezer_days": 30,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#261 (P 1 j, R 1 sem, F 1 mo)"
+},
+{
+"key": "kiwi",
+"name": "Kiwi",
+"aliases": [
+"kiwi",
+"kiwis"
+],
+"category": "fruit",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Frigo une fois mur.",
+"source": "FK#263 (R 3-6 j)"
+},
+{
+"key": "melon",
+"name": "Melon",
+"aliases": [
+"melon",
+"melon charentais",
+"cantaloup"
+],
+"category": "fruit",
+"fridge_days": 5,
+"freezer_days": 365,
+"counter_days": 2,
+"after_open_days": 2,
+"risk": "medium",
+"due_type": 1,
+"notes": "Coupe: film, frigo 2 a 4 j.",
+"source": "FK#496 (P 2-4 j, R 5-15 j, F 12 mo); FK#264 (RO 2-4 j)"
+},
+{
+"key": "pasteque",
+"name": "Pasteque",
+"aliases": [
+"pasteque"
+],
+"category": "fruit",
+"fridge_days": 3,
+"freezer_days": 365,
+"counter_days": 1,
+"after_open_days": 2,
+"risk": "medium",
+"due_type": 1,
+"notes": "",
+"source": "FK#495 (P 1-2 j, R 3-4 j); FK#264"
+},
+{
+"key": "ananas",
+"name": "Ananas",
+"aliases": [
+"ananas"
+],
+"category": "fruit",
+"fridge_days": 5,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#267 (R 5-7 j, F 10-12 mo)"
+},
+{
+"key": "fruits_exotiques",
+"name": "Mangue, papaye, fruit de la passion",
+"aliases": [
+"mangue",
+"papaye",
+"fruit de la passion",
+"litchis",
+"grenade"
+],
+"category": "fruit",
+"fridge_days": 7,
+"freezer_days": 180,
+"counter_days": 3,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Grenade: 1-3 mo au frigo.",
+"source": "FK#265 (P 3-5 j, R 1 sem, F 6-8 mo); FK#269"
+},
+{
+"key": "avocat",
+"name": "Avocat",
+"aliases": [
+"avocat",
+"avocats"
+],
+"category": "fruit",
+"fridge_days": 3,
+"freezer_days": 90,
+"counter_days": null,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "Murir a temperature ambiante. Coupe: citron + film, 3 a 4 j.",
+"source": "FK#250 (R 3-4 j mur); ST#16426 (coupe 3-4 j, F 3-6 mo)"
+},
+{
+"key": "fruits_coupes",
+"name": "Fruits coupes",
+"aliases": [
+"salade de fruits",
+"fruits coupes",
+"barquette de fruits"
+],
+"category": "fruit",
+"fridge_days": 4,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": null,
+"risk": "medium",
+"due_type": 2,
+"notes": "",
+"source": "FK#179 (RO 4 j)"
+},
+{
+"key": "fruits_secs",
+"name": "Fruits secs",
+"aliases": [
+"pruneaux",
+"pruneaux d'agen",
+"abricots secs",
+"raisins secs",
+"dattes",
+"figues seches",
+"cranberries sechees"
+],
+"category": "epicerie",
+"fridge_days": 180,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 30,
+"risk": "low",
+"due_type": 1,
+"notes": "Sachet ouvert: 1 mo au placard ou 6 mo au frigo.",
+"source": "FK#379 (P 6 mo, PO 1 mo, RO 6 mo); FK#260"
+},
+{
+"key": "fruits_surgeles",
+"name": "Fruits surgeles",
+"aliases": [
+"fruits rouges surgeles",
+"fruits surgeles",
+"mangue surgelee"
+],
+"category": "surgele",
+"fridge_days": null,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#315 (F 10-18 mo)"
+},
+{
+"key": "tomates",
+"name": "Tomates",
+"aliases": [
+"tomate",
+"tomates",
+"tomates cerises",
+"tomates grappe",
+"coeur de boeuf"
+],
+"category": "legume",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 7,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "USDA conseille temperature ambiante (gout); frigo possible une fois tres mures.",
+"source": "FK#306 (P jusqu'a maturite puis 7 j, F 2 mo)"
+},
+{
+"key": "concombre",
+"name": "Concombre",
+"aliases": [
+"concombre"
+],
+"category": "legume",
+"fridge_days": 4,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#283 (R 4-6 j)"
+},
+{
+"key": "courgette",
+"name": "Courgette",
+"aliases": [
+"courgette",
+"courgettes",
+"patisson"
+],
+"category": "legume",
+"fridge_days": 4,
+"freezer_days": 300,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#302 (P 1-5 j, R 4-5 j, F 10-12 mo); FK#547"
+},
+{
+"key": "poivrons",
+"name": "Poivrons et piments",
+"aliases": [
+"poivron",
+"poivrons",
+"piment",
+"piments"
+],
+"category": "legume",
+"fridge_days": 4,
+"freezer_days": 180,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#296 (R 4-14 j, F 6-8 mo); FK#548"
+},
+{
+"key": "aubergine",
+"name": "Aubergine",
+"aliases": [
+"aubergine",
+"aubergines"
+],
+"category": "legume",
+"fridge_days": 4,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#284 (P 1 j, R 4-7 j, F 6-8 mo)"
+},
+{
+"key": "carottes",
+"name": "Carottes et panais",
+"aliases": [
+"carotte",
+"carottes",
+"panais",
+"navets",
+"rutabaga",
+"topinambours"
+],
+"category": "legume",
+"fridge_days": 14,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Navets: 2 sem.",
+"source": "FK#279 (R 2-3 sem, F 10-12 mo); FK#307"
+},
+{
+"key": "pommes_de_terre",
+"name": "Pommes de terre",
+"aliases": [
+"pomme de terre",
+"pommes de terre",
+"grenaille",
+"patates"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 300,
+"counter_days": 30,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Au frais, sec et a l'abri de la lumiere (placard). Congeler cuites seulement.",
+"source": "FK#297 (P 1-2 mo, R 1-2 sem, F 10-12 mo)"
+},
+{
+"key": "patate_douce",
+"name": "Patate douce",
+"aliases": [
+"patate douce",
+"patates douces"
+],
+"category": "legume",
+"fridge_days": null,
+"freezer_days": 300,
+"counter_days": 14,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#422 (P 2-3 sem)"
+},
+{
+"key": "oignons",
+"name": "Oignons et echalotes",
+"aliases": [
+"oignon",
+"oignons",
+"echalote",
+"echalotes",
+"oignon rouge"
+],
+"category": "legume",
+"fridge_days": 60,
+"freezer_days": 300,
+"counter_days": 30,
+"after_open_days": 7,
+"risk": "low",
+"due_type": 1,
+"notes": "Oignon entame: frigo, 7 j.",
+"source": "FK#294 (P 1 mo, R 2 mo, F 10-12 mo)"
+},
+{
+"key": "oignons_nouveaux",
+"name": "Oignons nouveaux",
+"aliases": [
+"oignon nouveau",
+"cebette",
+"oignon vert"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#295 (R 1 sem)"
+},
+{
+"key": "ail",
+"name": "Ail",
+"aliases": [
+"ail",
+"tete d'ail",
+"gousse d'ail",
+"ail frais"
+],
+"category": "legume",
+"fridge_days": null,
+"freezer_days": 30,
+"counter_days": 30,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Tete entiere au placard; gousses epluchees au frigo 3 j.",
+"source": "FK#285 (P 1 mo, R 3-14 j, F 1 mo)"
+},
+{
+"key": "poireaux",
+"name": "Poireaux",
+"aliases": [
+"poireau",
+"poireaux"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#289 (R 1-2 sem, F 10-12 mo)"
+},
+{
+"key": "salade_feuilles",
+"name": "Salade en feuilles",
+"aliases": [
+"laitue",
+"batavia",
+"feuille de chene",
+"mache",
+"roquette",
+"epinards frais",
+"mesclun",
+"jeunes pousses",
+"cresson"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#291 (R 3-7 j); FK#678"
+},
+{
+"key": "salade_sachet",
+"name": "Salade en sachet",
+"aliases": [
+"salade en sachet",
+"salade 4e gamme",
+"melange de salades",
+"sachet de mache"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": 0,
+"after_open_days": 2,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC. Ouvert: 2 j.",
+"source": "FK#415 (R 3-5 j, RO 2 j)"
+},
+{
+"key": "salade_pommee",
+"name": "Salade pommee",
+"aliases": [
+"romaine",
+"iceberg",
+"sucrine",
+"endives",
+"chicoree",
+"scarole",
+"frisee"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#290 (R 1-2 sem)"
+},
+{
+"key": "choux",
+"name": "Choux",
+"aliases": [
+"chou",
+"chou blanc",
+"chou rouge",
+"chou vert",
+"chou frise",
+"chou chinois"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Chou chinois / pak choi: 2-3 j.",
+"source": "FK#278 (R 1-2 sem, F 10-12 mo); FK#275"
+},
+{
+"key": "brocoli_chou_fleur",
+"name": "Brocoli et chou-fleur",
+"aliases": [
+"brocoli",
+"chou-fleur",
+"choux de bruxelles",
+"romanesco"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#276, FK#277, FK#280 (R 3-5 j, F 10-12 mo)"
+},
+{
+"key": "haricots_verts",
+"name": "Haricots verts et petits pois frais",
+"aliases": [
+"haricots verts",
+"petits pois",
+"pois gourmands",
+"feves",
+"haricots plats"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": 240,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#273 (R 3-5 j, F 8 mo)"
+},
+{
+"key": "champignons",
+"name": "Champignons frais",
+"aliases": [
+"champignons",
+"champignons de paris",
+"pleurotes",
+"shiitake",
+"girolles",
+"cepes"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Dans un sac papier.",
+"source": "FK#292 (R 3-7 j, F 10-12 mo)"
+},
+{
+"key": "celeri",
+"name": "Celeri",
+"aliases": [
+"celeri branche",
+"celeri-rave",
+"celeri",
+"fenouil"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#281 (R 1-2 sem), FK#661 (celeri-rave R 1 sem)"
+},
+{
+"key": "betterave",
+"name": "Betterave crue",
+"aliases": [
+"betterave crue",
+"betteraves"
+],
+"category": "legume",
+"fridge_days": 7,
+"freezer_days": 180,
+"counter_days": 1,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Betterave cuite sous vide: DLC puis 3 j ouverte.",
+"source": "FK#274 (R 1-2 sem, F 6-8 mo)"
+},
+{
+"key": "radis",
+"name": "Radis",
+"aliases": [
+"radis",
+"radis noir"
+],
+"category": "legume",
+"fridge_days": 10,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#299 (R 10-14 j)"
+},
+{
+"key": "asperges",
+"name": "Asperges",
+"aliases": [
+"asperges",
+"asperge verte",
+"asperge blanche"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": 150,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Debout dans un peu d'eau.",
+"source": "FK#271 (R 3-4 j, F 5 mo)"
+},
+{
+"key": "blettes_epinards",
+"name": "Blettes et chou kale",
+"aliases": [
+"blettes",
+"bettes",
+"chou kale",
+"kale"
+],
+"category": "legume",
+"fridge_days": 3,
+"freezer_days": 240,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Blettes: 1-2 sem (FK#550).",
+"source": "FK#423 (R 3-5 j, F 8-12 mo); FK#550"
+},
+{
+"key": "courge",
+"name": "Courge d'hiver entiere",
+"aliases": [
+"butternut",
+"potiron",
+"potimarron",
+"citrouille",
+"courge",
+"courge spaghetti"
+],
+"category": "legume",
+"fridge_days": 30,
+"freezer_days": 300,
+"counter_days": 14,
+"after_open_days": 5,
+"risk": "low",
+"due_type": 1,
+"notes": "Entamee: frigo 4 a 5 j (analogue courgette).",
+"source": "FK#303 (P 2-6 sem, R 1-3 mo, F 10-12 mo); FK#302"
+},
+{
+"key": "mais",
+"name": "Mais en epi",
+"aliases": [
+"mais",
+"epi de mais"
+],
+"category": "legume",
+"fridge_days": 1,
+"freezer_days": 240,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#282 (R 1-2 j, F 8 mo)"
+},
+{
+"key": "gingembre",
+"name": "Gingembre frais",
+"aliases": [
+"gingembre",
+"curcuma frais"
+],
+"category": "legume",
+"fridge_days": 14,
+"freezer_days": 180,
+"counter_days": 2,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#286 (P 2-5 j, R 2-3 sem, F 6 mo)"
+},
+{
+"key": "herbes_tendres",
+"name": "Herbes fraiches tendres",
+"aliases": [
+"persil",
+"coriandre",
+"menthe",
+"ciboulette",
+"aneth",
+"cerfeuil",
+"estragon"
+],
+"category": "legume",
+"fridge_days": 14,
+"freezer_days": 30,
+"counter_days": 7,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Bouquet dans un verre d'eau ou papier humide.",
+"source": "FK#506, FK#507, FK#512 (P 1-2 sem, R 2-3 sem); FK#288 (F 1-2 mo)"
+},
+{
+"key": "basilic",
+"name": "Basilic frais",
+"aliases": [
+"basilic"
+],
+"category": "legume",
+"fridge_days": 10,
+"freezer_days": 30,
+"counter_days": 5,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Supporte mal le froid: plutot a temperature ambiante.",
+"source": "FK#509 (P 5 j, R 10 j)"
+},
+{
+"key": "herbes_ligneuses",
+"name": "Herbes fraiches ligneuses",
+"aliases": [
+"thym",
+"romarin",
+"sauge",
+"laurier frais",
+"origan frais"
+],
+"category": "legume",
+"fridge_days": 14,
+"freezer_days": 30,
+"counter_days": 7,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#511, FK#513, FK#510 (P 1-2 sem, R 2-3 sem)"
+},
+{
+"key": "legumes_surgeles",
+"name": "Legumes surgeles",
+"aliases": [
+"legumes surgeles",
+"haricots verts surgeles",
+"epinards surgeles",
+"petits pois surgeles",
+"poelee surgelee",
+"frites surgelees"
+],
+"category": "surgele",
+"fridge_days": 3,
+"freezer_days": 300,
+"counter_days": null,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Decongeles: 3 j, ne pas recongeler (ANSES).",
+"source": "FK#331 (R 3-4 j, F 10-18 mo); FK#313; ANSES"
+},
+{
+"key": "confiture",
+"name": "Confiture",
+"aliases": [
+"confiture",
+"gelee",
+"marmelade",
+"confiture d'abricots"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: frigo 6 a 12 mo.",
+"source": "FK#347 (P 6-18 mo, RO 6-12 mo); ST#16390"
+},
+{
+"key": "compote_commerce",
+"name": "Compote du commerce",
+"aliases": [
+"compote",
+"compote de pommes",
+"gourde de compote",
+"puree de fruits"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 30,
+"counter_days": 365,
+"after_open_days": 7,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: frigo 7 a 10 j.",
+"source": "FK#370 (P 12-18 mo, RO 7-10 j); ST#16388"
+},
+{
+"key": "miel",
+"name": "Miel",
+"aliases": [
+"miel",
+"sirop d'agave",
+"sirop d'erable"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 730,
+"risk": "low",
+"due_type": 1,
+"notes": "Le miel cristallise sans se gater. Sirop d'erable ouvert: frigo.",
+"source": "FK#345 (P 2 ans); FK#534"
+},
+{
+"key": "pate_tartiner",
+"name": "Pate a tartiner ou beurre de cacahuete",
+"aliases": [
+"pate a tartiner",
+"nutella",
+"beurre de cacahuete",
+"puree d'amande",
+"puree de noisette",
+"beurre de cajou"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 60,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: placard 2 a 3 mo (frigo 3-4 mo pour les purees naturelles).",
+"source": "FK#387 (P 6-24 mo, PO 2-3 mo); FK#489"
+},
+{
+"key": "tahini",
+"name": "Tahini",
+"aliases": [
+"tahini",
+"puree de sesame",
+"tahin"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 21,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouvert: frigo 3 sem.",
+"source": "FK#416 (P 1 an, RO 3 sem)"
+},
+{
+"key": "moutarde",
+"name": "Moutarde",
+"aliases": [
+"moutarde",
+"moutarde de dijon",
+"moutarde a l'ancienne"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 365,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: frigo 12-18 mo (placard 1-2 mo).",
+"source": "ST#17765; FK#351 (P 1-2 ans, RO 1 an)"
+},
+{
+"key": "mayonnaise",
+"name": "Mayonnaise du commerce",
+"aliases": [
+"mayonnaise",
+"mayo",
+"sauce tartare",
+"sauce cocktail",
+"aioli du commerce"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 90,
+"after_open_days": 60,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ouverte: frigo 2 mo.",
+"source": "FK#350 (P 3-6 mo, RO 2 mo)"
+},
+{
+"key": "ketchup",
+"name": "Ketchup et sauces froides",
+"aliases": [
+"ketchup",
+"sauce barbecue",
+"sauce chili",
+"sauce burger",
+"sauce samourai",
+"sauce algerienne"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 120,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#348 (RO 6 mo), FK#340 (RO 4 mo)"
+},
+{
+"key": "sauce_soja",
+"name": "Sauce soja",
+"aliases": [
+"sauce soja",
+"tamari",
+"sauce teriyaki",
+"nuoc-mam",
+"sauce huitre",
+"sauce hoisin"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 1095,
+"after_open_days": 30,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: frigo 1 mo (FoodKeeper), qualite.",
+"source": "FK#360 (P 3 ans, RO 1 mo); FK#434, FK#435 (RO 3-6 mo)"
+},
+{
+"key": "vinaigrette_commerce",
+"name": "Vinaigrette du commerce",
+"aliases": [
+"vinaigrette",
+"sauce salade",
+"sauce cesar",
+"sauce au yaourt"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 28,
+"risk": "low",
+"due_type": 1,
+"notes": "Sauce cremeuse: 3-4 sem ouverte.",
+"source": "FK#625 (P 6 mo, RO 4 sem); FK#623"
+},
+{
+"key": "sauce_tomate_bocal",
+"name": "Sauce tomate en bocal ou brique",
+"aliases": [
+"sauce tomate",
+"coulis de tomate",
+"passata",
+"sauce bolognaise en bocal",
+"tomates concassees",
+"pulpe de tomate",
+"sauce pour pates"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 540,
+"after_open_days": 4,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ouverte: transvaser, frigo 4 j.",
+"source": "FK#359 (P 18 mo, RO 4 j)"
+},
+{
+"key": "concentre_tomate",
+"name": "Concentre de tomate",
+"aliases": [
+"concentre de tomate",
+"double concentre",
+"tube de concentre"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 60,
+"counter_days": 810,
+"after_open_days": 5,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#501 (P 27 mo, RO 5 j, F 2-3 mo)"
+},
+{
+"key": "pesto_bocal",
+"name": "Pesto en bocal",
+"aliases": [
+"pesto",
+"pesto rosso",
+"pesto alla genovese",
+"sauce au basilic"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 30,
+"counter_days": 365,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 1,
+"notes": "Pesto frais du rayon frais: DLC. Ouvert: 3 j (FoodKeeper), couvrir d'huile.",
+"source": "FK#354 (RO 3 j, F 1 mo)"
+},
+{
+"key": "cornichons",
+"name": "Cornichons et pickles",
+"aliases": [
+"cornichons",
+"capres",
+"oignons au vinaigre",
+"pickles",
+"choucroute en bocal",
+"piments au vinaigre"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 30,
+"risk": "low",
+"due_type": 1,
+"notes": "Garder immerges dans le vinaigre.",
+"source": "FK#353 (P 1 an, RO 1-3 mo)"
+},
+{
+"key": "olives",
+"name": "Olives",
+"aliases": [
+"olives",
+"olives vertes",
+"olives noires",
+"olives de kalamata"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 14,
+"risk": "low",
+"due_type": 1,
+"notes": "Olives du rayon traiteur: 2 sem.",
+"source": "FK#352 (P 12-18 mo, RO 2 sem); FK#187"
+},
+{
+"key": "poivrons_bocal",
+"name": "Legumes a l'huile du commerce",
+"aliases": [
+"poivrons grilles",
+"tomates sechees",
+"artichauts a l'huile",
+"legumes grilles en bocal"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 90,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#458 (R 4-6 mo), FK#397 (RO 3-6 mo)"
+},
+{
+"key": "tapenade",
+"name": "Tapenade",
+"aliases": [
+"tapenade",
+"anchoiade",
+"caviar de tomates"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 270,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 1,
+"notes": "Ouverte: frigo 7 j (analogue houmous commerce).",
+"source": "FK#502 (P 9 mo); after_open = FK#181 analogue"
+},
+{
+"key": "conserve_fruits_legumes",
+"name": "Conserve de legumes ou fruits",
+"aliases": [
+"mais en boite",
+"haricots en boite",
+"pois chiches en boite",
+"lentilles en bocal",
+"fruits au sirop",
+"ananas en boite",
+"choucroute en boite"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 30,
+"counter_days": 365,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "Legumes (faible acidite): 3-4 j ouverts; fruits, tomates (acides): 5-7 j.",
+"source": "FK#372 (RO 3-4 j), FK#373 (RO 5-7 j)"
+},
+{
+"key": "lait_concentre",
+"name": "Lait concentre",
+"aliases": [
+"lait concentre",
+"lait concentre sucre",
+"lait evapore"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 4,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#383 (P 12 mo, RO 4-5 j)"
+},
+{
+"key": "huile",
+"name": "Huile",
+"aliases": [
+"huile d'olive",
+"huile de tournesol",
+"huile de colza",
+"huile vegetale",
+"huile d'arachide",
+"huile de pepins de raisin"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 90,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouverte: 3 a 5 mo a l'abri de la lumiere.",
+"source": "FK#227 (P 6-12 mo, PO 3-5 mo); FK#520-523"
+},
+{
+"key": "huile_noix",
+"name": "Huile de noix ou de sesame",
+"aliases": [
+"huile de noix",
+"huile de sesame",
+"huile de noisette",
+"huile de lin"
+],
+"category": "epicerie",
+"fridge_days": 180,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 90,
+"risk": "low",
+"due_type": 1,
+"notes": "Rancit vite: frigo apres ouverture.",
+"source": "FK#228 (PO 3-8 mo, RO 6-8 mo)"
+},
+{
+"key": "vinaigre",
+"name": "Vinaigre",
+"aliases": [
+"vinaigre",
+"vinaigre de vin",
+"vinaigre de cidre",
+"vinaigre balsamique",
+"vinaigre de xeres"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 730,
+"risk": "low",
+"due_type": 1,
+"notes": "Se garde quasi indefiniment.",
+"source": "FK#361 (P 2 ans); FK#669"
+},
+{
+"key": "farine",
+"name": "Farine",
+"aliases": [
+"farine",
+"farine de ble",
+"farine t55",
+"farine t65",
+"maizena",
+"fecule"
+],
+"category": "epicerie",
+"fridge_days": 365,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "Farine complete ou de seigle: 3 mo placard, 6 mo frigo.",
+"source": "FK#222 (P 6-12 mo, PO 6-8 mo, R 1 an); FK#223; FK#220"
+},
+{
+"key": "pates_seches",
+"name": "Pates seches",
+"aliases": [
+"pates",
+"spaghetti",
+"penne",
+"coquillettes",
+"tagliatelles seches",
+"nouilles"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 365,
+"risk": "low",
+"due_type": 1,
+"notes": "Pates aux oeufs ouvertes: 1-2 mo.",
+"source": "FK#335 (P 2 ans, PO 1 an); FK#336"
+},
+{
+"key": "riz_cru",
+"name": "Riz cru",
+"aliases": [
+"riz",
+"riz basmati",
+"riz thai",
+"riz complet",
+"riz rond",
+"riz arborio"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 365,
+"risk": "low",
+"due_type": 1,
+"notes": "Riz complet: 1 an (plus gras).",
+"source": "FK#338, FK#339 (P 1-2 ans)"
+},
+{
+"key": "legumineuses_seches",
+"name": "Legumineuses seches",
+"aliases": [
+"lentilles",
+"lentilles corail",
+"pois chiches secs",
+"haricots secs",
+"pois casses",
+"flageolets secs"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 365,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#333, FK#334, FK#337 (P 1-2 ans)"
+},
+{
+"key": "cereales_crues",
+"name": "Cereales et graines crues",
+"aliases": [
+"quinoa",
+"boulgour",
+"semoule",
+"couscous",
+"polenta",
+"millet",
+"sarrasin",
+"orge"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "Quinoa: 2-3 ans; millet et sarrasin: 2 mo (FoodKeeper grain entier).",
+"source": "FK#425, FK#637, FK#579, FK#583"
+},
+{
+"key": "flocons",
+"name": "Flocons et cereales a cuire",
+"aliases": [
+"flocons d'avoine",
+"porridge",
+"muesli",
+"granola"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 180,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#375 (P 12 mo, PO 6-12 mo); FK#555"
+},
+{
+"key": "cereales_pdj",
+"name": "Cereales du petit dejeuner",
+"aliases": [
+"cereales",
+"corn flakes",
+"cereales chocolatees",
+"petales"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 60,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#374 (P 6-12 mo, PO 2-3 mo)"
+},
+{
+"key": "sucre",
+"name": "Sucre",
+"aliases": [
+"sucre",
+"sucre en poudre",
+"sucre roux",
+"cassonade",
+"sucre glace",
+"sucre de coco"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 540,
+"after_open_days": 540,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#239, FK#240 (PO 18-24 mo)"
+},
+{
+"key": "chocolat",
+"name": "Chocolat",
+"aliases": [
+"chocolat",
+"chocolat noir",
+"chocolat au lait",
+"chocolat patissier",
+"tablette de chocolat",
+"pepites de chocolat",
+"cacao en poudre"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 365,
+"risk": "low",
+"due_type": 1,
+"notes": "Au sec et au frais; le blanchiment n'est pas dangereux.",
+"source": "FK#216 (P 1-2 ans, PO 1 an); FK#217"
+},
+{
+"key": "epices",
+"name": "Epices et herbes seches",
+"aliases": [
+"epices",
+"cumin",
+"curcuma",
+"paprika",
+"poivre",
+"cannelle",
+"herbes de provence",
+"curry en poudre",
+"muscade"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 730,
+"after_open_days": 730,
+"risk": "low",
+"due_type": 1,
+"notes": "Perdent l'arome, pas dangereuses.",
+"source": "FK#238 (P 2-3 ans); FK#236 (herbes sechees 1-2 ans)"
+},
+{
+"key": "levure_chimique",
+"name": "Levure chimique et bicarbonate",
+"aliases": [
+"levure chimique",
+"bicarbonate",
+"poudre a lever"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 180,
+"after_open_days": 90,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#212 (P 6-18 mo, PO 3-6 mo); FK#213"
+},
+{
+"key": "noix",
+"name": "Fruits a coque",
+"aliases": [
+"noix",
+"amandes",
+"noisettes",
+"noix de cajou",
+"pistaches",
+"pignons",
+"noix de pecan",
+"cacahuetes"
+],
+"category": "epicerie",
+"fridge_days": 240,
+"freezer_days": 300,
+"counter_days": 30,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Rancissent: frigo ou congelateur pour les stocks. Noix: 2-4 sem au placard.",
+"source": "FK#438 (P 4 mo, R 8 mo, F 10 mo); FK#446; FK#653"
+},
+{
+"key": "graines",
+"name": "Graines",
+"aliases": [
+"graines de lin",
+"graines de chia",
+"graines de courge",
+"graines de tournesol",
+"sesame"
+],
+"category": "epicerie",
+"fridge_days": 365,
+"freezer_days": 365,
+"counter_days": 365,
+"after_open_days": null,
+"risk": "low",
+"due_type": 1,
+"notes": "Lin moulu: frigo.",
+"source": "FK#503, FK#504, FK#573"
+},
+{
+"key": "chips",
+"name": "Chips et biscuits aperitif",
+"aliases": [
+"chips",
+"crackers",
+"biscuits aperitif",
+"tuc",
+"bretzels",
+"pop-corn"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 60,
+"after_open_days": 7,
+"risk": "low",
+"due_type": 1,
+"notes": "Ouvert: 1-2 sem (chips), 1 mo (crackers).",
+"source": "FK#392 (P 2 mo, PO 1-2 sem); FK#377"
+},
+{
+"key": "biscuits",
+"name": "Biscuits secs",
+"aliases": [
+"biscuits",
+"petits beurre",
+"sables",
+"gateaux secs",
+"speculoos",
+"galettes bretonnes"
+],
+"category": "epicerie",
+"fridge_days": null,
+"freezer_days": 240,
+"counter_days": 120,
+"after_open_days": 30,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "FK#200 (P 4-6 mo, F 8-12 mo); FK#377 (PO 1 mo)"
+},
+{
+"key": "jus_frais",
+"name": "Jus de fruits du rayon frais",
+"aliases": [
+"jus d'orange frais",
+"jus presse",
+"smoothie",
+"pur jus refrigere"
+],
+"category": "boisson",
+"fridge_days": null,
+"freezer_days": 240,
+"counter_days": 0,
+"after_open_days": 7,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC. Ouvert: 7 a 10 j.",
+"source": "ST#16374 (ouvert 7-10 j, F 8-12 mo)"
+},
+{
+"key": "jus_ambiant",
+"name": "Jus de fruits en brique",
+"aliases": [
+"jus de fruits",
+"jus d'orange",
+"jus de pomme",
+"nectar",
+"jus multifruits"
+],
+"category": "boisson",
+"fridge_days": null,
+"freezer_days": 240,
+"counter_days": 365,
+"after_open_days": 7,
+"risk": "low",
+"due_type": 1,
+"notes": "Ferme: placard. Ouvert: frigo 7 a 10 j.",
+"source": "ST#16372 (ouvert 7-10 j); FK#405 (RO 8-12 j)"
+},
+{
+"key": "vin_ouvert",
+"name": "Vin ouvert",
+"aliases": [
+"vin rouge",
+"vin blanc",
+"vin rose",
+"bouteille de vin ouverte"
+],
+"category": "boisson",
+"fridge_days": 3,
+"freezer_days": 120,
+"counter_days": null,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "Rebouche; congele en glacons pour la cuisine.",
+"source": "ST#18697 (ouvert 3-5 j, F 4-6 mo)"
+},
+{
+"key": "petillant_ouvert",
+"name": "Champagne ou cremant ouvert",
+"aliases": [
+"champagne",
+"cremant",
+"prosecco",
+"cidre"
+],
+"category": "boisson",
+"fridge_days": 3,
+"freezer_days": null,
+"counter_days": null,
+"after_open_days": 3,
+"risk": "low",
+"due_type": 1,
+"notes": "",
+"source": "ST#16735 (ouvert 3-5 j)"
+},
+{
+"key": "eau_coco",
+"name": "Eau de coco",
+"aliases": [
+"eau de coco"
+],
+"category": "boisson",
+"fridge_days": null,
+"freezer_days": null,
+"counter_days": 365,
+"after_open_days": 1,
+"risk": "medium",
+"due_type": 1,
+"notes": "",
+"source": "FK#660 (P 12 mo, RO 1-2 j)"
+},
+{
+"key": "boisson_lactee",
+"name": "Boisson lactee ou cafe latte en bouteille",
+"aliases": [
+"cafe latte",
+"boisson lactee",
+"lait chocolate",
+"milkshake"
+],
+"category": "boisson",
+"fridge_days": null,
+"freezer_days": 90,
+"counter_days": 0,
+"after_open_days": 3,
+"risk": "medium",
+"due_type": 2,
+"notes": "Ferme: DLC. Ouvert: 3 j (analogue lait frais).",
+"source": "FK#27 (F 3 mo); after_open = HOUSE"
+}
+]
+}

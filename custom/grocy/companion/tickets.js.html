@@ -1,0 +1,244 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "userobjects" || GC.entityName() !== "tickets" || GC.subview()) return;
+	var ENTITY = "userentity-tickets";
+	var TESSERACT = "https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/7.0.0/tesseract.min.js";
+	var METHOD = { alias: GL.t("tk.alias"), fuzzy: GL.t("tk.fuzzy"), needs_confirmation: GL.t("tk.needs"), manual: GL.t("tk.manual") };
+	var productsP = null;
+
+	var ui = GC.page({
+		eyebrow: GL.t("sec.cooking"),
+		title: GL.t("entity.tickets"),
+		actions: [{ label: GL.t("tk.scanAction"), icon: "fa-solid fa-camera", primary: true, onClick: function () { ui.show("scan"); } }],
+		tabs: [{ key: "scan", label: GL.t("tk.tabScan") }, { key: "hist", label: GL.t("tk.tabHist") }, { key: "trend", label: GL.t("tk.tabTrend") }],
+		onTab: function (key, $p) {
+			if (key === "scan") renderScan($p);
+			else if (key === "hist") GC.ticketsHistory($p);
+			else GC.ticketsTrends($p);
+		}
+	});
+
+	function products() {
+		if (!productsP) productsP = GC.api("GET", "objects/products?query[]=active=1&order=name:asc");
+		return productsP;
+	}
+
+	function renderScan($p) {
+		var $drop = $('<label class="gc-drop"><input type="file" accept="image/*" multiple hidden><i class="fa-solid fa-camera"></i><b></b><span></span></label>').appendTo($p);
+		$drop.find("b").text(GL.t("tk.drop")).end().find("span").text(GL.t("tk.dropSub"));
+		var $photos = $('<div class="gc-inline gc-photos" hidden><span class="gc-sub"></span><span class="gc-grow"></span><button type="button" class="btn btn-sm btn-outline-secondary gc-photo-add"><i class="fa-solid fa-plus"></i><span></span></button><button type="button" class="btn btn-sm btn-link gc-photo-reset"></button></div>').appendTo($p);
+		$photos.find(".gc-photo-add span").text(GL.t("tk.addPhoto")).end().find(".gc-photo-reset").text(GL.t("tk.restart"));
+		var $prog = $('<div class="gc-progress" hidden><div class="gc-progress-bar"></div><span></span></div>').appendTo($p);
+		var $paste = $('<details class="gc-card gc-paste"><summary></summary><textarea class="form-control" rows="8"></textarea><button type="button" class="btn btn-sm btn-primary"></button></details>').appendTo($p);
+		$paste.find("summary").text(GL.t("tk.paste")).end().find("textarea").attr("placeholder", GL.t("tk.pastePh")).end().find("button").text(GL.t("tk.analyzeText"));
+		var $out = $('<div class="gc-result"></div>').appendTo($p);
+		var parts = [];
+		function progress(label, v) {
+			$prog.prop("hidden", false).find("span").text(label + (v != null ? " " + Math.round(v * 100) + " %" : ""));
+			$prog.find(".gc-progress-bar").css("width", Math.round((v || 0) * 100) + "%");
+		}
+		function showParts() {
+			$photos.prop("hidden", !parts.length).find(".gc-sub").text(GL.t("tk.photos", { n: parts.length }));
+			$drop.prop("hidden", !!parts.length);
+		}
+		function onFiles(list) {
+			var files = Array.prototype.filter.call(list || [], function (f) { return /^image\//.test(f.type) || !f.type; });
+			if (!files.length) return;
+			$out.empty();
+			var base = parts.length, n = base + files.length;
+			files.reduce(function (chain, file, k) {
+				return chain.then(function () {
+					var tag = n > 1 ? GL.t("tk.photoOf", { i: base + k + 1, n: n }) + " · " : "";
+					progress(tag + GL.t("tk.prep"), 0);
+					return ocr(file, function (label, v) { progress(tag + label, v); }).then(function (text) { parts.push(text.split(/\r?\n/)); });
+				});
+			}, Promise.resolve()).then(function () {
+				progress(GL.t("tk.readDone"), 1);
+				showParts();
+				analyse(parts, $out);
+			}, function (e) { $prog.prop("hidden", true); showParts(); GC.toast("error", e.message || GL.t("tk.readFail")); });
+		}
+		var $input = $drop.find("input").on("change", function () { onFiles(this.files); this.value = ""; });
+		$photos.find(".gc-photo-add").on("click", function () { $input.trigger("click"); });
+		$photos.find(".gc-photo-reset").on("click", function () { parts = []; $out.empty(); $prog.prop("hidden", true); showParts(); });
+		$drop.on("dragover", function (e) { e.preventDefault(); $drop.attr("data-over", ""); }).on("dragleave drop", function () { $drop.removeAttr("data-over"); });
+		$drop.on("drop", function (e) { e.preventDefault(); onFiles(e.originalEvent.dataTransfer.files); });
+		$paste.find("button").on("click", function () {
+			var t = $paste.find("textarea").val();
+			if (!$.trim(t)) return;
+			$paste.prop("open", false);
+			analyse([t.split(/\r?\n/)], $out);
+		});
+	}
+
+	function loadTesseract() {
+		if (window.Tesseract) return Promise.resolve(window.Tesseract);
+		return new Promise(function (ok, ko) {
+			var s = document.createElement("script");
+			s.src = TESSERACT;
+			s.onload = function () { ok(window.Tesseract); };
+			s.onerror = function () { ko(new Error(GL.t("tk.tessFail"))); };
+			document.head.appendChild(s);
+		});
+	}
+
+	function prepare(file) {
+		return createImageBitmap(file).then(function (bmp) {
+			var scale = bmp.width < 1400 ? 1400 / bmp.width : bmp.width > 2600 ? 2600 / bmp.width : 1;
+			var c = document.createElement("canvas");
+			c.width = Math.round(bmp.width * scale);
+			c.height = Math.round(bmp.height * scale);
+			var ctx = c.getContext("2d");
+			ctx.filter = "grayscale(1) contrast(1.25)";
+			ctx.drawImage(bmp, 0, 0, c.width, c.height);
+			return c;
+		});
+	}
+
+	function ocr(file, progress) {
+		return Promise.all([loadTesseract(), prepare(file)]).then(function (r) {
+			return r[0].createWorker("fra", 1, {
+				logger: function (m) { progress(GL.t(m.status === "recognizing text" ? "tk.reading" : "tk.engine"), m.progress); }
+			}).then(function (w) {
+				return w.setParameters({ tessedit_pageseg_mode: "6", preserve_interword_spaces: "1" })
+					.then(function () { return w.recognize(r[1]); })
+					.then(function (res) { w.terminate(); return res.data.text; });
+			});
+		});
+	}
+
+	function analyse(parts, $out) {
+		parts = parts.map(function (p) { return p.map(function (s) { return s.trim(); }).filter(Boolean); });
+		var lines = GC.receipt.stitchParts(parts);
+		var local = GC.receipt.parseReceipt(lines.join("\n"));
+		$out.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("tk.analyzing")));
+		Promise.all([
+			products(),
+			GC.hook("receipt-parse", { lines: lines, parts: parts.length > 1 ? parts : undefined, store_hint: local.store, date_hint: local.date }, 45000).catch(function (e) { return { _err: e }; })
+		]).then(function (r) {
+			var prods = r[0], srv = r[1];
+			var model = { raw: lines.join("\n"), parser: "regex-v1-web", note: null };
+			if (srv && !srv._err && srv.receipt && Array.isArray(srv.receipt.lines)) {
+				model.receipt = srv.receipt;
+				model.matches = srv.matches || [];
+				model.warnings = srv.warnings || [];
+				model.parser = srv.receipt.parser || "n8n";
+			} else {
+				model.receipt = local;
+				model.warnings = local.warnings;
+				model.matches = local.lines.map(function (l, i) {
+					var m = GC.receipt.matchLabel(l.label, prods);
+					return { line_index: i, product_id: m.product_id, score: m.score, method: m.method, candidates: m.candidates };
+				});
+				model.note = srv && srv._err ? GL.t("tk.localErr", { msg: srv._err.message }) : GL.t("tk.local");
+			}
+			renderResult($out, model, prods);
+		});
+	}
+
+	function renderResult($out, model, prods) {
+		var rc = model.receipt;
+		var total = rc.total != null ? rc.total : (rc.totals || {}).total;
+		$out.empty();
+		var $card = $('<section class="gc-card"></section>').appendTo($out);
+		var $hd = $('<div class="gc-form-row gc-receipt-hd"></div>').appendTo($card);
+		var $store = $('<input class="form-control" name="store">').val(rc.store || "");
+		var $date = $('<input class="form-control" type="date" name="date">').val((rc.date || GC.today()).slice(0, 10));
+		var $total = $('<input class="form-control gc-num" type="number" step="0.01" name="total">').val(total != null ? total : "");
+		$("<label></label>").text(GL.t("store")).append($store).appendTo($hd);
+		$("<label></label>").text(GL.t("date")).append($date).appendTo($hd);
+		$("<label></label>").text(GL.t("total")).append($total).appendTo($hd);
+		var $check = $('<div class="gc-sumcheck"></div>').appendTo($card);
+		if (model.note) $('<div class="gc-sub"></div>').text(model.note).appendTo($card);
+		var $tb = $('<table class="table gc-table gc-receipt"><thead><tr><th></th><th class="gc-num"></th><th class="gc-num"></th><th class="gc-num"></th><th></th><th></th></tr></thead><tbody></tbody></table>');
+		["tk.label", "tk.qty", "tk.unitPrice", "total", "product", "tk.ignore"].forEach(function (k, n) { $tb.find("th").eq(n).text(GL.t(k)); });
+		$('<div class="gc-scroll"></div>').append($tb).appendTo($card);
+		rc.lines.forEach(function (l, i) {
+			var m = model.matches.filter(function (x) { return x.line_index === i; })[0] || {};
+			var method = l.is_discount ? "discount" : m.product_id ? (m.method || "fuzzy") : "needs_confirmation";
+			var $tr = $("<tr></tr>").attr({ "data-method": method, "data-i": i }).appendTo($tb.find("tbody"));
+			$('<td><input class="form-control" name="label"></td>').appendTo($tr).find("input").val(l.label);
+			$('<td class="gc-num"><input class="form-control gc-num" type="number" step="0.001" name="qty"></td>').appendTo($tr).find("input").val(l.qty);
+			$('<td class="gc-num"><input class="form-control gc-num" type="number" step="0.01" name="unit_price"></td>').appendTo($tr).find("input").val(l.unit_price);
+			var $t = $('<td class="gc-num"><input class="form-control gc-num" type="number" step="0.01" name="total"></td>').appendTo($tr).find("input").val(l.total);
+			if ((l.flags || []).length) $t.attr({ "data-flag": "", title: l.flags.join(", ") });
+			var $sel = $('<select class="form-control" name="product"><option value=""></option></select>');
+			$sel.find("option").text(GL.t("tk.noProduct"));
+			var cands = (m.candidates || []).filter(function (c) { return c.product_id; });
+			if (cands.length) {
+				var $g = $('<optgroup></optgroup>').attr("label", GL.t("tk.suggestions")).appendTo($sel);
+				cands.forEach(function (c) { $g.append($("<option></option>").val(c.product_id).text((c.name || "#" + c.product_id) + " (" + Math.round(c.score * 100) + " %)")); });
+			}
+			var $all = $('<optgroup></optgroup>').attr("label", GL.t("tk.allProducts")).appendTo($sel);
+			prods.forEach(function (p) { $all.append($("<option></option>").val(p.id).text(p.name)); });
+			$sel.val(m.product_id ? String(m.product_id) : "").prop("disabled", !!l.is_discount);
+			$sel.on("change", function () { $tr.attr("data-method", this.value ? "manual" : "needs_confirmation"); });
+			$("<td></td>").append($sel).append($('<span class="gc-method"></span>').text(l.is_discount ? GL.t("tk.discountCap") : METHOD[method] || "")).appendTo($tr);
+			$('<td class="gc-center"><input type="checkbox" name="ignore"></td>').appendTo($tr).find("input").attr("aria-label", GL.t("tk.ignoreLine")).on("change", function () { $tr.toggleClass("gc-ignored", this.checked); sum(); });
+		});
+		function rows() {
+			return $tb.find("tbody tr").not(".gc-ignored").map(function () {
+				var $tr = $(this), l = rc.lines[+$tr.data("i")];
+				var pid = $tr.find("[name=product]").val();
+				return { label: $tr.find("[name=label]").val(), product_id: pid ? +pid : null, qty: GC.num($tr.find("[name=qty]").val()) || 1, unit: l.unit || "piece", unit_price: GC.num($tr.find("[name=unit_price]").val()), total: GC.num($tr.find("[name=total]").val()), is_discount: !!l.is_discount, vat_code: l.vat_code || null, matched_by: pid ? ($tr.attr("data-method") === "manual" ? "manual" : $tr.attr("data-method")) : null };
+			}).get();
+		}
+		function sum() {
+			var s = Math.round(rows().reduce(function (a, l) { return a + l.total; }, 0) * 100) / 100, t = GC.num($total.val());
+			var ok = Math.abs(s - t) < 0.011;
+			$check.attr("data-ok", ok ? "1" : "0").text(GL.t("tk.sum", { a: GC.money(s), b: GC.money(t) }) + " · " + GL.t(ok ? "tk.ok" : "tk.check"));
+		}
+		$card.on("input change", "input", sum);
+		sum();
+		var $ft = $('<div class="gc-inline gc-receipt-ft"></div>').appendTo($card);
+		var $apply = $('<label class="gc-check"><input type="checkbox" checked> </label>').appendTo($ft);
+		$apply.append(document.createTextNode(GL.t("tk.apply")));
+		$('<span class="gc-grow"></span>').appendTo($ft);
+		$('<button type="button" class="btn btn-primary gc-save-receipt"><i class="fa-solid fa-check"></i><span></span></button>').appendTo($ft).find("span").text(GL.t("save")).end().on("click", function () {
+			var $b = $(this).prop("disabled", true);
+			var receipt = { store: $.trim($store.val()) || null, date: $date.val(), total: GC.num($total.val()), currency: "EUR", lines: rows() };
+			commit(receipt, $apply.find("input").prop("checked"), model, prods).then(function () {
+				GC.ticketsClearCache();
+				ui.refresh("hist");
+				ui.refresh("trend");
+				$out.empty().append($('<div class="gc-note gc-note-ok"><i class="fa-solid fa-check"></i><span></span></div>').find("span").text(GL.t("tk.saved")).end());
+				GC.ticketsRestockOffer(receipt, $out, products);
+			}, function (e) { $b.prop("disabled", false); GC.toast("error", e.message); });
+		});
+	}
+
+	function commit(receipt, applyPrices, model, prods) {
+		return GC.hook("receipt-commit", { receipt: receipt, apply_prices: applyPrices, raw_ocr: model.raw, parser: model.parser }, 45000).then(function (res) {
+			GC.toast("success", GL.t("tk.committed", { id: res.ticket_id, a: res.applied || 0, u: res.unmatched || 0 }));
+		}, function (err) {
+			if (err.code !== "not_configured" && err.code !== "missing") throw err;
+			return direct(receipt, model, prods);
+		});
+	}
+
+	function direct(receipt, model, prods) {
+		return GC.api("POST", "objects/userobjects", { userentity_id: GC.IDS.entityTickets }).then(function (r) {
+			var id = r.created_object_id;
+			return GC.api("PUT", "userfields/" + ENTITY + "/" + id, {
+				store: receipt.store || "", purchased_at: receipt.date, total: String(receipt.total), currency: "EUR", status: "confirmed",
+				lines_json: JSON.stringify(receipt.lines), raw_ocr: model.raw, parser: model.parser
+			}).then(function () { return learn(receipt.lines, prods); }).then(function () {
+				GC.toast("success", GL.t("tk.direct", { id: id }));
+			});
+		});
+	}
+
+	function learn(lines, prods) {
+		var byId = GC.byId(prods), add = {};
+		lines.forEach(function (l) {
+			if (!l.product_id || l.matched_by === "alias" || !byId[l.product_id]) return;
+			(add[l.product_id] = add[l.product_id] || []).push(GC.receipt.normalizeLabel(l.label).key);
+		});
+		return Promise.all(Object.keys(add).map(function (id) {
+			var cur = ((byId[id].userfields || {}).receipt_aliases || "").split("\n").map($.trim).filter(Boolean);
+			add[id].forEach(function (k) { if (k && cur.indexOf(k) === -1) cur.push(k); });
+			return GC.api("PUT", "userfields/products/" + id, { receipt_aliases: cur.join("\n") });
+		})).then(function () { productsP = null; });
+	}
+})();
+</script>

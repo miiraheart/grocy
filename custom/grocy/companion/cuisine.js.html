@@ -1,0 +1,233 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "userobjects" || GC.entityName() !== "cuisine") return;
+	var ID = GC.IDS;
+	var polling = {};
+	var STATUS = { pending: GL.t("status.pending"), done: GL.t("status.done"), manual: GL.t("status.manual"), failed: GL.t("status.failed"), none: GL.t("status.none") };
+	var STORAGE = [ID.locFridge, ID.locFreezer, ID.locCounter];
+
+	var ui = GC.page({
+		eyebrow: GL.t("sec.cooking"),
+		title: GL.t("entity.cuisine"),
+		actions: [
+			{ label: GL.t("cu.addDish"), icon: "fa-solid fa-plus", primary: true, onClick: function () { GC.cuisineAddDish({ storage: STORAGE, refresh: refresh, putEntry: putEntry, markManual: markManual, estimate: estimate }); } },
+			{ label: GL.t("cu.export"), icon: "fa-solid fa-file-export", onClick: function () { ui.show("export"); } }
+		],
+		tabs: [{ key: "restes", label: GL.t("cu.tabRestes") }, { key: "favoris", label: GL.t("cu.tabFavoris") }, { key: "export", label: GL.t("cu.tabExport") }],
+		onTab: function (key, $p) {
+			if (key === "restes") renderRestes($p);
+			else if (key === "favoris") GC.favoris($p);
+			else GC.exportTab($p);
+		}
+	});
+
+	function refresh() { ui.refresh("restes"); ui.refresh("export"); }
+	function uf(x) { return (x && x.userfields) || {}; }
+
+	function load() {
+		return Promise.all([
+			GC.api("GET", "objects/products"),
+			GC.api("GET", "objects/stock"),
+			GC.api("GET", "objects/locations"),
+			GC.api("GET", "objects/stock_log?query[]=transaction_type~transfer&order=id:desc&limit=400").catch(function () { return []; })
+		]).then(function (r) {
+			var dishes = (r[0] || []).filter(function (p) { return +p.product_group_id === ID.groupDishes; });
+			var products = GC.byId(dishes);
+			var locs = GC.byId(r[2]);
+			var log = r[3] || [];
+			var rows = (r[1] || []).filter(function (e) { return products[e.product_id]; }).map(function (e) {
+				var move = log.filter(function (l) { return l.stock_id === e.stock_id && l.transaction_type === "transfer_to" && String(l.undone) !== "1"; })[0];
+				var from = move ? log.filter(function (l) { return l.transaction_id === move.transaction_id && l.transaction_type === "transfer_from"; })[0] : null;
+				var moved = null;
+				if (move && +move.location_id === ID.locFreezer) moved = GL.t("cu.frozenOn", { d: GC.fmtDate(move.row_created_timestamp) });
+				else if (from && +from.location_id === ID.locFreezer) moved = GL.t("cu.thawedOn", { d: GC.fmtDate(move.row_created_timestamp) });
+				return { e: e, p: products[e.product_id], loc: locs[e.location_id], left: GC.daysLeft(e.best_before_date), frozen: +e.location_id === ID.locFreezer, moved: moved };
+			});
+			rows.sort(function (a, b) { return a.left - b.left; });
+			var waiting = (r[0] || []).filter(function (p) { return String(p.active) === "1" && ["pending", "failed"].indexOf(uf(p).shelf_status) !== -1; });
+			return { products: dishes, waiting: waiting, rows: rows };
+		});
+	}
+
+	function renderRestes($p) {
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i> </div>').find(".gc-loading").append(document.createTextNode(GL.t("loading")));
+		load().then(function (d) {
+			$p.empty();
+			var cold = d.rows.filter(function (r) { return !r.frozen; });
+			var frozen = d.rows.filter(function (r) { return r.frozen; });
+			var now = cold.filter(function (r) { return r.left <= 1; });
+			var pending = d.waiting.filter(function (p) { return uf(p).shelf_status === "pending"; });
+			var sum = function (rows) { return rows.reduce(function (s, r) { return s + GC.num(r.e.amount); }, 0); };
+			$p.append(GC.tiles([
+				{ kind: "fridge", label: GL.t("cu.fridge"), value: cold.length, sub: GL.t("cu.portions", { n: sum(cold) }) },
+				{ kind: "freezer", label: GL.t("cu.freezer"), value: frozen.length, sub: GL.t("cu.portions", { n: sum(frozen) }) },
+				{ kind: "duesoon", label: GL.t("cu.eatToday"), value: now.length, sub: GL.t("cu.todayTomorrow") },
+				{ kind: "pending", label: GL.t("cu.pending"), value: pending.length, sub: GL.t("cu.estimates") }
+			]));
+			if (d.waiting.length) $p.append(waitingCard(d.waiting));
+			if (!d.rows.length) {
+				$('<div class="gc-empty"><i class="fa-solid fa-bowl-food"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("cu.empty")).end().find("span").text(GL.t("cu.emptySub"));
+			} else {
+				var $list = $('<div class="gc-list"></div>').appendTo($p);
+				d.rows.forEach(function (r) { $list.append(row(r)); });
+			}
+			pending.forEach(poll);
+			if (GC.ceSoir) GC.ceSoir($p);
+		}, function (err) {
+			$p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(GL.t("cu.loadFail", { msg: err.message }));
+		});
+	}
+
+	function row(r) {
+		var e = r.e, p = r.p, u = uf(p);
+		var manual = uf(e).date_manual === "1";
+		var status = manual ? "manual" : (u.shelf_status || "none");
+		var old = GC.daysLeft(e.purchased_date) <= -2 && !r.frozen;
+		var $r = $('<div class="gc-row"></div>').attr("data-stock-id", e.stock_id);
+		var $m = $('<div class="gc-row-main"></div>').appendTo($r);
+		var $t = $('<div class="gc-row-title"></div>').appendTo($m);
+		$("<b></b>").text(p.name).appendTo($t);
+		$('<span class="gc-pill"></span>').text(r.loc ? r.loc.name : "?").appendTo($t);
+		$('<span class="gc-status"></span>').attr("data-s", status).text(manual ? GL.t("cu.manualDate") : STATUS[status] || status).appendTo($t);
+		if (old) $('<span class="gc-status" data-s="warn"></span>').text(GL.t("cu.histamine")).attr("title", GL.t("cu.over24")).appendTo($t);
+		var meta = [GL.t("cu.portions", { n: GC.num(e.amount) }), GL.t("cu.cookedOn", { d: GC.fmtDate(e.purchased_date) })];
+		if (r.moved) meta.push(r.moved);
+		if (String(e.open) === "1") meta.push(GL.t("cu.opened"));
+		var $meta = $('<div class="gc-row-meta"></div>').text(meta.join(" · ") + " · ").appendTo($m);
+		$('<span class="gc-left"></span>').attr("data-tone", GC.leftTone(r.left)).text(GC.leftLabel(r.left) + " (" + GC.fmtDate(e.best_before_date) + ")").appendTo($meta);
+		var note = u.shelf_notes && GL.inLang(u.shelf_notes) ? u.shelf_notes : "";
+		$('<div class="gc-row-note"></div>').text((note ? note + " " : "") + (note.indexOf("istamine") !== -1 ? "" : GC.HISTAMINE)).appendTo($m);
+		if (u.ingredients) $m.attr("title", GL.t("cu.ingredientsTip", { x: u.ingredients }));
+		var $a = $('<div class="gc-row-act"></div>').appendTo($r);
+		btn($a, "fa-solid fa-utensils", GL.t("cu.eat"), function () { eat(r); });
+		btn($a, r.frozen ? "fa-solid fa-temperature-arrow-up" : "fa-solid fa-snowflake", GL.t(r.frozen ? "cu.thaw" : "cu.freeze"), function () { move(r); });
+		btn($a, "fa-regular fa-calendar", GL.t("date"), function () { editDate(r, $r); });
+		btn($a, "fa-solid fa-rotate", GL.t("cu.reestimate"), function ($b) {
+			GC.estimateSheet(p.name, function (opts) { $b.prop("disabled", true); estimate(p, e, true, opts); });
+		}).prop("disabled", !GC.cfg.configured);
+		btn($a, "fa-solid fa-trash", GL.t("cu.discard"), function ($b) { GC.confirmClick($b, GL.t("confirm"), function () { discard(r); }); }).addClass("gc-danger");
+		return $r;
+	}
+
+	function btn($a, icon, label, fn) {
+		var $b = $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("data-act", label);
+		$b.append($("<i></i>").attr("class", icon)).append($("<span></span>").text(label));
+		$b.on("click", function () { fn($b); });
+		$a.append($b);
+		return $b;
+	}
+
+	function fail(err) { GC.toast("error", err.message); refresh(); }
+
+	function eat(r) {
+		var amount = Math.min(1, GC.num(r.e.amount));
+		GC.api("POST", "stock/products/" + r.e.product_id + "/consume", { amount: amount, stock_entry_id: r.e.stock_id, location_id: +r.e.location_id, spoiled: false })
+			.then(function () { GC.toast("success", GL.t("cu.eaten", { n: amount, name: r.p.name })); refresh(); }, fail);
+	}
+
+	function discard(r) {
+		GC.api("POST", "stock/products/" + r.e.product_id + "/consume", { amount: GC.num(r.e.amount), stock_entry_id: r.e.stock_id, location_id: +r.e.location_id, spoiled: true })
+			.then(function () { GC.toast("info", GL.t("cu.discarded", { name: r.p.name })); refresh(); }, fail);
+	}
+
+	function move(r) {
+		var to = r.frozen ? ID.locFridge : ID.locFreezer;
+		GC.api("POST", "stock/products/" + r.e.product_id + "/transfer", { amount: GC.num(r.e.amount), location_id_from: +r.e.location_id, location_id_to: to, stock_entry_id: r.e.stock_id })
+			.then(function () { GC.toast("success", GL.t(r.frozen ? "cu.movedOut" : "cu.frozen", { name: r.p.name })); refresh(); }, fail);
+	}
+
+	function putEntry(e, changes) {
+		var body = { amount: GC.num(e.amount), best_before_date: e.best_before_date, purchased_date: e.purchased_date, location_id: +e.location_id, shopping_location_id: e.shopping_location_id, price: e.price, open: String(e.open) === "1", note: e.note };
+		return GC.api("PUT", "stock/entry/" + e.id, $.extend(body, changes || {}));
+	}
+
+	function markManual(e, logRows) {
+		var cur = uf(e).date_manual;
+		if (cur === "1") return Promise.resolve();
+		var tx = (logRows || []).filter(function (l) { return l.transaction_type === "stock-edit-new"; })[0];
+		var key = cur == null && tx ? tx.transaction_id : e.stock_id;
+		return GC.api("PUT", "userfields/stock/" + key, { date_manual: "1" });
+	}
+
+	function editDate(r, $r) {
+		var $box = $r.find(".gc-date-edit");
+		if ($box.length) { $box.remove(); return; }
+		$box = $('<div class="gc-date-edit"><input type="date" class="form-control"><button type="button" class="btn btn-sm btn-primary"></button></div>');
+		$box.find("button").text(GL.t("save"));
+		$box.find("input").val(r.e.best_before_date);
+		$box.find("button").on("click", function () {
+			var d = $box.find("input").val();
+			if (!d) return;
+			putEntry(r.e, { best_before_date: d })
+				.then(function (rows) { return markManual(r.e, rows); })
+				.then(function () { GC.toast("success", GL.t("cu.dateSaved", { name: r.p.name, d: GC.fmtDate(d) })); refresh(); }, fail);
+		});
+		$r.find(".gc-row-main").append($box);
+		$box.find("input").trigger("focus");
+	}
+
+	function waitingCard(list) {
+		var failed = list.filter(function (p) { return uf(p).shelf_status === "failed"; });
+		var $s = $('<section class="gc-card gc-waiting"></section>');
+		var $h = $('<div class="gc-card-hd"></div>').appendTo($s);
+		$("<h3></h3>").text(GL.t("cu.waitingTitle")).appendTo($h);
+		$('<span class="gc-sub"></span>').text(GL.t("cu.waitingSub", { a: failed.length, b: list.length - failed.length })).appendTo($h);
+		var $ul = $('<div class="gc-list"></div>').appendTo($s);
+		list.sort(function (a, b) { return (uf(a).shelf_status === "failed" ? 0 : 1) - (uf(b).shelf_status === "failed" ? 0 : 1); }).forEach(function (p) {
+			var s = uf(p).shelf_status;
+			var $r = $('<div class="gc-row gc-row-compact"></div>').attr("data-product-id", p.id).appendTo($ul);
+			var $t = $('<div class="gc-row-title"></div>').appendTo($('<div class="gc-row-main"></div>').appendTo($r));
+			$("<a></a>").attr("href", GC.url("/product/" + p.id)).text(p.name).appendTo($t);
+			$('<span class="gc-status"></span>').attr("data-s", s).text(STATUS[s]).attr("title", GL.t(s === "failed" ? "cu.failedTip" : "cu.pendingTip")).appendTo($t);
+			var $a = $('<div class="gc-row-act"></div>').appendTo($r);
+			btn($a, "fa-solid fa-rotate-right", GL.t("cu.retry"), function ($b) {
+				GC.estimateSheet(p.name, function (opts) { $b.prop("disabled", true); retry(p, opts); });
+			}).prop("disabled", !GC.cfg.configured);
+		});
+		return $s;
+	}
+
+	function retry(p, opts) {
+		GC.hook("shelf-life", GC.estimateBody({ product_id: +p.id, mode: "sync", force: true, stock_id: "all" }, opts), GC.estimateTimeout(opts)).then(function (res) {
+			if (res && res.status === "done") GC.toast("success", p.name + " : " + GC.estimateText(res), GL.t("est.ready"));
+			else GC.toast("warning", GL.t("est.later"), p.name);
+		}, function (err) {
+			GC.toast("warning", err.code === "network" ? GL.t("est.slow") : err.message, p.name);
+		}).then(function () { GC.clearNavCounts(); refresh(); });
+	}
+
+	function estimate(p, e, force, opts) {
+		var u = uf(p);
+		return GC.hook("shelf-life", GC.estimateBody({
+			product_id: +p.id, name: p.name, ingredients: u.ingredients || "", kind: "dish",
+			storage: GC.storageFor(e ? e.location_id : p.location_id), opened: false, stock_id: e ? e.stock_id : undefined,
+			cooked_on: (e && e.purchased_date) || u.cooked_on || GC.today(), mode: "sync", force: !!force
+		}, opts), GC.estimateTimeout(opts)).then(function (res) {
+			if (res && res.status === "done") GC.toast("success", p.name + " : " + GC.estimateText(res), GL.t("est.ready"));
+			else if (res && res.status === "pending") { GC.toast("info", GL.t("est.poll"), p.name); poll(p); }
+			else GC.toast("warning", GL.t("est.later"), p.name);
+			refresh();
+		}, function (err) {
+			if (err.code === "network") { GC.toast("info", GL.t("est.slow"), p.name); poll(p); }
+			else GC.toast("warning", GL.t("est.keepDefault", { msg: err.message }), p.name);
+			refresh();
+		});
+	}
+
+	function poll(p) {
+		if (polling[p.id] || !GC.cfg.configured) return;
+		var t0 = Date.now();
+		polling[p.id] = setInterval(function () {
+			GC.api("GET", "userfields/products/" + p.id).then(function (v) {
+				var s = v && v.shelf_status;
+				if (s !== "done" && s !== "failed" && Date.now() - t0 < 180000) return;
+				clearInterval(polling[p.id]);
+				delete polling[p.id];
+				if (s === "done") GC.toast("success", p.name + " : " + GC.estimateText({ fridge_days: v.shelf_fridge_days, freezer_days: v.shelf_freezer_days, counter_days: v.shelf_counter_days }), GL.t("est.ready"));
+				else if (s === "failed") GC.toast("warning", GL.t("est.failed"), p.name);
+				refresh();
+			});
+		}, 10000);
+	}
+})();
+</script>

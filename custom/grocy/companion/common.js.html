@@ -1,0 +1,274 @@
+<?php
+$gcCfgFile = GROCY_DATAPATH . '/companion.json';
+$gcCfg = is_readable($gcCfgFile) ? json_decode((string) file_get_contents($gcCfgFile), true) : null;
+$gcOk = is_array($gcCfg) && !empty($gcCfg['webhook_base']) && !empty($gcCfg['secret']);
+$gcPublic = array(
+	'configured' => $gcOk,
+	'base' => $gcOk ? rtrim($gcCfg['webhook_base'], '/') : '',
+	'secret' => $gcOk ? $gcCfg['secret'] : '',
+	'suffix' => $gcOk && !empty($gcCfg['hook_suffix']) ? (string) $gcCfg['hook_suffix'] : ''
+);
+?>
+<script>
+window.GC = (function () {
+	var cfg = <?php echo json_encode($gcPublic, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES); ?>;
+	var IDS = { groupDishes: 1, locFridge: 2, locPantry: 3, locFreezer: 4, locCounter: 5, entityCuisine: 1, entityTickets: 2, shoppingList: 1 };
+	var HISTAMINE = GL.t("diet.histamine");
+	var DIET = GL.t("diet.rules");
+
+	function url(path) { return Grocy.BaseUrl.replace(/\/$/, "") + path; }
+
+	function api(method, path, body) {
+		var opt = { method: method, credentials: "same-origin", headers: {} };
+		if (body !== undefined) {
+			opt.headers["Content-Type"] = "application/json";
+			opt.body = JSON.stringify(body);
+		}
+		return fetch(url("/api/" + path), opt).then(function (r) {
+			return r.text().then(function (t) {
+				var j = null;
+				try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+				if (!r.ok) throw new Error((j && j.error_message) || ("HTTP " + r.status));
+				return j;
+			});
+		});
+	}
+
+	function notConfigured() {
+		var e = new Error(GL.t("err.notConfigured"));
+		e.code = "not_configured";
+		return e;
+	}
+
+	function hook(name, body, timeoutMs) {
+		if (!cfg.configured) return Promise.reject(notConfigured());
+		var ctrl = window.AbortController ? new AbortController() : null;
+		var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, timeoutMs || 30000) : null;
+		return fetch(cfg.base + "/" + name + cfg.suffix, {
+			method: "POST",
+			headers: { "Content-Type": "application/json", "X-Trigger-Secret": cfg.secret },
+			body: JSON.stringify(body),
+			signal: ctrl ? ctrl.signal : undefined
+		}).then(function (r) {
+			if (timer) clearTimeout(timer);
+			return r.text().then(function (t) {
+				var j = null;
+				try { j = t ? JSON.parse(t) : null; } catch (e) { j = null; }
+				if (!r.ok) {
+					var err = new Error(r.status === 404 ? GL.t("err.missing", { name: name }) : GL.t("err.http", { name: name, status: r.status }));
+					err.code = r.status === 404 ? "missing" : "http";
+					throw err;
+				}
+				return j;
+			});
+		}, function (e) {
+			if (timer) clearTimeout(timer);
+			var err = new Error(e && e.name === "AbortError" ? GL.t("err.timeout") : GL.t("err.unreachable"));
+			err.code = "network";
+			throw err;
+		});
+	}
+
+	function toast(kind, msg, title) {
+		if (window.toastr && toastr[kind]) toastr[kind](msg, title || "");
+		else console.log(kind, msg);
+	}
+
+	function esc(s) {
+		return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+			return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+		});
+	}
+
+	function today() { return moment().format("YYYY-MM-DD"); }
+	function addDays(date, n) { return moment(date, "YYYY-MM-DD").add(n, "days").format("YYYY-MM-DD"); }
+	function daysLeft(date) {
+		if (!date) return null;
+		if (date.indexOf("2999") === 0) return 99999;
+		return moment(date.slice(0, 10), "YYYY-MM-DD").diff(moment().startOf("day"), "days");
+	}
+	function fmtDate(date) { return date ? moment(date.slice(0, 10), "YYYY-MM-DD").format("DD/MM") : "-"; }
+	function leftLabel(n) {
+		if (n == null) return "";
+		if (n >= 99999) return GL.t("left.never");
+		if (n < 0) return GL.t("left.expired", { n: -n });
+		if (n === 0) return GL.t("left.today");
+		if (n === 1) return GL.t("left.tomorrow");
+		return GL.t("left.in", { n: n });
+	}
+	function leftTone(n) { return n == null ? "" : n < 0 ? "danger" : n <= 1 ? "warn" : n <= 5 ? "info" : "ok"; }
+	function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+	function byId(list) { var m = {}; (list || []).forEach(function (x) { m[x.id] = x; }); return m; }
+
+	function storageFor(locationId) {
+		var id = +locationId;
+		return id === IDS.locFreezer ? "freezer" : id === IDS.locCounter || id === IDS.locPantry ? "counter" : "fridge";
+	}
+
+	function estimateText(r) {
+		if (!r) return "";
+		var parts = [];
+		if (+r.fridge_days) parts.push(GL.t("est.fridge", { n: r.fridge_days }));
+		if (+r.freezer_days) parts.push(GL.t("est.freezer", { n: r.freezer_days }));
+		if (+r.counter_days) parts.push(GL.t("est.counter", { n: r.counter_days }));
+		if (+r.after_open_days) parts.push(GL.t("est.open", { n: r.after_open_days }));
+		return parts.join(", ") || GL.t("est.none");
+	}
+
+	function page(opts) {
+		var $content = $("#page-content");
+		var $hd = $content.find(".g-hd").first();
+		$content.children().not($hd.closest(".row")).addClass("gc-hidden");
+		$hd.find(".g-eyebrow").contents().filter(function () { return this.nodeType === 3; }).remove();
+		$hd.find(".g-eyebrow").append(document.createTextNode(opts.eyebrow));
+		$hd.find("h2.title").text(opts.title);
+		var $r = $hd.find(".g-hd-r").empty();
+		(opts.actions || []).forEach(function (a) {
+			var $b = $('<button type="button" class="btn"></button>').addClass(a.primary ? "btn-primary" : "btn-outline-secondary");
+			if (a.icon) $b.append($("<i></i>").attr("class", a.icon));
+			$b.append($("<span></span>").text(a.label)).on("click", a.onClick);
+			$r.append($b);
+		});
+		var $root = $('<div class="gc-page"></div>').insertAfter($hd.closest(".row"));
+		if (!cfg.configured) {
+			$('<div class="gc-note gc-note-warn"><i class="fa-solid fa-plug-circle-xmark"></i><span></span></div>').appendTo($root).find("span").text(GL.t("note.notConfigured"));
+		}
+		var $tabs = $('<div class="gc-tabs" role="tablist"></div>').appendTo($root);
+		var panes = {};
+		(opts.tabs || []).forEach(function (t) {
+			$('<button type="button" class="gc-tab" role="tab"></button>').attr("data-tab", t.key).text(t.label).appendTo($tabs);
+			panes[t.key] = $('<div class="gc-pane" hidden></div>').attr("data-pane", t.key).appendTo($root);
+		});
+		var rendered = {};
+		function show(key) {
+			if (!panes[key]) key = opts.tabs[0].key;
+			$tabs.children().each(function () { $(this).attr("aria-selected", $(this).data("tab") === key ? "true" : "false"); });
+			Object.keys(panes).forEach(function (k) { panes[k].prop("hidden", k !== key); });
+			if (history.replaceState) history.replaceState(null, "", "#" + key);
+			if (!rendered[key]) { rendered[key] = true; opts.onTab(key, panes[key]); }
+		}
+		$tabs.on("click", ".gc-tab", function () { show($(this).data("tab")); });
+		show((location.hash || "").replace("#", ""));
+		return { $root: $root, panes: panes, show: show, refresh: function (key) { rendered[key] = false; panes[key].empty(); if (!panes[key].prop("hidden")) show(key); } };
+	}
+
+	function sheet(title, $body, buttons) {
+		var $bg = $('<div class="gc-sheet-bg"></div>');
+		var $s = $('<div class="gc-sheet" role="dialog" aria-modal="true"></div>').appendTo($bg);
+		$('<div class="gc-sheet-hd"><b></b><button type="button" class="gc-x" aria-label=""><i class="fa-solid fa-xmark"></i></button></div>').appendTo($s).find("b").text(title);
+		$s.find(".gc-x").attr("aria-label", GL.t("close"));
+		$('<div class="gc-sheet-bd"></div>').append($body).appendTo($s);
+		var $ft = $('<div class="gc-sheet-ft"></div>').appendTo($s);
+		function close() { $bg.remove(); $(document).off("keydown.gcsheet"); }
+		(buttons || []).forEach(function (b) {
+			var $b = $('<button type="button" class="btn"></button>').addClass(b.primary ? "btn-primary" : "btn-outline-secondary").text(b.label);
+			$b.on("click", function () { b.onClick(close, $b); });
+			$ft.append($b);
+		});
+		$s.find(".gc-x").on("click", close);
+		$bg.on("click", function (e) { if (e.target === this) close(); });
+		$(document).on("keydown.gcsheet", function (e) { if (e.key === "Escape") close(); });
+		$("body").append($bg);
+		setTimeout(function () { $s.find("input, textarea, select").first().trigger("focus"); }, 50);
+		return { close: close, $el: $s };
+	}
+
+	function tiles(list) {
+		var $t = $('<div class="g-tiles gc-tiles"></div>');
+		list.forEach(function (x) {
+			var $tile = $('<div class="g-tile"></div>').attr({ "data-kind": x.kind, "data-g-label": x.label, "data-g-sub": x.sub || "" });
+			$('<span class="d-block"></span>').text(x.value).appendTo($tile);
+			$tile.append('<span class="g-tile-bar"></span>');
+			if (!x.value) $tile.attr("data-zero", "");
+			if (x.onClick) $tile.on("click", x.onClick); else $tile.css("cursor", "default");
+			$t.append($tile);
+		});
+		return $t;
+	}
+
+	function confirmClick($btn, label, fn) {
+		if ($btn.attr("data-armed")) { $btn.removeAttr("data-armed"); fn(); return; }
+		var old = $btn.html();
+		$btn.attr("data-armed", "1").text(label);
+		setTimeout(function () { if ($btn.attr("data-armed")) { $btn.removeAttr("data-armed").html(old); } }, 3500);
+	}
+
+	function entityName() {
+		var m = location.pathname.match(/\/userobjects\/([^\/?#]+)/);
+		return m ? decodeURIComponent(m[1]) : null;
+	}
+
+	function subview() { return new URLSearchParams(location.search).get("view") || ""; }
+
+	function download(name, text, type) {
+		var blob = new Blob([text], { type: type || "text/plain;charset=utf-8" });
+		var a = document.createElement("a");
+		a.href = URL.createObjectURL(blob);
+		a.download = name;
+		document.body.appendChild(a);
+		a.click();
+		setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+	}
+
+	function copy(text) {
+		if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+		return new Promise(function (ok, ko) {
+			var ta = document.createElement("textarea");
+			ta.value = text;
+			ta.style.position = "fixed";
+			ta.style.opacity = "0";
+			document.body.appendChild(ta);
+			ta.select();
+			try { document.execCommand("copy") ? ok() : ko(new Error(GL.t("err.copy"))); } catch (e) { ko(e); }
+			ta.remove();
+		});
+	}
+
+	var PROVIDERS = ["auto", "openrouter", "groq", "mistral", "gemini", "ollama"];
+	var PROVIDER_KEY = "gc-est-provider";
+
+	function estimateSheet(name, onRun) {
+		var last = "auto";
+		try { last = localStorage.getItem(PROVIDER_KEY) || "auto"; } catch (e) {}
+		var $f = $('<form class="gc-form" novalidate></form>').on("submit", function (e) { e.preventDefault(); });
+		var $sel = $('<select class="form-control" name="provider"></select>');
+		PROVIDERS.forEach(function (p) { $sel.append($("<option></option>").val(p).text(GL.t("prov." + p))); });
+		$sel.val(PROVIDERS.indexOf(last) === -1 ? "auto" : last);
+		var $txt = $('<textarea class="form-control" name="instructions" rows="3" maxlength="500"></textarea>').attr("placeholder", GL.t("est.instructionsPh"));
+		var $count = $('<span class="gc-sub"></span>');
+		function counter() { $count.text(GL.t("est.chars", { n: $txt.val().length })); }
+		$txt.on("input", counter);
+		counter();
+		$f.append($("<label></label>").text(GL.t("est.model")).append($sel));
+		$f.append($("<label></label>").text(GL.t("est.instructions")).append($txt).append($count));
+		sheet(GL.t("est.sheetTitle", { name: name }), $f, [
+			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+			{ label: GL.t("est.run"), primary: true, onClick: function (close) {
+				var opts = { provider: $sel.val(), instructions: $.trim($txt.val()).slice(0, 500) };
+				try { localStorage.setItem(PROVIDER_KEY, opts.provider); } catch (e) {}
+				close();
+				onRun(opts);
+			} }
+		]);
+	}
+
+	function estimateBody(body, opts) {
+		if (opts && opts.provider && opts.provider !== "auto") body.provider = opts.provider;
+		if (opts && opts.instructions) body.instructions = opts.instructions;
+		return body;
+	}
+
+	function estimateTimeout(opts) { return opts && opts.provider === "ollama" ? 180000 : 30000; }
+
+	function clearNavCounts() { try { sessionStorage.removeItem("g-nav-counts"); } catch (e) {} }
+
+	return {
+		cfg: cfg, IDS: IDS, HISTAMINE: HISTAMINE, DIET: DIET, api: api, hook: hook, toast: toast, esc: esc, url: url,
+		today: today, addDays: addDays, daysLeft: daysLeft, fmtDate: fmtDate, leftLabel: leftLabel, leftTone: leftTone,
+		num: num, byId: byId, storageFor: storageFor, estimateText: estimateText, page: page, sheet: sheet, tiles: tiles,
+		confirmClick: confirmClick, entityName: entityName, subview: subview, download: download, copy: copy,
+		estimateSheet: estimateSheet, estimateBody: estimateBody, estimateTimeout: estimateTimeout, clearNavCounts: clearNavCounts
+	};
+})();
+</script>

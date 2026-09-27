@@ -1,0 +1,63 @@
+{
+ "id": "openrouterQuota0001",
+ "name": "Tool: OpenRouter free quota",
+ "active": false,
+ "nodes": [
+  {
+   "id": "manual",
+   "name": "Manual",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {}
+  },
+  {
+   "id": "quota",
+   "name": "Quota",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    220,
+    0
+   ],
+   "credentials": {
+    "openRouterApi": {
+     "id": "l86vEWp9ZQt60YHZ",
+     "name": "OpenRouter account 2"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "parameters": {
+    "method": "GET",
+    "url": "https://openrouter.ai/api/v1/key",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "openRouterApi",
+    "options": {
+     "timeout": 8000
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Manual": {
+   "main": [
+    [
+     {
+      "node": "Quota",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "Europe/Paris",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {}
+}

@@ -1,0 +1,26 @@
+services:
+  grocy:
+    image: lscr.io/linuxserver/grocy:latest
+    container_name: grocy
+    restart: unless-stopped
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: Europe/Paris
+      GROCY_DEFAULT_LOCALE: fr
+      GROCY_CURRENCY: EUR
+      GROCY_STOCK_BARCODE_LOOKUP_PLUGIN: ChainedBarcodeLookupPlugin
+    volumes:
+      - ./config:/config
+    networks:
+      - t2_proxy
+    labels:
+      - casaos=casaos
+      - caddy=grocy.audibox.cc
+      - caddy.import=tspriv
+      - caddy.reverse_proxy={{upstreams 80}}
+
+
+networks:
+  t2_proxy:
+    external: true

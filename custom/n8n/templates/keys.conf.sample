@@ -1,0 +1,10 @@
+# Copy to /home/miira/apps/docker/n8n-templates/keys.conf on audibox (chmod 600), then redeploy shelf-life.json and receipt-parse.json and restart n8n.
+# One KEY=value per line, no quotes, no spaces around "=". Empty values are fine: a provider without a key is skipped.
+# GROQ_API_KEY, MISTRAL_API_KEY and GEMINI_API_KEY are baked into shelf-life and receipt-parse at deploy time (Code nodes cannot read files).
+# EANDB_TOKEN is not used by n8n: the Grocy barcode plugin reads its own JSON config. It is listed so all keys live in one place.
+GROQ_API_KEY=
+MISTRAL_API_KEY=
+GEMINI_API_KEY=
+EANDB_TOKEN=
+# TIKTOK_SECRET is the X-Trigger-Secret of the real tiktok-recipe workflow (older than webhook.secret). Both are accepted by it and its -test twin.
+TIKTOK_SECRET=

@@ -1,0 +1,59 @@
+{
+ "id": "shelfLifeRetry0001",
+ "name": "Kitchen: shelf-life retry and archive",
+ "active": true,
+ "nodes": [
+  {
+   "id": "schedule",
+   "name": "Schedule",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.2,
+   "position": [
+    0,
+    0
+   ],
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "minutes",
+       "minutesInterval": 5
+      }
+     ]
+    }
+   }
+  },
+  {
+   "id": "retry-pending",
+   "name": "Retry pending",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "jsCode": "const SECRET = \"__WEBHOOK_SECRET__\";\nconst GROCY = \"http://grocy/api\";\nconst GROCY_KEY = \"__GROCY_API_KEY__\";\nconst MAX_ATTEMPTS = 24;\nconst PER_RUN = 3;\nconst ARCHIVE_AFTER_DAYS = 30;\nconst DISH_GROUP = 1;\n\nconst grocy = (method, path, data) => this.helpers.httpRequest({\n  method, url: GROCY + path, json: true,\n  headers: { \"GROCY-API-KEY\": GROCY_KEY, \"Content-Type\": \"application/json\" },\n  ...(data === undefined ? {} : { body: data }),\n});\nconst state = $getWorkflowStaticData(\"global\");\nstate.attempts = state.attempts || {};\nconst today = new Date().toLocaleDateString(\"sv-SE\", { timeZone: \"Europe/Paris\" });\n\nconst products = await grocy(\"GET\", \"/objects/products\");\nconst pending = products.filter((p) => p.active == 1 && p.userfields && p.userfields.shelf_status === \"pending\");\nconst report = { pending: pending.length, retried: [], archived: [] };\n\nfor (const p of pending.slice(0, PER_RUN)) {\n  let reply = null;\n  try {\n    reply = await this.helpers.httpRequest({ method: \"POST\", url: \"http://localhost:5678/webhook/shelf-life\", json: true, timeout: 240000,\n      headers: { \"X-Trigger-Secret\": SECRET, \"Content-Type\": \"application/json\" },\n      body: { product_id: p.id, mode: \"async\", force: true, stock_id: \"all\" } });\n  } catch (e) { reply = { status: \"error\", error: String(e.message).slice(0, 200) }; }\n  const done = reply && reply.status === \"done\";\n  if (done) delete state.attempts[p.id];\n  else state.attempts[p.id] = (state.attempts[p.id] || 0) + 1;\n  if (!done && state.attempts[p.id] >= MAX_ATTEMPTS) {\n    await grocy(\"PUT\", \"/userfields/products/\" + p.id, { shelf_status: \"failed\" });\n    delete state.attempts[p.id];\n  }\n  report.retried.push({ id: p.id, name: p.name, status: reply && reply.status, source: reply && reply.source, attempts: state.attempts[p.id] || 0 });\n}\n\nif (state.lastArchive !== today) {\n  state.lastArchive = today;\n  const stock = await grocy(\"GET\", \"/stock\");\n  const inStock = new Set(stock.filter((s) => Number(s.amount) > 0).map((s) => s.product_id));\n  const cutoff = Date.now() - ARCHIVE_AFTER_DAYS * 86400000;\n  for (const p of products.filter((q) => q.active == 1 && q.product_group_id === DISH_GROUP && !inStock.has(q.id))) {\n    const log = await grocy(\"GET\", \"/objects/stock_log?query%5B%5D=\" + encodeURIComponent(\"product_id=\" + p.id) + \"&order=id%3Adesc&limit=1\");\n    const last = Date.parse(((log[0] && log[0].row_created_timestamp) || p.row_created_timestamp).replace(\" \", \"T\") + \"Z\");\n    if (last < cutoff) { await grocy(\"PUT\", \"/objects/products/\" + p.id, { active: 0 }); report.archived.push(p.name); }\n  }\n}\nreturn [{ json: report }];\n"
+   }
+  }
+ ],
+ "connections": {
+  "Schedule": {
+   "main": [
+    [
+     {
+      "node": "Retry pending",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "Europe/Paris",
+  "saveDataSuccessExecution": "none"
+ },
+ "pinData": {}
+}

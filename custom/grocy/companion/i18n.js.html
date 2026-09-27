@@ -1,0 +1,302 @@
+<script>
+window.GL = (function () {
+	var lang = String(document.documentElement.lang || "en").slice(0, 2) === "fr" ? "fr" : "en";
+	var D = {
+		"sec.pantry": ["Pantry", "Garde-manger"], "sec.cooking": ["Cooking", "Cuisine"], "sec.home": ["Home", "Maison"],
+		"sec.actions": ["Actions", "Actions"], "sec.objects": ["Objects", "Objets"], "sec.data": ["Data", "Données"],
+		"sec.settings": ["Settings", "Réglages"], "sec.item": ["Details", "Fiche"],
+		"theme.dark": ["Dark", "Sombre"], "theme.light": ["Light", "Clair"], "theme.toLight": ["Switch to light mode", "Passer en mode clair"],
+		"theme.toDark": ["Switch to dark mode", "Passer en mode sombre"], "theme.darkMode": ["Dark mode", "Mode sombre"], "theme.lightMode": ["Light mode", "Mode clair"],
+		"tile.expired": ["Expired", "Périmés"], "tile.overdue": ["Overdue", "En retard"], "tile.duesoon": ["Due soon", "Bientôt"],
+		"tile.missing": ["Below minimum", "Sous le minimum"], "tile.products": ["products", "produits"],
+		"tile.withinDays": ["within {n} days", "d'ici {n} jours"], "tile.withinDay": ["within 1 day", "d'ici 1 jour"],
+		"tab.stock": ["Stock", "Stock"], "tab.shopping": ["Shopping", "Courses"], "tab.recipes": ["Recipes", "Recettes"], "tab.purchase": ["Purchase", "Achat"], "tab.more": ["More", "Plus"],
+		"close": ["Close", "Fermer"], "loading": ["Loading", "Chargement"], "add": ["Add", "Ajouter"], "create": ["Create", "Créer"], "save": ["Save", "Enregistrer"],
+		"saving": ["Saving", "Enregistrement"], "cancel": ["Cancel", "Annuler"], "confirm": ["Confirm?", "Confirmer ?"], "delete": ["Delete", "Supprimer"],
+		"yes": ["yes", "oui"], "no": ["no", "non"], "date": ["Date", "Date"], "total": ["Total", "Total"], "product": ["Product", "Produit"], "store": ["Store", "Magasin"],
+		"entity.cuisine": ["Kitchen", "Cuisine"], "entity.tickets": ["Receipts", "Tickets de caisse"],
+		"restock.day": ["Day", "Jour"], "restock.week": ["Week", "Semaine"], "restock.month": ["Month", "Mois"],
+		"icon.dish": ["Cooked dishes", "Plats cuisinés"], "icon.produce": ["Fruit and vegetables", "Fruits et légumes"], "icon.dairy": ["Dairy and eggs", "Produits laitiers et œufs"],
+		"icon.meat": ["Meat and fish", "Viande et poisson"], "icon.grocery": ["Groceries", "Épicerie"], "icon.drinks": ["Drinks", "Boissons"], "icon.frozen": ["Frozen", "Surgelés"],
+		"icon.household": ["Household and hygiene", "Hygiène et maison"], "icon.bakery": ["Bakery", "Boulangerie"], "icon.spices": ["Spices", "Épices"], "icon.snacks": ["Snacks", "Grignotage"],
+		"icon.health": ["Health", "Santé"], "icon.first_aid": ["First aid", "Premiers secours"], "icon.beauty": ["Beauty", "Beauté"], "icon.textiles": ["Textiles", "Textiles"],
+		"icon.tools": ["Tools", "Outils"], "icon.pets": ["Pets", "Animaux"], "icon.tag": ["Other", "Autre"],
+		"color.red": ["Red", "Rouge"], "color.orange": ["Orange", "Orange"], "color.yellow": ["Yellow", "Jaune"], "color.green": ["Green", "Vert"], "color.mint": ["Mint", "Menthe"],
+		"color.teal": ["Teal", "Bleu canard"], "color.cyan": ["Cyan", "Cyan"], "color.blue": ["Blue", "Bleu"], "color.indigo": ["Indigo", "Indigo"], "color.purple": ["Purple", "Violet"],
+		"color.pink": ["Pink", "Rose"], "color.brown": ["Brown", "Marron"], "color.gray": ["Gray", "Gris"],
+		"err.notConfigured": ["companion not configured", "companion non configuré"], "err.missing": ["service {name} missing", "service {name} absent"],
+		"err.http": ["service {name}: HTTP {status}", "service {name} : HTTP {status}"], "err.timeout": ["timed out", "délai dépassé"],
+		"err.unreachable": ["service unreachable", "service injoignable"], "err.copy": ["copy refused", "copie refusée"],
+		"left.never": ["never", "jamais"], "left.expired": ["expired {n} d ago", "périmé depuis {n} j"], "left.today": ["today", "aujourd'hui"],
+		"left.tomorrow": ["tomorrow", "demain"], "left.in": ["in {n} d", "dans {n} j"],
+		"est.fridge": ["{n} d in the fridge", "{n} j au frais"], "est.freezer": ["{n} d in the freezer", "{n} j au congélateur"],
+		"est.counter": ["{n} d out of the fridge", "{n} j hors frigo"], "est.open": ["{n} d after opening", "{n} j après ouverture"], "est.none": ["no duration", "aucune durée"],
+		"note.notConfigured": ["Companion not configured: estimates and server analysis are unavailable (companion.json missing). Everything else works.", "Companion non configuré : les estimations et l'analyse serveur sont indisponibles (fichier companion.json absent). Le reste fonctionne."],
+		"diet.histamine": ["Reheat thoroughly. Histamine: ideally within 24 h.", "Réchauffer à cœur. Histamine : idéalement sous 24 h."],
+		"diet.rules": ["gluten free, lactose free, egg free, sesame free, no buckwheat or oats (anaphylaxis), no pineapple, canola or cane sugar, low histamine, anti-inflammatory", "sans gluten, sans lactose, sans œufs, sans sésame, pas de sarrasin ni d'avoine (anaphylaxie), pas d'ananas, de colza ni de sucre de canne, pauvre en histamine, anti-inflammatoire"],
+		"fav.remove": ["Remove from favorites", "Retirer des favoris"], "fav.add": ["Add to favorites", "Ajouter aux favoris"], "fav.star": ["Favorite", "Favori"],
+		"fav.removed": ["Removed from favorites", "Retiré des favoris"], "fav.added": ["Added to favorites", "Ajouté aux favoris"],
+		"fav.products": ["Favorite foods", "Aliments favoris"], "fav.nProducts": ["{n} product(s)", "{n} produit(s)"], "fav.pickPh": ["Add a food to favorites", "Ajouter un aliment aux favoris"],
+		"fav.pickWarn": ["Pick a product from the list.", "Choisis un produit de la liste."], "fav.empty": ["No favorites yet. Star a product here or from a stock row menu.", "Aucun favori. Étoile un produit ici ou depuis le menu d'une ligne du stock."],
+		"fav.shopping": ["Shopping", "Courses"], "fav.addedTo": ["{name} added to “{list}”", "{name} ajouté à « {list} »"],
+		"fav.dishes": ["Favorite dishes", "Plats favoris"], "fav.nRecipes": ["{n} favorite recipe(s)", "{n} recette(s) favorite(s)"], "fav.noRecipes": ["No recipes.", "Aucune recette."], "fav.plan": ["Plan", "Planifier"],
+		"fav.lists": ["Lists", "Listes"], "fav.nLists": ["{n} shopping list(s)", "{n} liste(s) de courses"], "fav.toBuy": ["{n} to buy", "{n} à acheter"],
+		"fav.newListPh": ["New list (e.g. Saturday market)", "Nouvelle liste (ex. Marché du samedi)"], "fav.listCreated": ["List “{name}” created", "Liste « {name} » créée"],
+		"tonight.title": ["Tonight", "Ce soir"], "tonight.sub": ["recipes you can make with your stock", "recettes possibles avec le stock"], "tonight.all": ["All in stock", "Tout en stock"],
+		"tonight.missing": ["{n} missing", "{n} manquant(s)"], "tonight.dueSoon": ["Uses products due soon", "Utilise des produits bientôt périmés"],
+		"mode.safe": ["Safe", "Sans risque"], "mode.bientot": ["Soon", "Bientôt"], "mode.sauver": ["Rescue", "Sauver"],
+		"mode.safeHint": ["safe: only products well within their dates, nothing to rescue", "sans risque : uniquement des produits bien dans leurs dates, rien à sauver"],
+		"mode.bientotHint": ["soon: use what is due first, say what to eat today", "bientôt : utiliser d'abord ce qui arrive à date, dire quoi manger aujourd'hui"],
+		"mode.sauverHint": ["rescue: suggest saving what can be saved, with safety checks", "sauver : proposer de sauver ce qui peut l'être, avec les tests de sécurité"],
+		"chip.all": ["All", "Tout"], "chip.fridge": ["Fridge", "Frigo"], "chip.pantry": ["Pantry", "Placard"], "chip.freezer": ["Freezer", "Congélo"],
+		"chip.counter": ["Counter", "Plan de travail"], "chip.soon": ["Due soon", "Bientôt"], "chip.expired": ["Expired", "Périmés"], "chip.dishes": ["Dishes", "Plats"],
+		"chip.filters": ["Filters", "Filtres"], "chip.quick": ["Quick filters", "Filtres rapides"], "chip.mode": ["Mode", "Mode"],
+		"exp.leftover24": ["dish older than 24 h (histamine)", "plat de plus de 24 h (histamine)"], "exp.mdTitle": ["Kitchen stock on {date}", "Stock cuisine du {date}"],
+		"exp.mdMode": ["Mode: {m}", "Mode : {m}"], "exp.mdRules": ["Restrictions to respect: {d}.", "Restrictions à respecter : {d}."], "exp.mdLeftovers": ["Dishes: {h}", "Plats : {h}"],
+		"exp.mdHead": ["| Product | Quantity | Location | Use by | Days left | Opened | Group | Ingredients | Notes |", "| Produit | Quantité | Lieu | À consommer avant | Jours restants | Entamé | Groupe | Ingrédients | Notes |"],
+		"exp.selectAll": ["Select all", "Tout sélectionner"], "exp.copyMd": ["Copy Markdown", "Copier le Markdown"], "exp.csv": ["Download CSV", "Télécharger CSV"],
+		"exp.empty": ["Nothing in this filter.", "Rien dans ce filtre."], "exp.nSelected": ["{a} / {b} selected", "{a} / {b} sélectionné(s)"],
+		"exp.copied": ["{n} row(s) copied as Markdown", "{n} ligne(s) copiées en Markdown"], "exp.copyText": ["Copy the text", "Copier le texte"], "exp.file": ["kitchen-stock", "stock-cuisine"],
+		"stock.hideDishes": ["Hide cooked dishes", "Masquer les plats cuisinés"], "stock.showDishes": ["Show cooked dishes", "Afficher les plats cuisinés"],
+		"stock.low": ["Low stock → shopping", "Stock bas → courses"], "stock.lowAdded": ["{n} product(s) added or topped up on the shopping list", "{n} produit(s) ajouté(s) ou complété(s) sur la liste de courses"],
+		"stock.consumeAll": ["Consume all", "Tout consommer"], "stock.openOne": ["Mark as opened", "Marquer comme entamé"],
+		"search.shortcut": ["Press / to search", "Appuie sur / pour rechercher"],
+		"stock.lowNone": ["Nothing below minimum: the list is already up to date", "Rien sous le minimum : la liste est déjà à jour"],
+		"open.estimating": ["Estimating shelf life after opening…", "Estimation de la durée après ouverture…"], "open.done": ["{name}: {n} d after opening", "{name} : {n} j après ouverture"],
+		"open.fail": ["{msg}. Opening without an estimate.", "{msg}. Ouverture sans estimation."],
+		"est.btn": ["Estimate shelf life", "Estimer la conservation"], "est.saveFirst": ["Save the product first", "Enregistre d'abord le produit"],
+		"est.afterSave": ["Available after the first save", "Disponible après le premier enregistrement"], "est.notConfigured": ["Companion not configured", "Companion non configuré"],
+		"est.needName": ["Give the product a name first.", "Donne d'abord un nom au produit."], "est.running": ["Estimating…", "Estimation…"],
+		"est.pendingWrite": ["Pending: the result will be written to the product", "En attente : le résultat sera écrit sur le produit"], "est.impossible": ["Estimate unavailable", "Estimation impossible"],
+		"est.confidence": ["confidence {n} %", "confiance {n} %"], "est.filled": ["Durations filled in, remember to save.", "Durées remplies, pense à enregistrer."],
+		"est.ready": ["Estimate ready", "Estimation prête"], "est.poll": ["Estimate pending, checking again every 10 s.", "Estimation en attente, nouvelle vérification toutes les 10 s."],
+		"est.later": ["Estimate unavailable for now.", "Estimation impossible pour le moment."], "est.slow": ["Slow response, the estimate continues in the background.", "Réponse lente, l'estimation continue en arrière-plan."],
+		"est.keepDefault": ["{msg}. The default date stays in place.", "{msg}. La date par défaut reste en place."], "est.failed": ["Estimate failed.", "Échec de l'estimation."],
+		"est.model": ["Model", "Modèle"], "est.instructions": ["Extra instructions (optional)", "Consignes en plus (facultatif)"],
+		"est.instructionsPh": ["e.g. homemade, no preservatives, kept in a glass jar", "ex. fait maison, sans conservateur, gardé en bocal"],
+		"est.chars": ["{n} / 500", "{n} / 500"], "est.sheetTitle": ["Estimate: {name}", "Estimation : {name}"], "est.run": ["Estimate", "Estimer"],
+		"prov.auto": ["Automatic (free models first)", "Automatique (modèles gratuits d'abord)"], "prov.openrouter": ["OpenRouter (free)", "OpenRouter (gratuit)"],
+		"prov.groq": ["Groq", "Groq"], "prov.mistral": ["Mistral", "Mistral"], "prov.gemini": ["Gemini", "Gemini"], "prov.ollama": ["Ollama (local, slow)", "Ollama (local, lent)"],
+		"nav.estPending": ["{n} shelf-life estimate(s) pending", "{n} estimation(s) de conservation en attente"],
+		"nav.estFailed": ["{n} shelf-life estimate(s) failed", "{n} estimation(s) de conservation en échec"],
+		"status.pending": ["Estimating", "Estimation en cours"], "status.done": ["Estimated", "Estimé"], "status.manual": ["Manual", "Manuel"], "status.failed": ["Estimate failed", "Échec estimation"], "status.none": ["No estimate", "Sans estimation"],
+		"cu.addDish": ["Add a dish", "Ajouter un plat"], "cu.export": ["Export", "Exporter"], "cu.tabRestes": ["Dishes", "Plats"], "cu.tabFavoris": ["Favorites", "Favoris"], "cu.tabExport": ["Export", "Export"],
+		"cu.frozenOn": ["frozen on {d}", "congelé le {d}"], "cu.thawedOn": ["thawed on {d}", "décongelé le {d}"],
+		"cu.fridge": ["In the fridge", "Au frais"], "cu.freezer": ["In the freezer", "Au congélateur"], "cu.eatToday": ["Eat today", "À manger aujourd'hui"], "cu.pending": ["Pending", "En attente"],
+		"cu.portions": ["{n} portion(s)", "{n} portion(s)"], "cu.todayTomorrow": ["today or tomorrow", "aujourd'hui ou demain"], "cu.estimates": ["estimates", "estimations"],
+		"cu.empty": ["No dishes in stock", "Aucun plat en stock"], "cu.emptySub": ["Add a cooked dish to track its date.", "Ajoute un plat cuisiné pour suivre sa date."],
+		"cu.loadFail": ["Could not load: {msg}", "Chargement impossible : {msg}"], "cu.manualDate": ["Manual date", "Date manuelle"], "cu.histamine": ["Histamine", "Histamine"],
+		"cu.over24": ["Cooked more than 24 h ago", "Cuisiné il y a plus de 24 h"], "cu.cookedOn": ["cooked on {d}", "cuisiné le {d}"], "cu.opened": ["opened", "entamé"],
+		"cu.ingredientsTip": ["Ingredients: {x}", "Ingrédients : {x}"], "cu.eat": ["Eat 1", "Manger 1"], "cu.thaw": ["Thaw", "Décongeler"], "cu.freeze": ["Freeze", "Congeler"],
+		"cu.reestimate": ["Re-estimate", "Ré-estimer"], "cu.discard": ["Discard", "Jeter"], "cu.eaten": ["Enjoy: {n} portion of {name}", "Bon appétit : {n} portion de {name}"],
+		"cu.discarded": ["{name} discarded (logged as spoiled)", "{name} jeté (noté comme perdu)"], "cu.movedOut": ["{name} taken out of the freezer", "{name} sorti du congélateur"], "cu.frozen": ["{name} frozen", "{name} congelé"],
+		"cu.dateSaved": ["{name}: use by {d}", "{name} : à consommer avant le {d}"], "cu.name": ["Dish name", "Nom du plat"], "cu.ingredients": ["Ingredients", "Ingrédients"],
+		"cu.ingredientsPh": ["zucchini, eggplant, tomatoes, olive oil", "courgettes, aubergines, tomates, huile d'olive"], "cu.portionsLabel": ["Portions", "Portions"],
+		"cu.cooked": ["Cooked on", "Cuisiné le"], "cu.storage": ["Storage", "Rangement"], "cu.custom": ["Set the date myself (no estimate)", "Fixer la date moi-même (pas d'estimation)"],
+		"cu.useBy": ["Use by", "À consommer avant le"], "cu.required": ["Name, portions and date are required.", "Nom, portions et date sont requis."],
+		"cu.nameTaken": ["A non-cooked product already has this name: {name}", "Un produit non cuisiné porte déjà ce nom : {name}"],
+		"cu.waitingTitle": ["Estimates to check", "Estimations à vérifier"], "cu.waitingSub": ["{a} failed, {b} pending", "{a} en échec, {b} en attente"],
+		"cu.retry": ["Retry", "Réessayer"],
+		"cu.failedTip": ["The server gave up after 24 tries. Retry, maybe with another model.", "Le serveur a abandonné après 24 essais. Réessaie, éventuellement avec un autre modèle."],
+		"cu.pendingTip": ["The server retries every 5 minutes.", "Le serveur réessaie toutes les 5 minutes."],
+		"cu.addedDue": ["{name} added, use by {d}", "{name} ajouté, à consommer avant le {d}"], "cu.addedEst": ["{name} added. Estimating.", "{name} ajouté. Estimation en cours."],
+		"tk.parsed": ["Parsed", "Analysé"], "tk.confirmed": ["Confirmed", "Confirmé"], "tk.applied": ["Prices applied", "Prix appliqués"], "tk.unknownStore": ["Unknown store", "Magasin inconnu"],
+		"tk.unknown": ["unknown", "inconnu"], "tk.empty": ["No receipts", "Aucun ticket"], "tk.emptySub": ["Scan a receipt in the Scan tab.", "Scanne un ticket dans l'onglet Scanner."],
+		"tk.nLines": ["{n} line(s)", "{n} ligne(s)"], "tk.lines": ["Lines", "Lignes"], "tk.label": ["Label", "Libellé"], "tk.qty": ["Qty", "Qté"], "tk.price": ["Price", "Prix"],
+		"tk.discount": ["discount", "remise"], "tk.discountCap": ["Discount", "Remise"], "tk.deleted": ["Receipt deleted", "Ticket supprimé"],
+		"tk.noPrices": ["No prices yet", "Pas encore de prix"], "tk.noPricesSub": ["Trends appear after the first saved receipt.", "Les tendances apparaissent après le premier ticket enregistré."],
+		"tk.allStores": ["All stores", "Tous les magasins"], "tk.allTime": ["All time", "Toute la période"], "tk.last12": ["Last 12 months", "12 derniers mois"],
+		"tk.last3": ["Last 3 months", "3 derniers mois"], "tk.thisMonth": ["This month", "Ce mois-ci"], "tk.last": ["Last", "Dernier"], "tk.prev": ["Previous", "Précédent"],
+		"tk.change": ["Change", "Évolution"], "tk.min": ["Min", "Min"], "tk.max": ["Max", "Max"], "tk.count": ["Purchases", "Achats"], "tk.spark": ["Chart", "Courbe"],
+		"tk.noneFilter": ["No purchases for this filter.", "Aucun achat pour ce filtre."], "tk.alias": ["Known alias", "Alias connu"], "tk.fuzzy": ["Match", "Correspondance"],
+		"tk.needs": ["To confirm", "À confirmer"], "tk.manual": ["Chosen", "Choisi"], "tk.scanAction": ["Scan a receipt", "Scanner un ticket"], "tk.tabScan": ["Scan", "Scanner"],
+		"tk.tabHist": ["History", "Historique"], "tk.tabTrend": ["Trends", "Tendances"], "tk.drop": ["Take or drop photos of the receipt", "Prendre ou déposer les photos du ticket"],
+		"tk.dropSub": ["Long receipt: several photos from top to bottom, overlapping a little. Reading happens in your browser.", "Ticket long : plusieurs photos de haut en bas, qui se chevauchent un peu. La lecture se fait dans le navigateur."],
+		"tk.photos": ["{n} photo(s) read, joined top to bottom", "{n} photo(s) lue(s), assemblée(s) de haut en bas"], "tk.photoOf": ["Photo {i} / {n}", "Photo {i} / {n}"],
+		"tk.addPhoto": ["Add the next part", "Ajouter la suite"], "tk.restart": ["Start over", "Recommencer"], "tk.paste": ["Or paste the receipt text", "Ou coller le texte du ticket"],
+		"tk.pastePh": ["One receipt line per line", "Une ligne du ticket par ligne"], "tk.analyzeText": ["Analyze the text", "Analyser le texte"],
+		"tk.prep": ["Preparing the image", "Préparation de l'image"], "tk.readDone": ["Reading done", "Lecture terminée"], "tk.readFail": ["Could not read", "Lecture impossible"],
+		"tk.tessFail": ["Tesseract.js could not be loaded", "Tesseract.js n'a pas pu être chargé"], "tk.reading": ["Reading the receipt", "Lecture du ticket"], "tk.engine": ["Loading the engine", "Chargement du moteur"],
+		"tk.analyzing": ["Analyzing the receipt", "Analyse du ticket"], "tk.localErr": ["Local analysis ({msg})", "Analyse locale ({msg})"], "tk.local": ["Local analysis", "Analyse locale"],
+		"tk.unitPrice": ["Unit price", "Prix unit."], "tk.ignore": ["Ignore", "Ignorer"], "tk.noProduct": ["No product", "Aucun produit"], "tk.suggestions": ["Suggestions", "Suggestions"],
+		"tk.allProducts": ["All products", "Tous les produits"], "tk.ignoreLine": ["Ignore the line", "Ignorer la ligne"],
+		"tk.sum": ["Line total {a} · receipt total {b}", "Somme des lignes {a} · total du ticket {b}"], "tk.ok": ["consistent", "cohérent"], "tk.check": ["check it", "à vérifier"],
+		"tk.apply": ["Copy prices to same-day purchases", "Reporter les prix sur les achats du même jour"], "tk.saved": ["Receipt saved. See the History tab.", "Ticket enregistré. Voir l'onglet Historique."],
+		"tk.committed": ["Receipt #{id}: {a} price(s) applied, {u} line(s) without product", "Ticket n°{id} : {a} prix appliqué(s), {u} ligne(s) sans produit"],
+		"tk.restock": ["Add {n} product(s) to stock", "Ajouter {n} produit(s) au stock"], "tk.restocking": ["Adding to stock", "Ajout au stock"],
+		"tk.restockSub": ["Bought on {d}. Matching items on the shopping lists get checked off.", "Achetés le {d}. Les articles correspondants des listes de courses sont cochés."],
+		"tk.restockDone": ["{a} added to stock, {s} checked off the shopping lists, {k} skipped (already in stock for that day)", "{a} ajouté(s) au stock, {s} coché(s) sur les listes de courses, {k} ignoré(s) (déjà en stock pour ce jour)"],
+		"tk.direct": ["Receipt #{id} saved in Grocy (prices not copied, service missing)", "Ticket n°{id} enregistré dans Grocy (sans report des prix, service absent)"],
+		"an.title": ["Analytics", "Analyses"], "an.tabSpend": ["Spending", "Dépenses"], "an.tabProduct": ["Prices by product", "Prix par produit"], "an.period": ["Period", "Période"],
+		"an.thisYear": ["This year", "Cette année"], "an.custom": ["Custom dates", "Dates au choix"], "an.from": ["From", "Du"], "an.to": ["To", "Au"],
+		"an.allTags": ["All categories", "Toutes les catégories"], "an.groups": ["Product groups", "Groupes de produits"], "an.tags": ["Tags", "Étiquettes"],
+		"an.spent": ["Spent", "Dépensé"], "an.receipts": ["Receipts", "Tickets"], "an.avgReceipt": ["Per receipt", "Par ticket"], "an.stores": ["Stores", "Magasins"],
+		"an.overTime": ["Spending over time", "Dépenses dans le temps"], "an.byMonth": ["Month", "Mois"], "an.byWeek": ["Week", "Semaine"], "an.weekOf": ["Week of {d}", "Semaine du {d}"],
+		"an.byStore": ["By store", "Par magasin"], "an.byGroup": ["By category", "Par catégorie"], "an.byTag": ["By tag", "Par étiquette"], "an.nReceipts": ["{n} receipt(s)", "{n} ticket(s)"],
+		"an.top": ["Top products", "Produits les plus achetés"], "an.topSub": ["by amount spent", "par montant dépensé"], "an.nBuys": ["{n} purchase(s)", "{n} achat(s)"],
+		"an.beforeDisc": ["line totals, before discounts", "totaux des lignes, avant remises"], "an.noGroup": ["No group", "Sans groupe"], "an.unlinked": ["Not linked to a product", "Non relié à un produit"],
+		"an.empty": ["Nothing in this period", "Rien sur cette période"], "an.emptySub": ["Change the period or the filters, or scan a receipt.", "Change la période ou les filtres, ou scanne un ticket."],
+		"an.pick": ["Product", "Produit"], "an.lastPrice": ["Last price", "Dernier prix"], "an.avg": ["Average", "Moyenne"], "an.lastVsAvg": ["Last vs average", "Dernier vs moyenne"],
+		"an.dearer": ["dearer than usual", "plus cher que d'habitude"], "an.cheaper": ["cheaper than usual", "moins cher que d'habitude"], "an.same": ["as usual", "comme d'habitude"],
+		"an.cheapest": ["Cheapest store", "Magasin le moins cher"], "an.avgAt": ["{p} on average", "{p} en moyenne"], "an.oneStore": ["only one store so far", "un seul magasin pour l'instant"],
+		"an.chartPiece": ["Price per piece over time", "Prix à la pièce dans le temps"], "an.chartUnit": ["Price per {u} over time", "Prix au {u} dans le temps"],
+		"an.unitRule": ["one unit only, never kg and pieces mixed", "une seule unité, jamais kg et pièces mélangés"]
+	};
+	var CAPTIONS = {
+		ingredients: ["Ingredients", "Ingrédients"], cooked_on: ["Cooked on", "Cuisiné le"], shelf_fridge_days: ["Days in fridge", "Jours au frais"],
+		shelf_freezer_days: ["Days in freezer", "Jours au congélateur"], shelf_counter_days: ["Days out of fridge", "Jours hors frigo"],
+		shelf_after_open_days: ["Days after opening", "Jours après ouverture"], shelf_confidence: ["Estimate confidence", "Confiance estimation"],
+		shelf_notes: ["Storage notes", "Notes conservation"], shelf_status: ["Estimate", "Estimation"], shelf_source: ["Estimate source", "Source estimation"],
+		shelf_updated: ["Estimated on", "Estimé le"], favori: ["Favorite", "Favori"], receipt_aliases: ["Receipt aliases", "Alias tickets"],
+		date_manual: ["Date set by hand", "Date fixée à la main"], needs_scan: ["To scan", "À scanner"], currency: ["Currency", "Devise"], status: ["Status", "Statut"],
+		store: ["Store", "Magasin"], lines_json: ["Lines (JSON)", "Lignes (JSON)"], raw_ocr: ["Raw OCR", "OCR brut"], parser: ["Parser", "Parseur"], tags: ["Tags", "Étiquettes"],
+		reminder_days: ["Reminders (days before)", "Rappels (jours avant)"], restock_on: ["Restock reminder", "Rappel de réapprovisionnement"],
+		restock_unit: ["Restock unit", "Réapprovisionner : unité"], restock_every: ["Restock every", "Réapprovisionner tous les"],
+		restock_next: ["Next restock", "Prochain réapprovisionnement"], icon: ["Icon", "Icône"], color: ["Color", "Couleur"],
+		cuisine: D["entity.cuisine"], tickets: D["entity.tickets"]
+	};
+	var i = lang === "fr" ? 1 : 0;
+
+	var numberFormat = Number.prototype.toLocaleString, numberLocale = lang === "fr" ? "fr-FR" : "en-GB";
+	Number.prototype.toLocaleString = function (locales, options) {
+		return numberFormat.call(this, typeof locales === "string" || Array.isArray(locales) ? locales : numberLocale, options);
+	};
+
+	var CORE_FR = {
+		"Status": "Statut", "Last access": "Dernier accès", "Manage user sessions": "Gérer les sessions utilisateur", "Token type": "Type de jeton", "access": "accès", "remember_me": "se souvenir de moi",
+		"Token hash": "Empreinte du jeton", "This session": "Cette session", "Remember Me": "Se souvenir de moi",
+		"Are you sure you want to delete the selected session?": "Supprimer la session sélectionnée ?",
+		"Swap track next schedule / track now buttons": "Inverser les boutons « Suivre la prochaine corvée planifiée » et « Suivre l'exécution de la corvée »",
+		"After this product was once in stock and when the desired quantity unit cannot be selected here, first create a corresponding unit conversion": "Une fois ce produit entré en stock, si l'unité souhaitée n'est pas proposée ici, créer d'abord une conversion d'unité correspondante",
+		"Gallerie": "Galerie", "Close": "Fermer", "Resize": "Redimensionner", "Original size": "Taille originale", "next": "Suivant", "prev": "Précédent",
+		"Hidden status": "Statut (masqué)", "Hidden location": "Emplacement (masqué)", "Hidden product group": "Groupe de produits (masqué)",
+		"Hidden assigned to user id": "Assigné à (masqué)", "Hidden category_id": "Catégorie (masqué)", "Hidden product_id": "Produit (masqué)",
+		"Hidden purchased_date": "Date d'achat (masqué)", "Hidden recipe ingredient product names": "Produits des ingrédients (masqué)",
+		"Hidden status for sorting of \"Requirements fulfilled\" column": "Statut pour le tri des besoins (masqué)",
+		"Hidden status for filtering by status": "Statut pour le filtre (masqué)", "Hidden status for grouping by status": "Statut pour le regroupement (masqué)"
+	};
+	[
+		["Black", "Tundora", "Dove Gray", "Star Dust", "Pale Slate", "Gallery", "Alabaster", "White"],
+		["Red", "Orange Peel", "Yellow", "Green", "Cyan", "Blue", "Electric Violet", "Magenta"],
+		["Azalea", "Karry", "Egg White", "Zanah", "Botticelli", "Tropical Blue", "Mischka", "Twilight"],
+		["Tonys Pink", "Peach Orange", "Cream Brulee", "Sprout", "Casper", "Perano", "Cold Purple", "Careys Pink"],
+		["Mandy", "Rajah", "Dandelion", "Olivine", "Gulf Stream", "Viking", "Blue Marguerite", "Puce"],
+		["Guardsman Red", "Fire Bush", "Golden Dream", "Chelsea Cucumber", "Smalt Blue", "Boston Blue", "Butterfly Bush", "Cadillac"],
+		["Sangria", "Mai Tai", "Buddha Gold", "Forest Green", "Eden", "Venice Blue", "Meteorite", "Claret"],
+		["Rosewood", "Cinnamon", "Olive", "Parsley", "Tiber", "Midnight Blue", "Valentino", "Loulou"]
+	].forEach(function (row, r) {
+		var grays = ["Noir", "Gris anthracite", "Gris foncé", "Gris moyen", "Gris clair", "Gris très clair", "Blanc cassé", "Blanc"];
+		var hues = ["Rouge", "Orange", "Jaune", "Vert", "Bleu-vert", "Bleu", "Violet", "Rose"];
+		var shades = ["très pâle", "pâle", "clair", "moyen", "foncé", "très foncé"];
+		row.forEach(function (name, c) {
+			CORE_FR["color:" + name] = r === 0 ? grays[c] : r === 1 ? ["Rouge", "Orange", "Jaune", "Vert", "Cyan", "Bleu", "Violet", "Magenta"][c] : hues[c] + " " + shades[r - 2];
+		});
+	});
+
+	function coreText(s, colors) {
+		var k = $.trim(s);
+		var fr = (colors && CORE_FR["color:" + k]) || CORE_FR[k];
+		if (fr) return s.replace(k, fr);
+		var m = /^([^:]+)(:.*)$/.exec(k);
+		if (m && CORE_FR[m[1]]) return CORE_FR[m[1]] + m[2];
+		return null;
+	}
+
+	function core(root) {
+		if (lang !== "fr") return;
+		var walk = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, s;
+		while ((n = walk.nextNode())) {
+			if (!n.parentNode || /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.parentNode.tagName) || $(n.parentNode).closest(".note-editable").length) continue;
+			if ((s = coreText(n.textContent)) !== null) n.textContent = s;
+		}
+		$(root).find("[title], [aria-label], [data-original-title]").addBack("[title], [aria-label], [data-original-title]").each(function () {
+			var el = this, colors = $(el).closest(".note-color-palette, .note-color-btn").length > 0;
+			["title", "aria-label", "data-original-title"].forEach(function (a) {
+				var v = el.getAttribute(a), s2 = v ? coreText(v, colors) : null;
+				if (s2 !== null) el.setAttribute(a, s2);
+			});
+		});
+		$(root).find(".select-info .select-item").each(function () {
+			var m = /^(\d+) rows? selected$/.exec($.trim(this.textContent));
+			if (m) this.textContent = m[1] + (m[1] === "1" ? " ligne sélectionnée" : " lignes sélectionnées");
+		});
+	}
+
+	function hookCore() {
+		if (lang !== "fr") return;
+		if (typeof window.__t === "function") {
+			var translate = window.__t;
+			window.__t = function (text) {
+				var out = translate.apply(this, arguments);
+				return out === text && CORE_FR[text] ? CORE_FR[text] : out;
+			};
+		}
+		core(document.body);
+		$(document).on("draw.dt select.dt deselect.dt", function (e) { setTimeout(function () { core($(e.target).closest(".dataTables_wrapper").get(0) || document.body); }, 0); });
+		$(document).on("shown.bs.modal", function (e) { core(e.target); });
+	}
+
+	function t(key, vars) {
+		var e = D[key];
+		var s = e ? (e[i] || e[0]) : key;
+		return vars ? s.replace(/\{(\w+)\}/g, function (m, n) { return vars[n] != null ? vars[n] : m; }) : s;
+	}
+
+	var byText = {};
+	Object.keys(CAPTIONS).forEach(function (k) { byText[CAPTIONS[k][0]] = k; byText[CAPTIONS[k][1]] = k; });
+
+	function captions(root) {
+		var statusCols = [];
+		var cells = window.Grocy && (Grocy.View === "userfields" || Grocy.View === "userentities") ? ", td" : "";
+		$(root).find("th, label, .nav-link-text, h2.title, span.custom-control-label, .dataTables_sizing" + cells).each(function () {
+			var el = this;
+			Array.prototype.forEach.call(el.childNodes, function (n) {
+				if (n.nodeType !== 3) return;
+				var raw = n.textContent, key = byText[$.trim(raw)];
+				if (!key) return;
+				n.textContent = raw.replace($.trim(raw), CAPTIONS[key][i]);
+				if (el.tagName === "TH" && key === "shelf_status") statusCols.push(el);
+			});
+		});
+		$(root).find("th[aria-label]").each(function () {
+			var parts = this.getAttribute("aria-label").split(":"), k = byText[$.trim(parts[0])];
+			if (k) { parts[0] = CAPTIONS[k][i]; this.setAttribute("aria-label", parts.join(":")); }
+		});
+		$(root).find('select.userfield-input[data-userfield-name="shelf_status"] option').each(function () {
+			if (D["status." + this.value]) this.textContent = t("status." + this.value);
+		});
+		[["restock_unit", "restock."], ["icon", "icon."], ["color", "color."]].forEach(function (f) {
+			$(root).find('select.userfield-input[data-userfield-name="' + f[0] + '"] option').each(function () {
+				if (D[f[1] + this.value]) this.textContent = t(f[1] + this.value);
+			});
+		});
+		$(root).find("#mainNav li[title], #mainNav [data-original-title]").each(function () {
+			var el = this;
+			["title", "data-original-title"].forEach(function (a) { var k = byText[el.getAttribute(a)]; if (k) el.setAttribute(a, CAPTIONS[k][i]); });
+		});
+		var title = document.title.split(" | ");
+		if (byText[title[0]]) { title[0] = CAPTIONS[byText[title[0]]][i]; document.title = title.join(" | "); }
+		statusCols.forEach(function (th) {
+			var idx = $(th).index(), $wrap = $(th).closest(".dataTables_wrapper");
+			($wrap.length ? $wrap : $(th).closest("table")).find("tbody tr").each(function () {
+				var td = this.children[idx], v = td ? $.trim(td.textContent) : "";
+				if (D["status." + v]) td.textContent = t("status." + v);
+			});
+		});
+	}
+
+	var FR_WORDS = /[àâçéèêëîïôûùœ]|\b(le|la|les|des|du|une|au|aux|et|ou|dans|avec|sans|jours?|conserver|consommer|frigo|congélateur|ouverture|bien|plus)\b/gi;
+	var EN_WORDS = /\b(the|a|an|and|or|in|with|without|days?|keep|store|eat|use|fridge|refrigerator|freezer|opening|once|within|after)\b/gi;
+	function inLang(text) {
+		var s = String(text || ""), f = (s.match(FR_WORDS) || []).length, e = (s.match(EN_WORDS) || []).length;
+		return !$.trim(s) || (lang === "fr" ? f >= e : e >= f);
+	}
+
+	function money(v) {
+		var s = (Math.round(v * 100) / 100).toFixed(2);
+		return lang === "fr" ? s.replace(".", ",") + " €" : "€" + s;
+	}
+
+	return { lang: lang, t: t, captions: captions, money: money, hookCore: hookCore, inLang: inLang };
+})();
+</script>

@@ -1,0 +1,11 @@
+[Unit]
+Description=grocy-test reset trigger socket
+
+[Socket]
+ListenStream=/home/miira/apps/docker/grocy-test/run/reset.sock
+SocketMode=0600
+Accept=yes
+MaxConnections=1
+
+[Install]
+WantedBy=sockets.target

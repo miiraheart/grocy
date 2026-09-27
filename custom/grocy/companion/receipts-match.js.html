@@ -1,0 +1,153 @@
+<script>
+(function () {
+	if (!window.GC || !GC.receipt) return;
+
+const ABBREV = {
+  SS: 'SANS', 'S/': 'SANS', GLUT: 'GLUTEN', CHOC: 'CHOCOLAT', CHOCO: 'CHOCOLAT', LT: 'LAIT', FROM: 'FROMAGE',
+  CR: 'CREME', CREM: 'CREME', FRAI: 'FRAIS', FRAICH: 'FRAICHE', EPAIS: 'EPAISSE', ECR: 'ECREME', NR: 'NOIR',
+  BLC: 'BLANC', MLU: 'MOULE', MOUL: 'MOULE', DX: 'DOUX', PRUN: 'PRUNEAUX', CHEV: 'CHEVRE', PTIT: 'PETIT',
+  PT: 'PETIT', BISC: 'BISCUIT', YAO: 'YAOURT', YRT: 'YAOURT', CONF: 'CONFITURE', LEG: 'LEGUMES',
+  NAT: 'NATURE', SCE: 'SAUCE', HLE: 'HUILE', JB: 'JAMBON', PDT: 'POMME DE TERRE', VEG: 'VEGETAL',
+  OEUF: 'OEUFS', BEUR: 'BEURRE', MASCARP: 'MASCARPONE', EMMENT: 'EMMENTAL', LACT: 'LACTOSE',
+};
+const STOP = new Set(['DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'AU', 'AUX', 'ET', 'A', 'D', 'L', 'EN', 'X']);
+const SIZE = /\b(\d+(?:[.,]\d+)?)\s*(G|GR|KG|CL|ML|L|P|PCS|X\d+)\b|\bX\s?\d+\b|\b\d+X\d*\b/g;
+
+function normalizeLabel(label) {
+  const base = label.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/Œ/g, 'OE').replace(/[’'`]/g, ' ').replace(/[^A-Z0-9/., ]/g, ' ');
+  const sizes = (base.match(SIZE) || []).map((s) => s.replace(/\s|,/g, '').replace('GR', 'G'));
+  const words = base.replace(SIZE, ' ').replace(/[./,]/g, ' ').split(/\s+/)
+    .map((w) => w.replace(/0/g, 'O'))                 // OCR "CH0C0" -> "CHOCO"
+    .filter((w) => w && !/^\d+$/.test(w))
+    .flatMap((w) => (ABBREV[w] || w).split(' '))
+    .filter((w) => !STOP.has(w));
+  return { key: words.join(' '), words, sizes };
+}
+
+function jaroWinkler(a, b) {
+  if (a === b) return 1;
+  const range = Math.max(0, Math.floor(Math.max(a.length, b.length) / 2) - 1);
+  const am = new Array(a.length).fill(false), bm = new Array(b.length).fill(false);
+  let m = 0;
+  for (let i = 0; i < a.length; i++) for (let j = Math.max(0, i - range); j < Math.min(b.length, i + range + 1); j++)
+    if (!bm[j] && a[i] === b[j]) { am[i] = bm[j] = true; m++; break; }
+  if (!m) return 0;
+  let t = 0, k = 0;
+  for (let i = 0; i < a.length; i++) if (am[i]) { while (!bm[k]) k++; if (a[i] !== b[k]) t++; k++; }
+  const jaro = (m / a.length + m / b.length + (m - t / 2) / m) / 3;
+  let p = 0; while (p < 4 && a[p] === b[p]) p++;
+  return jaro + p * 0.1 * (1 - jaro);
+}
+
+const trigrams = (s) => { const g = new Set(); const t = `  ${s} `; for (let i = 0; i < t.length - 2; i++) g.add(t.slice(i, i + 3)); return g; };
+function trigramDice(a, b) {
+  const A = trigrams(a), B = trigrams(b); let n = 0; for (const g of A) if (B.has(g)) n++;
+  return (2 * n) / (A.size + B.size || 1);
+}
+
+function tokenScore(rw, pw) {
+  if (!rw.length || !pw.length) return 0;
+  const per = rw.map((r) => Math.max(...pw.map((p) => (p.startsWith(r) && r.length >= 3 ? 0.97 : jaroWinkler(r, p)))));
+  return per.reduce((s, x) => s + x, 0) / per.length;
+}
+
+function matchLabel(label, products, { threshold = 0.82, margin = 0.05 } = {}) {
+  const n = normalizeLabel(label);
+  for (const p of products) {
+    const aliases = (p.userfields?.receipt_aliases || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    if (aliases.includes(n.key)) return { product_id: p.id, score: 1, method: 'alias', key: n.key, candidates: [] };
+  }
+  const scored = products.map((p) => {
+    const pn = normalizeLabel(p.name);
+    const s = 0.6 * tokenScore(n.words, pn.words) + 0.4 * trigramDice(n.key, pn.key)
+      + (n.sizes.length && n.sizes.some((z) => pn.sizes.includes(z)) ? 0.05 : 0);
+    return { product_id: p.id, name: p.name, score: Math.round(Math.min(1, s) * 1000) / 1000 };
+  }).sort((a, b) => b.score - a.score);
+  const [best, second] = scored;
+  const auto = best && best.score >= threshold && (!second || best.score - second.score >= margin);
+  return { product_id: auto ? best.product_id : null, score: best?.score ?? 0, method: auto ? 'fuzzy' : 'needs_confirmation', key: n.key, candidates: scored.slice(0, 5) };
+}
+
+const r2t = (x) => (x == null ? null : Math.round(x * 100) / 100);
+
+function dedupe(observations) {
+  // A receipt line applied to a stock entry shows up twice (ticket_lines and Grocy price history): keep the receipt one.
+  const seen = new Map();
+  for (const o of observations) {
+    const k = `${o.date}|${o.unit}|${r2t(o.unit_price)}`;
+    if (!seen.has(k) || o.source === 'receipt') seen.set(k, o);
+  }
+  return [...seen.values()];
+}
+
+function productTrend(productId, observations, { flatBand = 0.02, now = new Date() } = {}) {
+  const unit = mostCommon(observations.map((o) => o.unit));
+  const obs = dedupe(observations.filter((o) => o.unit === unit && o.unit_price > 0)).sort((a, b) => a.date.localeCompare(b.date));
+  if (!obs.length) return { product_id: productId, unit, count: 0, direction: 'unknown' };
+
+  const byMonth = new Map();
+  for (const o of obs) { const m = o.date.slice(0, 7); (byMonth.get(m) || byMonth.set(m, []).get(m)).push(o.unit_price); }
+  const months = [...byMonth].map(([month, ps]) => ({ month, avg: r2t(avgt(ps)), min: r2t(Math.min(...ps)), max: r2t(Math.max(...ps)), n: ps.length }));
+
+  // Change compares the last purchase with the previous one at the same store; another store only when there is none.
+  const last = obs[obs.length - 1], earlier = obs.slice(0, -1);
+  const prev = [...earlier].reverse().find((o) => (o.store || null) === (last.store || null)) || earlier[earlier.length - 1] || null;
+  const change = prev ? (last.unit_price - prev.unit_price) / prev.unit_price : null;
+  const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  const yKey = yearAgo.toISOString().slice(0, 7);
+  const yRef = [...months].reverse().find((m) => m.month <= yKey);
+  const prices = obs.map((o) => o.unit_price);
+  const byStore = groupStores(obs);
+  const cheapest = byStore.length > 1 ? byStore.reduce((a, b) => (b.avg < a.avg ? b : a)) : null;
+
+  return {
+    product_id: productId,
+    unit,
+    count: obs.length,
+    last: { date: last.date, price: r2t(last.unit_price), store: last.store ?? null },
+    previous: prev ? { date: prev.date, price: r2t(prev.unit_price), store: prev.store ?? null } : null,
+    change_abs: prev ? r2t(last.unit_price - prev.unit_price) : null,
+    change_pct: change == null ? null : Math.round(change * 1000) / 10,
+    direction: change == null ? 'unknown' : change > flatBand ? 'up' : change < -flatBand ? 'down' : 'flat',
+    min: { price: r2t(Math.min(...prices)), date: obs[prices.indexOf(Math.min(...prices))].date },
+    max: { price: r2t(Math.max(...prices)), date: obs[prices.indexOf(Math.max(...prices))].date },
+    avg: r2t(avgt(prices)),
+    yoy_pct: yRef ? Math.round(((last.unit_price - yRef.avg) / yRef.avg) * 1000) / 10 : null,
+    sparkline: months.map((m) => m.avg),
+    months,
+    last_vs_avg_pct: Math.round(((last.unit_price - avgt(prices)) / avgt(prices)) * 1000) / 10,
+    by_store: byStore,
+    points: obs.map((o) => ({ date: o.date, price: r2t(o.unit_price), store: o.store ?? null, source: o.source })),
+    cheapest,
+  };
+}
+
+// Price observations from receipt lines and Grocy price history, with the unit rules of 13-PRICE-RULES.md.
+function observations(tickets, names, hist) {
+  const BASE_UNIT = { g: ['kg', 1000], ml: ['l', 1000] }, obs = [], weighed = {};
+  for (const t of tickets) for (const l of t.lines) {
+    if (l.is_discount || !(Number(l.unit_price) > 0)) continue;
+    const key = l.product_id && names[l.product_id] ? `p${l.product_id}` : `k${normalizeLabel(l.label || '').key}`;
+    let unit = l.unit || 'piece', price = Number(l.unit_price);
+    if (BASE_UNIT[unit]) { price *= BASE_UNIT[unit][1]; unit = BASE_UNIT[unit][0]; }
+    if (unit !== 'piece') weighed[key] = true;
+    obs.push({ key, date: t.date, unit_price: price, unit, store: t.store, source: 'receipt' });
+  }
+  for (const h of hist) {
+    if (weighed[`p${h.id}`]) continue;
+    for (const x of h.h) if (Number(x.price) > 0) obs.push({ key: `p${h.id}`, date: (x.date || '').slice(0, 10), unit_price: Number(x.price), unit: 'piece', store: x.shopping_location ? x.shopping_location.name : null, source: 'grocy' });
+  }
+  return obs;
+}
+
+function groupStores(obs) {
+  const g = {};
+  for (const o of obs) { const s = o.store || GL.t('tk.unknown'); (g[s] ||= []).push(o.unit_price); }
+  return Object.entries(g).map(([store, ps]) => ({ store, avg: r2t(avgt(ps)), last: r2t(ps[ps.length - 1]), n: ps.length }));
+}
+const avgt = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+const mostCommon = (a) => [...a.reduce((m, x) => m.set(x, (m.get(x) || 0) + 1), new Map())].sort((x, y) => y[1] - x[1])[0]?.[0] ?? 'piece';
+	$.extend(GC.receipt, { normalizeLabel: normalizeLabel, matchLabel: matchLabel, productTrend: productTrend, observations: observations });
+})();
+</script>

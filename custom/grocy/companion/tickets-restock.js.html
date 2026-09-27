@@ -1,0 +1,66 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "userobjects" || GC.entityName() !== "tickets") return;
+
+	function restockItems(lines) {
+		var items = {}, order = [];
+		lines.forEach(function (l, i) {
+			if (!l.product_id || l.is_discount) return;
+			var next = lines[i + 1];
+			var discount = next && next.is_discount ? next.total || 0 : 0;
+			if (!items[l.product_id]) { items[l.product_id] = { product_id: l.product_id, amount: 0, total: 0 }; order.push(l.product_id); }
+			items[l.product_id].amount += l.unit === "piece" ? (l.qty || 1) : 1;
+			items[l.product_id].total += (l.total || 0) + discount;
+		});
+		return order.map(function (id) { return items[id]; });
+	}
+
+	GC.ticketsRestockOffer = function (receipt, $out, products) {
+		var items = restockItems(receipt.lines);
+		if (!items.length) return;
+		var $box = $('<div class="gc-card gc-restock"></div>').appendTo($out);
+		$('<div class="gc-sub"></div>').text(GL.t("tk.restockSub", { d: GC.fmtDate(receipt.date) })).appendTo($box);
+		var $b = $('<button type="button" class="btn btn-primary"><i class="fa-solid fa-boxes-stacked"></i><span></span></button>').appendTo($box);
+		$b.find("span").text(GL.t("tk.restock", { n: items.length }));
+		$b.on("click", function () {
+			$b.prop("disabled", true).find("span").text(GL.t("tk.restocking"));
+			restock(receipt, items, products).then(function (r) {
+				$box.empty().append($('<div class="gc-note gc-note-ok"><i class="fa-solid fa-boxes-stacked"></i><span></span></div>').find("span").text(GL.t("tk.restockDone", r)).end());
+				GC.clearNavCounts();
+			}, function (e) {
+				$b.prop("disabled", false).find("span").text(GL.t("tk.restock", { n: items.length }));
+				GC.toast("error", e.message);
+			});
+		});
+	};
+
+	function restock(receipt, items, products) {
+		var date = receipt.date || GC.today();
+		var res = { a: 0, s: 0, k: 0 };
+		return Promise.all([products(), GC.api("GET", "objects/shopping_list"), GC.api("GET", "objects/shopping_locations")]).then(function (r) {
+			var byId = GC.byId(r[0]), list = r[1] || [];
+			var shop = (r[2] || []).filter(function (x) { return receipt.store && x.name.toLowerCase() === receipt.store.toLowerCase(); })[0];
+			return items.reduce(function (chain, it) {
+				return chain.then(function () {
+					var p = byId[it.product_id];
+					if (!p) return;
+					return GC.api("GET", "stock/products/" + it.product_id + "/entries").then(function (entries) {
+						if ((entries || []).some(function (e) { return e.purchased_date === date; })) { res.k++; return; }
+						var body = { amount: it.amount, purchased_date: date, transaction_type: "purchase" };
+						var price = Math.round(it.total / it.amount * 100) / 100;
+						if (price > 0) body.price = price;
+						if (shop) body.shopping_location_id = shop.id;
+						var days = +p.location_id === GC.IDS.locFreezer ? +p.default_best_before_days_after_freezing : +p.default_best_before_days;
+						if (days === -1) body.best_before_date = "2999-12-31";
+						else if (days > 0) body.best_before_date = GC.addDays(date, days);
+						return GC.api("POST", "stock/products/" + it.product_id + "/add", body).then(function () { res.a++; });
+					}).then(function () {
+						var open = list.filter(function (x) { return +x.product_id === +it.product_id && String(x.done) !== "1"; });
+						return Promise.all(open.map(function (x) { return GC.api("PUT", "objects/shopping_list/" + x.id, { done: 1 }); })).then(function () { res.s += open.length; });
+					});
+				});
+			}, Promise.resolve());
+		}).then(function () { return res; });
+	}
+})();
+</script>

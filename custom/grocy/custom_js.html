@@ -1,0 +1,450 @@
+<script>
+(function () {
+	if (document.body.dataset.gReady) return;
+	document.body.dataset.gReady = "1";
+	GL.hookCore();
+
+	var $body = $("body");
+	var isEmbedded = $body.hasClass("embedded");
+	var isLogin = Grocy.View === "login" || Grocy.UserId === -1;
+
+	var SECTIONS = [
+		{ key: "pantry", label: GL.t("sec.pantry"), views: ["stockoverview", "shoppinglist"] },
+		{ key: "cooking", label: GL.t("sec.cooking"), views: ["userobjects/cuisine", "userobjects/tickets", "recipes", "mealplan"] },
+		{ key: "home", label: GL.t("sec.home"), views: ["choresoverview", "tasks", "batteriesoverview", "equipment", "calendar"] },
+		{ key: "actions", label: GL.t("sec.actions"), views: ["purchase", "consume", "transfer", "inventory", "choretracking", "batterytracking"] },
+		{ key: "objects", label: GL.t("sec.objects"), views: ["userobjects"] },
+		{ key: "data", label: GL.t("sec.data"), views: ["products", "locations", "shoppinglocations", "quantityunits", "productgroups", "chores", "batteries", "taskcategories", "userfields", "userentities"] }
+	];
+	var SETTINGS_VIEWS = ["stocksettings", "shoppinglistsettings", "recipessettings", "choressettings", "taskssettings", "batteriessettings", "usersettings", "users", "manageapikeys", "user"];
+
+	function viewFromHref(href) {
+		if (!href) return "";
+		var path = href.replace(Grocy.BaseUrl, "").split("?")[0].replace(/^\/+/, "");
+		return path.split("/")[0];
+	}
+	function navKey(href) {
+		if (!href) return "";
+		var parts = href.replace(Grocy.BaseUrl, "").split("?")[0].replace(/^\/+/, "").split("/");
+		return parts[0] === "userobjects" && parts[1] ? "userobjects/" + parts[1] : parts[0];
+	}
+	function sectionFor(view) {
+		for (var i = 0; i < SECTIONS.length; i++) {
+			if (SECTIONS[i].views.indexOf(view) !== -1) return SECTIONS[i];
+		}
+		if (view && view.indexOf("userobjects/") === 0) return sectionFor("userobjects");
+		return null;
+	}
+	function currentSectionLabel() {
+		var active = $("#mainNav .navbar-sidenav li.active-page").first();
+		if (active.length) {
+			var link = active.find("a.nav-link").first();
+			var v = navKey(link.attr("href"));
+			if (!v && link.hasClass("nav-link-collapse")) v = "products";
+			var s = sectionFor(v);
+			if (s) return s.label;
+		}
+		var s2 = sectionFor(Grocy.View);
+		if (s2) return s2.label;
+		if (SETTINGS_VIEWS.indexOf(Grocy.View) !== -1) return GL.t("sec.settings");
+		if (Grocy.View.indexOf("product") === 0 || Grocy.View.indexOf("recipe") === 0 || Grocy.View.indexOf("shoppinglist") === 0) return GL.t("sec.item");
+		if (Grocy.View.indexOf("stock") === 0) return GL.t("sec.pantry");
+		return "Grocy";
+	}
+
+	if (isLogin) {
+		$body.addClass("g-login");
+		return;
+	}
+	if (isEmbedded) {
+		GL.captions(document);
+		buildHeader();
+		return;
+	}
+
+	GL.captions(document);
+	$(document).on("draw.dt", function (e) { GL.captions($(e.target).closest(".dataTables_wrapper").get(0) || e.target); });
+	buildSidebar();
+	buildHeader();
+	buildTiles();
+	buildTabbar();
+	buildCounts();
+	fixInlineMenus();
+	searchShortcut();
+
+	function searchShortcut() {
+		var $search = $("#search");
+		if (!$search.length) return;
+		$search.attr({ "aria-keyshortcuts": "/", title: GL.t("search.shortcut") });
+		if ($search.parent().hasClass("input-group")) {
+			var $kbd = $('<kbd class="g-kbd" aria-hidden="true">/</kbd>').insertBefore($search);
+			var hint = function () { $kbd.prop("hidden", !!$search.val()); };
+			$search.on("input change", hint);
+			hint();
+		}
+		$(document).on("keydown", function (e) {
+			if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+			var t = e.target;
+			if (t && (t.isContentEditable || /^(input|textarea|select)$/i.test(t.tagName))) return;
+			if (!$search.is(":visible") || $(".modal.show, .gc-sheet-bg, .g-sheet-bg:not([hidden])").length) return;
+			e.preventDefault();
+			$search.trigger("focus").trigger("select");
+		});
+		$search.on("keydown", function (e) { if (e.key === "Escape") $search.trigger("blur"); });
+	}
+
+	function fixInlineMenus() {
+		function fix() { $(".table-inline-menu.dropdown-menu-right").removeClass("dropdown-menu-right"); }
+		fix();
+		$(document).on("draw.dt", fix);
+		$(document).on("show.bs.dropdown", ".table td .dropdown", function () { $(this).find(".table-inline-menu").removeClass("dropdown-menu-right"); });
+	}
+
+	function buildSidebar() {
+		var $nav = $("#mainNav .navbar-sidenav");
+		if (!$nav.length) return;
+
+		function liFor(key) { return $nav.children("li.nav-item-sidebar").filter(function () { return navKey($(this).children("a.nav-link").attr("href")) === key; }); }
+		var $cookAnchor = liFor("recipes").add(liFor("mealplan")).first();
+		SECTIONS[1].views.forEach(function (v) {
+			if (v.indexOf("userobjects/") === 0 && $cookAnchor.length) liFor(v).insertBefore($cookAnchor);
+		});
+		addAnalyticsLink(liFor("userobjects/tickets").first());
+
+		var lastKey = null;
+		$nav.children("li.nav-item-sidebar").each(function () {
+			var $li = $(this);
+			var $a = $li.children("a.nav-link").first();
+			var view = navKey($a.attr("href"));
+			var sec = null;
+			if ($a.hasClass("nav-link-collapse")) sec = sectionFor("products");
+			else if ($a.find("i").attr("class") && $li.attr("title") && !view) sec = sectionFor("userobjects");
+			else sec = sectionFor(view) || sectionFor("userobjects");
+			if (!sec) sec = SECTIONS[4];
+			if (sec.key !== lastKey) {
+				$('<li class="g-section"></li>').text(sec.label).insertBefore($li);
+				lastKey = sec.key;
+			}
+			if ($a.hasClass("nav-link-collapse")) $a.attr("title", "").removeAttr("data-toggle-tooltip");
+		});
+
+		$("#clock-container").appendTo(".g-eyebrow");
+
+		var $toggler = $("#mainNav .sidenav-toggler");
+		if ($toggler.length && !$toggler.find(".g-theme").length) {
+			var $themeLi = $('<li class="nav-item g-theme-item"><a class="nav-link g-theme" href="#"><i class="fa-solid fa-circle-half-stroke"></i><span class="g-theme-label"></span></a></li>');
+			$toggler.prepend($themeLi);
+			$themeLi.find("a").on("click", function (e) {
+				e.preventDefault();
+				var dark = $body.hasClass("night-mode");
+				var target = dark ? "#night-mode-off" : "#night-mode-on";
+				var $radio = $(target);
+				if ($radio.length) {
+					$radio.prop("checked", true).trigger("change");
+				} else {
+					$body.toggleClass("night-mode");
+				}
+			});
+		}
+		syncTheme();
+		new MutationObserver(syncTheme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+		$("#sidenavToggler").on("click", function () {
+			setTimeout(function () {
+				document.documentElement.classList.toggle("g-rail", $body.hasClass("sidenav-toggled"));
+			}, 0);
+			setTimeout(function () {
+				try { if ($.fn.dataTable) $.fn.dataTable.tables({ visible: true, api: true }).columns.adjust(); } catch (e) {}
+			}, 240);
+		});
+		new MutationObserver(function (muts) {
+			muts.forEach(function (m) {
+				Array.prototype.forEach.call(m.addedNodes, function (n) {
+					if (n.tagName === "LINK" && (n.getAttribute("href") || "").indexOf("grocy_night_mode.css") !== -1 && !n.id) n.id = "night-mode-stylesheet";
+				});
+			});
+		}).observe(document.head, { childList: true });
+		document.documentElement.classList.toggle("g-rail", $body.hasClass("sidenav-toggled"));
+
+		$("#mainNav .navbar-nav.ml-auto > .nav-item.dropdown > .nav-link").each(function () {
+			var $l = $(this);
+			if ($l.find("i.fa-wrench").length) { $l.find("i").attr("class", "fa-solid fa-gear"); }
+			if ($l.find("i.fa-sliders-h").length) { $l.find("i").attr("class", "fa-solid fa-sliders"); }
+			if ($l.find("i.fa-user").length && !$l.find("span").length) {
+				var name = $.trim($l.contents().filter(function () { return this.nodeType === 3; }).text());
+				$l.contents().filter(function () { return this.nodeType === 3; }).remove();
+				$l.append($("<span></span>").text(name));
+			}
+		});
+	}
+
+	function addAnalyticsLink($tickets) {
+		if (!$tickets.length) return;
+		var $li = $tickets.clone().removeClass("active-page").insertAfter($tickets);
+		var $a = $li.children("a.nav-link").first().attr("href", $tickets.children("a.nav-link").attr("href").split("?")[0] + "?view=analytics");
+		$li.attr({ title: GL.t("an.title"), "data-original-title": GL.t("an.title") });
+		$a.find("i").first().attr("class", "fa-solid fa-chart-column");
+		$a.find(".nav-link-text").text(GL.t("an.title"));
+		if (/[?&]view=analytics\b/.test(location.search)) { $tickets.removeClass("active-page"); $li.addClass("active-page"); }
+	}
+
+	function buildCounts() {
+		if (!Grocy.Api || typeof Grocy.Api.Get !== "function") return;
+		var KEY = "g-nav-counts";
+		var cached = null;
+		try { cached = JSON.parse(sessionStorage.getItem(KEY) || "null"); } catch (e) {}
+		function paint(counts) {
+			[["stockoverview", counts.stock], ["shoppinglist", counts.shopping]].forEach(function (pair) {
+				if (pair[1] == null) return;
+				$("#mainNav .navbar-sidenav > li.nav-item-sidebar > a.nav-link").each(function () {
+					var $a = $(this);
+					if (viewFromHref($a.attr("href")) !== pair[0]) return;
+					var $c = $a.find(".g-count");
+					if (!$c.length) $c = $('<span class="g-count"></span>').appendTo($a);
+					$c.text(pair[1]);
+					if (pair[0] === "shoppinglist" && pair[1] > 0) $c.attr("data-accent", ""); else $c.removeAttr("data-accent");
+				});
+			});
+			paintEstimates(counts);
+		}
+		function paintEstimates(counts) {
+			if (counts.estPending == null) return;
+			$("#mainNav .navbar-sidenav > li.nav-item-sidebar > a.nav-link").each(function () {
+				var $a = $(this);
+				if (navKey($a.attr("href")) !== "userobjects/cuisine") return;
+				$a.find(".g-count").remove();
+				if (counts.estPending) $('<span class="g-count" data-accent></span>').text(counts.estPending).attr("title", GL.t("nav.estPending", { n: counts.estPending })).appendTo($a);
+				if (counts.estFailed) $('<span class="g-count" data-danger></span>').text(counts.estFailed).attr("title", GL.t("nav.estFailed", { n: counts.estFailed })).appendTo($a);
+			});
+		}
+		if (cached && cached.t && (new Date().getTime() - cached.t) < 300000) { paint(cached); return; }
+		var out = { t: new Date().getTime() };
+		var pending = 3;
+		function done() { pending--; if (pending === 0) { try { sessionStorage.setItem(KEY, JSON.stringify(out)); } catch (e) {} paint(out); } }
+		Grocy.Api.Get("stock", function (r) { out.stock = (r || []).filter(function (x) { return x.product && !x.product.hide_on_stock_overview; }).length; done(); }, function () { done(); });
+		Grocy.Api.Get("objects/shopping_list", function (r) { out.shopping = (r || []).filter(function (x) { return String(x.done) !== "1"; }).length; done(); }, function () { done(); });
+		Grocy.Api.Get("objects/products?query[]=active=1", function (r) {
+			var status = function (s) { return (r || []).filter(function (p) { return p.userfields && p.userfields.shelf_status === s; }).length; };
+			out.estPending = status("pending");
+			out.estFailed = status("failed");
+			done();
+		}, function () { done(); });
+	}
+
+	function syncTheme() {
+		var dark = $body.hasClass("night-mode");
+		var $t = $("#mainNav .g-theme");
+		$t.find("i").attr("class", "fa-solid fa-circle-half-stroke");
+		$t.find(".g-theme-label").text(GL.t(dark ? "theme.light" : "theme.dark"));
+		$t.attr("title", GL.t(dark ? "theme.toLight" : "theme.toDark"));
+	}
+
+	function buildHeader() {
+		var $tr = $("#page-content .title-related-links").first();
+		if (!$tr.length) {
+			var $h = $("#page-content h2").first();
+			if (!$h.length || $h.closest(".g-hd").length || $h.closest(".card, .modal, table").length) return;
+			var $wrap = $('<div class="g-hd g-wrapped g-bare"></div>');
+			var $l = $('<div class="g-hd-l"></div>');
+			var $eb = $('<div class="g-eyebrow"><span class="g-dot"></span></div>');
+			$eb.append(document.createTextNode(currentSectionLabel()));
+			$wrap.insertBefore($h);
+			$l.append($eb).append($h.addClass("title"));
+			$wrap.append($l);
+			var $next = $wrap.next("hr");
+			if ($next.length) $next.remove();
+			return;
+		}
+		if ($tr.hasClass("g-wrapped")) return;
+		$tr.addClass("g-wrapped g-hd");
+
+		var $title = $tr.children("h2.title").first();
+		var $metaH = $tr.children("h2").not(".title").first();
+		var $left = $('<div class="g-hd-l"></div>');
+		var $eyebrow = $('<div class="g-eyebrow"><span class="g-dot"></span></div>');
+		$eyebrow.append(document.createTextNode(currentSectionLabel()));
+		$left.append($eyebrow);
+		if ($metaH.length) {
+			var $meta = $('<span class="g-meta"></span>');
+			$meta.append($metaH.contents());
+			$metaH.remove();
+			$title.append($meta);
+		}
+		$left.append($title);
+		$tr.prepend($left);
+
+		var $right = $('<div class="g-hd-r"></div>');
+		$tr.children().not(".g-hd-l").each(function () { $right.append(this); });
+		$tr.append($right);
+
+		var $extraLinks = $("#page-content #filter-container > #related-links, #page-content .border-top.border-bottom > .float-right").not(".g-filter-tools");
+		if (Grocy.View === "shoppinglist") {
+			$extraLinks.each(function () { $right.append(this); });
+		}
+		$right.find(".btn.d-md-none").each(function () {
+			var $b = $(this);
+			if ($b.attr("data-toggle") === "collapse") $b.remove();
+		});
+		$right.find(".related-links").removeClass("collapse");
+	}
+
+	function buildTiles() {
+		if (Grocy.View !== "stockoverview") return;
+		var $box = $("#page-content .border-top.border-bottom.my-2.py-1").first();
+		if (!$box.length) return;
+		$box.addClass("g-tiles").removeClass("border-top border-bottom my-2 py-1");
+
+		var LABELS = {
+			expired: { label: GL.t("tile.expired"), sub: GL.t("tile.products") },
+			overdue: { label: GL.t("tile.overdue"), sub: GL.t("tile.products") },
+			duesoon: { label: GL.t("tile.duesoon"), sub: "" },
+			belowminstockamount: { label: GL.t("tile.missing"), sub: GL.t("tile.products") }
+		};
+		$box.children(".status-filter-message").each(function () {
+			var $m = $(this);
+			var kind = $m.data("status-filter");
+			var meta = LABELS[kind] || { label: kind, sub: "" };
+			var sub = meta.sub;
+			if (kind === "duesoon") {
+				var days = parseInt($m.data("next-x-days"), 10) || 5;
+				sub = days > 1 ? GL.t("tile.withinDays", { n: days }) : GL.t("tile.withinDay");
+			}
+			$m.addClass("g-tile")
+				.attr("data-kind", kind === "belowminstockamount" ? "missing" : kind)
+				.attr("data-g-label", meta.label)
+				.attr("data-g-sub", sub)
+				.removeClass("responsive-button mr-2")
+				.attr("data-toggle", "");
+			if (!$m.find(".g-tile-bar").length) $m.append('<span class="g-tile-bar"></span>');
+		});
+
+		function markZero($m) {
+			var n = parseInt($.trim($m.children("span").first().text()), 10);
+			if (isNaN(n) || n > 0) $m.removeAttr("data-zero"); else $m.attr("data-zero", "");
+		}
+		$box.children(".g-tile").each(function () {
+			var $m = $(this);
+			markZero($m);
+			new MutationObserver(function () { markZero($m); }).observe(this, { childList: true, subtree: true, characterData: true });
+		});
+
+		var $tools = $box.children(".float-right").first();
+		var $filters = $("#table-filter-row");
+		if ($tools.length && $filters.length) {
+			$tools.addClass("g-filter-tools").removeClass("float-right mt-1");
+			$filters.append($tools);
+		}
+
+		var $status = $("#status-filter");
+		function markActive() {
+			var v = $status.val();
+			$box.children(".g-tile").each(function () {
+				$(this).toggleClass("g-active", $(this).data("status-filter") === v);
+			});
+		}
+		$status.on("change", function () { setTimeout(markActive, 0); });
+		markActive();
+	}
+
+	function buildTabbar() {
+		if ($(".g-tabbar").length) return;
+		var $nav = $("#mainNav .navbar-sidenav");
+		if (!$nav.length) return;
+
+		var items = [];
+		$nav.children("li.nav-item-sidebar").each(function () {
+			var $li = $(this);
+			var $a = $li.children("a.nav-link").first();
+			if ($a.hasClass("nav-link-collapse")) {
+				$li.find(".sidenav-second-level > li").each(function () {
+					var $s = $(this).children("a").first();
+					items.push({ href: $s.attr("href"), icon: "fa-solid fa-table", text: $.trim($s.text()), active: $(this).hasClass("active-page"), section: GL.t("sec.data"), view: viewFromHref($s.attr("href")) });
+				});
+				return;
+			}
+			var view = navKey($a.attr("href"));
+			var sec = sectionFor(view) || SECTIONS[4];
+			items.push({ href: $a.attr("href"), icon: $a.find("i").attr("class") || "fa-solid fa-circle", text: $.trim($a.find(".nav-link-text").text()), active: $li.hasClass("active-page"), section: sec.label, view: view });
+		});
+
+		var TAB_VIEWS = ["stockoverview", "shoppinglist", "recipes", "purchase"];
+		var TAB_SHORT = { stockoverview: GL.t("tab.stock"), shoppinglist: GL.t("tab.shopping"), recipes: GL.t("tab.recipes"), purchase: GL.t("tab.purchase") };
+		var $bar = $('<nav class="g-tabbar" aria-label="Navigation"></nav>');
+		TAB_VIEWS.forEach(function (v) {
+			var it = items.filter(function (x) { return x.view === v; })[0];
+			if (!it) return;
+			var $t = $('<a class="g-tab"></a>').attr("href", it.href).append($("<i></i>").attr("class", it.icon)).append($("<span></span>").text(TAB_SHORT[v] || it.text));
+			if (it.active) $t.attr("data-active", "");
+			$bar.append($t);
+		});
+		var $more = $('<button type="button" class="g-tab"><i class="fa-solid fa-ellipsis"></i><span></span></button>');
+		$more.find("span").text(GL.t("tab.more"));
+		var moreActive = !items.some(function (x) { return x.active && TAB_VIEWS.indexOf(x.view) !== -1; });
+		if (moreActive && items.some(function (x) { return x.active; })) $more.attr("data-active", "");
+		$bar.append($more);
+		$body.append($bar);
+
+		var $sheetBg = $('<div class="g-sheet-bg" hidden></div>');
+		var $sheet = $('<div class="g-sheet" role="dialog"></div>');
+		var $hd = $('<div class="g-sheet-hd"><b>Grocy</b><button type="button" class="g-sheet-close" aria-label=""><i class="fa-solid fa-xmark"></i></button></div>');
+		$hd.find(".g-sheet-close").attr("aria-label", GL.t("close"));
+		var $list = $('<div class="g-sheet-list"></div>');
+		var lastSection = null;
+		items.forEach(function (it) {
+			if (TAB_VIEWS.indexOf(it.view) !== -1) return;
+			if (it.section !== lastSection) { $list.append($('<div class="g-sheet-section"></div>').text(it.section)); lastSection = it.section; }
+			var $i = $('<a class="g-sheet-item"></a>').attr("href", it.href).append($("<i></i>").attr("class", it.icon)).append($("<span></span>").text(it.text));
+			if (it.active) $i.attr("data-active", "");
+			$list.append($i);
+		});
+
+		$list.append($('<div class="g-sheet-section"></div>').text(GL.t("sec.settings")));
+		$("#mainNav .navbar-nav.ml-auto .dropdown-menu a.dropdown-item").each(function () {
+			var $a = $(this);
+			var href = $a.attr("href") || $a.attr("data-href");
+			if (!href || href === "#") return;
+			var $i = $('<a class="g-sheet-item"></a>').attr("href", href).attr("target", $a.attr("target") || null);
+			$i.append($("<i></i>").attr("class", ($a.find("i").attr("class") || "fa-solid fa-circle")));
+			$i.append($("<span></span>").text($.trim($a.text())));
+			if ($a.hasClass("show-as-dialog-link")) { $i.addClass("show-as-dialog-link").attr("data-dialog-type", $a.attr("data-dialog-type") || null); }
+			if ($a.hasClass("link-return")) { $i.addClass("link-return").attr("data-href", href).removeAttr("href"); }
+			$list.append($i);
+		});
+		var $theme = $('<button type="button" class="g-sheet-item"><i class="fa-solid fa-moon"></i><span></span></button>');
+		$theme.on("click", function () {
+			var dark = $body.hasClass("night-mode");
+			var $radio = $(dark ? "#night-mode-off" : "#night-mode-on");
+			if ($radio.length) $radio.prop("checked", true).trigger("change"); else $body.toggleClass("night-mode");
+		});
+		function syncSheetTheme() {
+			var dark = $body.hasClass("night-mode");
+			$theme.find("i").attr("class", dark ? "fa-solid fa-sun" : "fa-solid fa-moon");
+			$theme.find("span").text(GL.t(dark ? "theme.lightMode" : "theme.darkMode"));
+		}
+		syncSheetTheme();
+		new MutationObserver(syncSheetTheme).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+		$list.append($theme);
+
+		$sheet.append($hd).append($list);
+		$sheetBg.append($sheet);
+		$body.append($sheetBg);
+
+		function openSheet() { $sheetBg.prop("hidden", false); }
+		function closeSheet() { $sheetBg.prop("hidden", true); }
+		$more.on("click", openSheet);
+		$hd.find(".g-sheet-close").on("click", closeSheet);
+		$sheetBg.on("click", function (e) { if (e.target === this) closeSheet(); });
+		$(document).on("keydown", function (e) { if (e.key === "Escape") closeSheet(); });
+		$list.on("click", ".show-as-dialog-link, .link-return", closeSheet);
+	}
+})();
+</script>
+<?php
+if (defined('GROCY_AUTHENTICATED') && GROCY_AUTHENTICATED)
+{
+	foreach (array('common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics') as $gcPart)
+	{
+		include __DIR__ . '/companion/' . $gcPart . '.js.html';
+	}
+}
+?>

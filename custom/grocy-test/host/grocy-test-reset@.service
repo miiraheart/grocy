@@ -1,0 +1,10 @@
+[Unit]
+Description=grocy-test reset from the real Grocy
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /home/miira/apps/docker/grocy-test/host/reset-host.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=300

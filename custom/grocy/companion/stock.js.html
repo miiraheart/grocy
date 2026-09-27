@@ -1,0 +1,215 @@
+<script>
+(function () {
+	if (!window.GC) return;
+	var ID = GC.IDS;
+
+	if (Grocy.View === "stockoverview") { stockChips(); lowStockButton(); favoriteMenu(); phoneRowMenu(); }
+	if (Grocy.View === "stockoverview" || Grocy.View === "consume") openHook();
+	if (Grocy.View === "productform") productEstimate();
+
+	function stockChips() {
+		var $loc = $("#location-filter"), $grp = $("#product-group-filter");
+		if (!$loc.length) return;
+		var CH = [
+			[GL.t("chip.all"), null, null], [GL.t("chip.fridge"), "Réfrigérateur", null], [GL.t("chip.pantry"), "Placard", null],
+			[GL.t("chip.freezer"), "Congélateur", null], [GL.t("chip.counter"), "Plan de travail", null]
+		];
+		var $row = $('<div class="gc-chips gc-stock-chips" role="group"></div>').attr("aria-label", GL.t("chip.quick"));
+		CH.forEach(function (c, i) {
+			if (c[1] && !$loc.find("option").filter(function () { return this.value === c[1]; }).length) return;
+			if (c[2] && !$grp.find("option").filter(function () { return this.value === c[2]; }).length) return;
+			$('<button type="button" class="gc-chip"></button>').attr("data-i", i).text(c[0]).appendTo($row);
+		});
+		var $anchor = $(".g-tiles").first();
+		if ($anchor.length) $row.insertAfter($anchor); else $row.insertBefore($("#table-filter-row"));
+		function paint() {
+			$row.children().each(function () {
+				var c = CH[+$(this).data("i")];
+				var on = ($loc.val() === (c[1] || "all")) && ($grp.val() === (c[2] || "all"));
+				$(this).attr("aria-pressed", on ? "true" : "false");
+			});
+		}
+		$row.on("click", ".gc-chip", function () {
+			var c = CH[+$(this).data("i")];
+			$loc.val(c[1] || "all").trigger("change");
+			$grp.val(c[2] || "all").trigger("change");
+			paint();
+		});
+		$loc.add($grp).on("change", function () { setTimeout(paint, 0); });
+		paint();
+		dishToggle($row, $grp);
+	}
+
+	function dishToggle($row, $grp) {
+		if (!$.fn.dataTable || !$.fn.dataTable.isDataTable("#stock-overview-table")) return;
+		var table = $("#stock-overview-table").DataTable();
+		var KEY = "gc-show-dishes";
+		var norm = function (t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); };
+		var dishes = "xx" + norm("Plats cuisinés") + "xx";
+		var show = false;
+		try { show = localStorage.getItem(KEY) === "1"; } catch (e) {}
+		var col = table.colReorder ? table.colReorder.transpose(8) : 8;
+		$.fn.dataTable.ext.search.push(function (settings, data) {
+			if (settings.nTable.id !== "stock-overview-table" || show) return true;
+			if (norm($grp.val()) === norm("Plats cuisinés")) return true;
+			return norm(data[col]).indexOf(dishes) === -1;
+		});
+		var $t = $('<button type="button" class="gc-dish-toggle"></button>').appendTo($row);
+		function label() { $t.attr("aria-pressed", show ? "true" : "false").text(GL.t(show ? "stock.hideDishes" : "stock.showDishes")); }
+		$t.on("click", function () {
+			show = !show;
+			try { localStorage.setItem(KEY, show ? "1" : "0"); } catch (e) {}
+			label();
+			table.draw();
+		});
+		label();
+		table.draw();
+	}
+
+	function lowStockButton() {
+		var $r = $(".g-hd .g-hd-r").first();
+		if (!$r.length) return;
+		var $b = $('<button type="button" class="btn btn-outline-secondary gc-lowstock"><i class="fa-solid fa-cart-arrow-down"></i><span></span></button>');
+		$b.find("span").text(GL.t("stock.low"));
+		$r.prepend($b);
+		$b.on("click", function () {
+			var key = function (i) { return i.id + ":" + i.amount; };
+			$b.prop("disabled", true);
+			var before;
+			GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + ID.shoppingList).then(function (a) {
+				before = (a || []).map(key);
+				return GC.api("POST", "stock/shoppinglist/add-missing-products", { list_id: ID.shoppingList });
+			}).then(function () {
+				return GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + ID.shoppingList);
+			}).then(function (after) {
+				var n = (after || []).filter(function (i) { return before.indexOf(key(i)) === -1; }).length;
+				GC.toast(n ? "success" : "info", n ? GL.t("stock.lowAdded", { n: n }) : GL.t("stock.lowNone"));
+				try { sessionStorage.removeItem("g-nav-counts"); } catch (e) {}
+			}, function (e) { GC.toast("error", e.message); }).then(function () { $b.prop("disabled", false); });
+		});
+	}
+
+	function favoriteMenu() {
+		var favs = null;
+		GC.api("GET", "objects/products").then(function (ps) {
+			favs = {};
+			ps.forEach(function (p) { favs[p.id] = (p.userfields || {}).favori === "1"; });
+		});
+		$(document).on("show.bs.dropdown", "#stock-overview-table .dropdown", function () {
+			var $menu = $(this).find(".table-inline-menu");
+			var pid = $menu.find("[data-product-id]").first().attr("data-product-id");
+			if (!pid || favs === null) return;
+			$menu.find(".gc-fav-item").remove();
+			var on = !!favs[pid];
+			var $a = $('<a class="dropdown-item gc-fav-item" href="#"><span class="dropdown-item-icon"><i></i></span><span class="dropdown-item-text"></span></a>');
+			$a.find("i").attr("class", on ? "fa-solid fa-star" : "fa-regular fa-star");
+			$a.find(".dropdown-item-text").text(GL.t(on ? "fav.remove" : "fav.star"));
+			$a.on("click", function (e) {
+				e.preventDefault();
+				GC.setFavori("products", pid, !on).then(function () {
+					favs[pid] = !on;
+					GC.toast("success", GL.t(on ? "fav.removed" : "fav.added"));
+				}, function (err) { GC.toast("error", err.message); });
+			});
+			$menu.prepend($a);
+		});
+	}
+
+	function phoneRowMenu() {
+		var phone = window.matchMedia ? window.matchMedia("(max-width: 767.98px)") : null;
+		$(document).on("show.bs.dropdown", "#stock-overview-table .dropdown", function () {
+			var $menu = $(this).find(".table-inline-menu");
+			$menu.find(".gc-phone-item").remove();
+			if (!phone || !phone.matches) return;
+			var $td = $(this).closest("td");
+			[[$td.find(".product-open-button"), "fa-solid fa-box-open", "stock.openOne"], [$td.find('a[id$="-consume-all-button"]'), "fa-solid fa-utensils", "stock.consumeAll"]].forEach(function (x) {
+				var $btn = x[0];
+				if (!$btn.length) return;
+				var $a = $('<a class="dropdown-item gc-phone-item" href="#"><span class="dropdown-item-icon"><i></i></span><span class="dropdown-item-text"></span></a>');
+				$a.find("i").attr("class", x[1]);
+				$a.find(".dropdown-item-text").text(GL.t(x[2]));
+				if ($btn.hasClass("disabled")) $a.addClass("disabled");
+				$a.on("click", function (e) { e.preventDefault(); if (!$btn.hasClass("disabled")) $btn[0].click(); });
+				$menu.prepend($a);
+			});
+		});
+	}
+
+	function openHook() {
+		var passing = false;
+		document.addEventListener("click", function (ev) {
+			if (passing || !GC.cfg.configured) return;
+			var el = ev.target.closest ? ev.target.closest(".product-open-button, #save-mark-as-open-button") : null;
+			if (!el || el.classList.contains("disabled")) return;
+			var pid = el.getAttribute("data-product-id") || $("#product_id").val();
+			if (!pid) return;
+			ev.preventDefault();
+			ev.stopImmediatePropagation();
+			var go = function () { passing = true; el.click(); passing = false; };
+			GC.api("GET", "objects/products/" + pid).then(function (p) {
+				if (+p.default_best_before_days_after_open > 0) { go(); return; }
+				GC.toast("info", GL.t("open.estimating"), p.name);
+				return GC.hook("shelf-life", { product_id: +p.id, name: p.name, kind: +p.product_group_id === ID.groupDishes ? "dish" : "product", storage: GC.storageFor(p.location_id), opened: true, mode: "sync" }, 25000)
+					.then(function (res) {
+						if (res && res.status === "done") GC.toast("success", GL.t("open.done", { name: p.name, n: res.after_open_days || 0 }));
+					}, function (err) { GC.toast("warning", GL.t("open.fail", { msg: err.message })); })
+					.then(go);
+			}, go);
+		}, true);
+	}
+
+	function productEstimate() {
+		var $due = $("#default_best_before_days");
+		if (!$due.length) return;
+		var edit = Grocy.EditMode === "edit" && Grocy.EditObjectId;
+		var $wrap = $('<div class="gc-estimate"></div>');
+		var $b = $('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-wand-magic-sparkles"></i><span></span></button>').appendTo($wrap);
+		$b.find("span").text(GL.t("est.btn"));
+		var $chip = $('<span class="gc-estimate-chip" hidden></span>').appendTo($wrap);
+		$wrap.insertBefore($due.closest(".form-group"));
+		if (!edit) { $b.prop("disabled", true).attr("title", GL.t("est.saveFirst")); $chip.prop("hidden", false).text(GL.t("est.afterSave")); return; }
+		if (!GC.cfg.configured) { $b.prop("disabled", true); $chip.prop("hidden", false).text(GL.t("est.notConfigured")); return; }
+		var fields = ["#default_best_before_days", "#default_best_before_days_after_open", "#default_best_before_days_after_freezing", "#default_best_before_days_after_thawing"];
+		function setUf(name, v) { $('.userfield-input[data-userfield-name="' + name + '"]').val(v == null ? "" : v).trigger("change"); }
+		function run(force, opts) {
+			var name = $.trim($("#name").val());
+			if (!name) { GC.toast("warning", GL.t("est.needName")); return; }
+			var loc = +$("#location_id").val();
+			var group = +$("#product_group_id").val();
+			$b.prop("disabled", true).find("span").text(GL.t("est.running"));
+			GC.hook("shelf-life", GC.estimateBody({ product_id: +Grocy.EditObjectId, name: name, kind: group === ID.groupDishes ? "dish" : group === 2 ? "produce" : "product", storage: GC.storageFor(loc), opened: false, mode: "sync", force: !!force }, opts), GC.estimateTimeout(opts)).then(function (r) {
+				if (!r || r.status !== "done") {
+					$chip.prop("hidden", false).attr("data-s", "pending").text(r && r.status === "pending" ? GL.t("est.pendingWrite") : GL.t("est.impossible"));
+					return;
+				}
+				var main = { freezer: r.freezer_days, counter: r.counter_days, fridge: r.fridge_days }[GC.storageFor(loc)];
+				$(fields[0]).val(main || 0);
+				$(fields[1]).val(r.after_open_days || 0);
+				$(fields[2]).val(r.freezer_days || 0);
+				$(fields[3]).val(group === ID.groupDishes ? 2 : $(fields[3]).val());
+				$(fields.join(",")).trigger("change").trigger("keyup");
+				if (r.due_type) $("#due-type-" + (+r.due_type === 2 ? "expiration" : "bestbefore")).prop("checked", true);
+				if (!group && r.category) {
+					var $o = $("#product_group_id option").filter(function () { return $(this).text().trim() === r.category; });
+					if ($o.length) $("#product_group_id").val($o.val()).trigger("change");
+				}
+				setUf("shelf_fridge_days", r.fridge_days); setUf("shelf_freezer_days", r.freezer_days); setUf("shelf_counter_days", r.counter_days);
+				setUf("shelf_after_open_days", r.after_open_days); setUf("shelf_confidence", r.confidence); setUf("shelf_notes", r.notes);
+				setUf("shelf_status", "done"); setUf("shelf_source", r.source); setUf("shelf_updated", GC.today());
+				$chip.prop("hidden", false).attr("data-s", "done").text(GC.estimateText(r) + " · " + GL.t("est.confidence", { n: Math.round(GC.num(r.confidence) * 100) }) + (r.notes ? " · " + r.notes : ""));
+				GC.toast("success", GL.t("est.filled"), name);
+			}, function (err) {
+				$chip.prop("hidden", false).attr("data-s", "failed").text(err.message);
+			}).then(function () { $b.prop("disabled", false).find("span").text(GL.t("est.btn")); });
+		}
+		$b.on("click", function () {
+			var name = $.trim($("#name").val());
+			if (!name) { GC.toast("warning", GL.t("est.needName")); return; }
+			GC.estimateSheet(name, function (opts) { run(true, opts); });
+		});
+		var allZero = fields.every(function (f) { return !GC.num($(f).val()); });
+		var status = $('.userfield-input[data-userfield-name="shelf_status"]').val();
+		if (allZero && $.trim($("#name").val()) && (!status || status === "none")) run(false);
+	}
+})();
+</script>

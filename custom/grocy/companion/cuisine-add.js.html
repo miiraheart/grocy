@@ -1,0 +1,82 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "userobjects" || GC.entityName() !== "cuisine") return;
+	var ID = GC.IDS;
+
+	GC.cuisineAddDish = function (deps) {
+		var $f = $('<form class="gc-form" novalidate></form>');
+		function lbl(key, $input) { return $("<label></label>").text(GL.t(key)).append($input); }
+		$f.append(lbl("cu.name", '<input class="form-control" name="name" required list="gc-dish-names" placeholder="Ratatouille">')).append('<datalist id="gc-dish-names"></datalist>');
+		$f.append(lbl("cu.ingredients", $('<textarea class="form-control" name="ingredients" rows="3"></textarea>').attr("placeholder", GL.t("cu.ingredientsPh"))));
+		$('<div class="gc-form-row"></div>').append(lbl("cu.portionsLabel", '<input class="form-control" name="portions" type="number" min="0.5" step="0.5" value="2">')).append(lbl("cu.cooked", '<input class="form-control" name="cooked" type="date">')).appendTo($f);
+		var $sel = $('<select class="form-control" name="loc"></select>');
+		GC.api("GET", "objects/locations").then(function (locs) {
+			var byId = GC.byId(locs);
+			deps.storage.forEach(function (id) { if (byId[id]) $sel.append($("<option></option>").val(id).text(byId[id].name)); });
+		});
+		lbl("cu.storage", $sel).appendTo($f);
+		$f.append($('<label class="gc-check"><input type="checkbox" name="custom"> </label>').append(document.createTextNode(GL.t("cu.custom")))).append(lbl("cu.useBy", '<input class="form-control" name="due" type="date">').addClass("gc-custom").prop("hidden", true));
+		$f.find("[name=cooked]").val(GC.today());
+		$f.find("[name=due]").val(GC.addDays(GC.today(), 3));
+		$f.find("[name=custom]").on("change", function () { $f.find(".gc-custom").prop("hidden", !this.checked); });
+		GC.api("GET", "objects/products?query[]=product_group_id=" + ID.groupDishes).then(function (ps) {
+			ps.forEach(function (p) { $f.find("datalist").append($("<option></option>").val(p.name)); });
+		});
+		GC.sheet(GL.t("cu.addDish"), $f, [
+			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+			{ label: GL.t("save"), primary: true, onClick: function (close, $b) {
+				var v = { name: $.trim($f.find("[name=name]").val()), ingredients: $.trim($f.find("[name=ingredients]").val()), portions: GC.num($f.find("[name=portions]").val()), cooked: $f.find("[name=cooked]").val() || GC.today(), loc: +$sel.val(), custom: $f.find("[name=custom]").prop("checked"), due: $f.find("[name=due]").val() };
+				if (!v.name || v.portions <= 0 || (v.custom && !v.due)) { GC.toast("warning", GL.t("cu.required")); return; }
+				$b.prop("disabled", true).text(GL.t("saving"));
+				saveDish(v, deps).then(function () { close(); }, function (err) { $b.prop("disabled", false).text(GL.t("save")); GC.toast("error", err.message); });
+			} }
+		]);
+	};
+
+	function findOrCreate(v) {
+		return GC.api("GET", "objects/products").then(function (all) {
+			var found = all.filter(function (p) { return p.name.trim().toLowerCase() === v.name.toLowerCase(); })[0];
+			if (found && +found.product_group_id !== ID.groupDishes) throw new Error(GL.t("cu.nameTaken", { name: found.name }));
+			if (found) return (String(found.active) === "1" ? Promise.resolve() : GC.api("PUT", "objects/products/" + found.id, { active: 1 })).then(function () { return found.id; });
+			return GC.api("GET", "objects/quantity_units").then(function (qus) {
+				var qu = qus.filter(function (q) { return /^(portion|pi[eè]ce)/i.test(q.name); })[0] || qus[0];
+				return GC.api("POST", "objects/products", { name: v.name, product_group_id: ID.groupDishes, location_id: v.loc, qu_id_purchase: qu.id, qu_id_stock: qu.id, due_type: 2, default_best_before_days: 3, default_best_before_days_after_thawing: 2, active: 1 });
+			}).then(function (r) { return r.created_object_id; });
+		}).then(function (id) {
+			return Promise.all([GC.api("GET", "objects/products/" + id), GC.api("GET", "userfields/products/" + id)]).then(function (r) { r[0].userfields = r[1] || {}; return r[0]; });
+		});
+	}
+
+	function saveDish(v, deps) {
+		var product, force;
+		return findOrCreate(v).then(function (p) {
+			product = p;
+			var u = p.userfields;
+			force = !!u.ingredients && u.ingredients !== v.ingredients;
+			var status = u.shelf_status === "done" && !force ? "done" : v.custom ? (u.shelf_status || "manual") : GC.cfg.configured ? "pending" : (u.shelf_status || "none");
+			var fields = { ingredients: v.ingredients, cooked_on: v.cooked, shelf_status: status };
+			$.extend(product.userfields, fields);
+			return GC.api("PUT", "userfields/products/" + p.id, fields);
+		}).then(function () {
+			var u = product.userfields;
+			var days = v.loc === ID.locFreezer ? (+u.shelf_freezer_days || 90) : v.loc === ID.locCounter ? (+u.shelf_counter_days || 0) : (+u.shelf_fridge_days || 3);
+			return GC.api("POST", "stock/products/" + product.id + "/add", { amount: v.portions, best_before_date: v.custom ? v.due : GC.addDays(v.cooked, days), location_id: v.loc, transaction_type: "self-production", purchased_date: v.cooked });
+		}).then(function (rows) {
+			var sid = rows && rows[0] && rows[0].stock_id;
+			return GC.api("GET", "objects/stock?query[]=product_id=" + product.id + "&order=id:desc").then(function (es) {
+				return es.filter(function (e) { return e.stock_id === sid; })[0] || es[0];
+			});
+		}).then(function (entry) {
+			if (v.custom) {
+				return deps.putEntry(entry, { best_before_date: v.due }).then(function (rows) { return deps.markManual(entry, rows); }).then(function () {
+					GC.toast("success", GL.t("cu.addedDue", { name: product.name, d: GC.fmtDate(v.due) }));
+					deps.refresh();
+				});
+			}
+			GC.toast("info", GL.t("cu.addedEst", { name: product.name }));
+			deps.refresh();
+			deps.estimate(product, entry, force);
+		});
+	}
+})();
+</script>

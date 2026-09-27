@@ -1,0 +1,63 @@
+<script>
+(function () {
+	if (!window.GC || !GC.chart) return;
+
+	function pct(v) {
+		if (v == null) return "-";
+		var s = (v > 0 ? "+" : "") + String(v);
+		return (GL.lang === "fr" ? s.replace(".", ",") : s) + " %";
+	}
+
+	function nameOf(d, key) { return key[0] === "p" && d.names[key.slice(1)] ? d.names[key.slice(1)].name : key.slice(1); }
+
+	GC.analyticsProduct = function ($p, ctx) {
+		var d = ctx.d, r = ctx.range, state = ctx.state;
+		var obs = d.obs.filter(function (o) { return o.date >= r.from && o.date <= r.to && (!state.tag || (o.key[0] === "p" && ctx.tagOk(o.key.slice(1)))); });
+		var keys = {};
+		obs.forEach(function (o) { (keys[o.key] = keys[o.key] || []).push(o); });
+		var list = Object.keys(keys).map(function (k) { return { key: k, name: nameOf(d, k), n: keys[k].length }; })
+			.sort(function (a, b) { return a.name.localeCompare(b.name); });
+		if (!list.length) { $('<div class="gc-empty"><i class="fa-solid fa-chart-line"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("tk.noPrices")).end().find("span").text(GL.t("an.emptySub")); return; }
+		var key = keys[state.product] ? state.product : list.slice().sort(function (a, b) { return b.n - a.n; })[0].key;
+
+		var $pick = $('<select class="form-control gc-an-pick"></select>').attr("aria-label", GL.t("an.pick"));
+		list.forEach(function (x) { $pick.append($("<option></option>").val(x.key).text(x.name + " (" + x.n + ")")); });
+		$pick.val(key).on("change", function () { GC.analyticsOpen($(this).val()); });
+		$('<label class="gc-an-picklabel"></label>').text(GL.t("an.pick")).append($pick).appendTo($p);
+
+		var t = GC.receipt.productTrend(key, keys[key]);
+		var unit = t.unit === "piece" ? "" : " /" + t.unit;
+		var fmt = function (v) { return GL.money(v) + unit; };
+		var dir = t.last_vs_avg_pct > 2 ? "up" : t.last_vs_avg_pct < -2 ? "down" : "flat";
+		GC.tiles([
+			{ kind: "last", label: GL.t("an.lastPrice"), value: fmt(t.last.price), sub: GC.dateLabel(t.last.date, "day") + (t.last.store ? " · " + t.last.store : "") },
+			{ kind: "avg", label: GL.t("an.avg"), value: fmt(t.avg), sub: GL.t("an.nBuys", { n: t.count }) },
+			{ kind: "delta-" + dir, label: GL.t("an.lastVsAvg"), value: pct(t.last_vs_avg_pct), sub: GL.t(dir === "up" ? "an.dearer" : dir === "down" ? "an.cheaper" : "an.same") },
+			{ kind: "cheapest", label: GL.t("an.cheapest"), value: t.cheapest ? t.cheapest.store : (t.by_store[0] || {}).store || "-", sub: t.cheapest ? GL.t("an.avgAt", { p: fmt(t.cheapest.avg) }) : GL.t("an.oneStore") }
+		]).addClass("gc-an-tiles").appendTo($p);
+
+		var $c = $('<section class="gc-card"><div class="gc-card-hd"><h3></h3><span class="gc-sub"></span></div></section>').appendTo($p);
+		$c.find("h3").text(t.unit === "piece" ? GL.t("an.chartPiece") : GL.t("an.chartUnit", { u: t.unit })).end().find(".gc-sub").text(GL.t("an.unitRule"));
+		var stores = {};
+		t.points.forEach(function (pt) { var s = pt.store || GL.t("tk.unknown"); (stores[s] = stores[s] || []).push(pt); });
+		var series = Object.keys(stores).sort().map(function (s) { return { name: s, color: GC.chart.colorVar(d.stores.indexOf(s) === -1 ? d.stores.length : d.stores.indexOf(s)), points: stores[s] }; });
+		var $chart = $("<div></div>").appendTo($c);
+		if (series.length > 1) GC.chart.legend(series).insertBefore($chart);
+		GC.chart.lines($chart, series, fmt);
+
+		var $tb = $('<table class="table gc-table gc-an-stores"><thead><tr><th></th><th class="gc-num"></th><th class="gc-num gc-an-min"></th><th class="gc-num"></th><th class="gc-num"></th></tr></thead><tbody></tbody></table>');
+		["store", "an.avg", "tk.min", "tk.last", "tk.count"].forEach(function (k, n) { $tb.find("th").eq(n).text(GL.t(k)); });
+		series.forEach(function (s) {
+			var ps = s.points.map(function (x) { return x.price; }), avg = ps.reduce(function (a, b) { return a + b; }, 0) / ps.length;
+			var $tr = $("<tr></tr>").appendTo($tb.find("tbody"));
+			$("<td></td>").append($('<span class="gc-swatch"></span>').css("background", s.color)).append(document.createTextNode(s.name)).appendTo($tr);
+			if (t.cheapest && t.cheapest.store === s.name) $tr.attr("data-best", "");
+			$('<td class="gc-num"></td>').text(fmt(avg)).appendTo($tr);
+			$('<td class="gc-num gc-an-min"></td>').text(fmt(Math.min.apply(null, ps))).appendTo($tr);
+			$('<td class="gc-num"></td>').text(fmt(s.points[s.points.length - 1].price)).appendTo($tr);
+			$('<td class="gc-num"></td>').text(s.points.length).appendTo($tr);
+		});
+		$('<div class="gc-scroll"></div>').append($tb).appendTo($c);
+	};
+})();
+</script>

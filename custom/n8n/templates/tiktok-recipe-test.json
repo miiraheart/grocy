@@ -1,0 +1,285 @@
+{
+ "id": "tiktokRecipeTest0001",
+ "name": "TikTok -> Grocy recipe (TEST: grocy-test)",
+ "active": true,
+ "nodes": [
+  {
+   "id": "a1",
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "tiktok-recipe-test",
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "tiktok-recipe-test",
+    "responseMode": "onReceived",
+    "options": {
+     "responseData": "{\"ok\":true,\"message\":\"Import en cours, la recette apparaît dans Grocy d'ici quelques minutes.\"}"
+    }
+   }
+  },
+  {
+   "id": "a2",
+   "name": "Read TikTok",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "jsCode": "\nconst SECRETS = [\"__TIKTOK_SECRET__\", \"__WEBHOOK_SECRET__\"];\nconst GROCY = \"http://grocy-test/api\";\nconst GROCY_KEY = \"__GROCY_API_KEY__\";\nconst req = $input.first().json;\nconst headers = req.headers || {};\nif (!SECRETS.includes(headers[\"x-trigger-secret\"])) {\n  return [{ json: { ok: false, stop: true, message: \"Unauthorized\" } }];\n}\nlet url = String((req.body && (req.body.url || req.body.text)) || \"\").trim();\nconst m = url.match(/https?:\\/\\/\\S*tiktok\\.com\\S*/);\nif (!m) return [{ json: { ok: false, stop: true, message: \"No TikTok link found\" } }];\nurl = m[0];\n\n// Short links (vm.tiktok.com / tiktok.com/t/) redirect to the full video URL\nif (!/\\/video\\/\\d+/.test(url)) {\n  const res = await this.helpers.httpRequest({ url, method: \"GET\", returnFullResponse: true,\n    ignoreHttpStatusErrors: true, headers: { \"User-Agent\": \"Mozilla/5.0\" } });\n  const finalUrl = (res.request && res.request.res && res.request.res.responseUrl) || \"\";\n  if (/\\/video\\/\\d+/.test(finalUrl)) url = finalUrl;\n}\nurl = url.split(\"?\")[0];\nconst videoId = (url.match(/\\/video\\/(\\d+)/) || [])[1] || \"\";\n\nconst oembed = await this.helpers.httpRequest({\n  url: \"https://www.tiktok.com/oembed?url=\" + encodeURIComponent(url), json: true });\n\nif (videoId) {\n  const existing = await this.helpers.httpRequest({\n    url: GROCY + \"/objects/recipes?query%5B%5D=description~\" + videoId,\n    headers: { \"GROCY-API-KEY\": GROCY_KEY }, json: true });\n  if (existing.length) {\n    return [{ json: { ok: true, stop: true, duplicate: true, name: existing[0].name,\n      message: \"Already imported: \" + existing[0].name } }];\n  }\n}\n\nconst caption = oembed.title || \"\";\nconst system = [\n  \"Tu extrais une recette depuis la description d'une vidéo TikTok.\",\n  \"Garde la langue d'origine (souvent le français).\",\n  \"name = le nom du plat (ex: \\\"Crêpes\\\", \\\"Gâteau au chocolat\\\"), JAMAIS un ingrédient, sans emoji ni hashtag.\",\n  \"N'invente JAMAIS de quantités ni d'ingrédients absents du texte: laisse quantity vide si elle n'est pas donnée.\",\n  \"quantity contient le nombre ET l'unité exactement comme écrits (ex: \\\"250 g\\\", \\\"500 ml\\\", \\\"1 càs\\\", \\\"4\\\").\",\n  \"has_recipe = false si le texte ne contient pas de vraie liste d'ingrédients.\",\n  \"diet_flags (en français, un mot court par problème, ex: \\\"gluten\\\", \\\"produits laitiers\\\", \\\"oeufs\\\", \\\"sucre\\\"): ce qui pose problème pour ce régime: avoine, sarrasin (anaphylaxie),\",\n  \"oeufs, ananas, colza, sucre (canne ou ajouté), gluten (blé, orge, seigle, épeautre, sauce soja), produits laitiers, sésame, porc.\",\n].join(\" \");\n\nconst schema = {\n  type: \"object\", additionalProperties: false,\n  required: [\"name\", \"servings\", \"has_recipe\", \"ingredients\", \"steps\", \"diet_flags\"],\n  properties: {\n    name: { type: \"string\" },\n    servings: { type: [\"number\", \"null\"] },\n    has_recipe: { type: \"boolean\" },\n    ingredients: { type: \"array\", items: { type: \"object\", additionalProperties: false,\n      required: [\"quantity\", \"name\", \"note\"],\n      properties: { quantity: { type: \"string\" }, name: { type: \"string\" }, note: { type: \"string\" } } } },\n    steps: { type: \"array\", items: { type: \"string\" } },\n    diet_flags: { type: \"array\", items: { type: \"string\" } },\n  },\n};\n\nreturn [{ json: {\n  ok: true, stop: false, url, videoId, caption,\n  author: oembed.author_name || \"\", authorUrl: oembed.author_url || \"\",\n  thumbnailUrl: oembed.thumbnail_url || \"\",\n  llmRequest: {\n    models: [\"qwen/qwen3.8-27b:free\", \"nvidia/nemotron-3-super-120b-a12b:free\"],\n    provider: { require_parameters: true },\n    temperature: 0,\n    messages: [ { role: \"system\", content: system }, { role: \"user\", content: caption } ],\n    response_format: { type: \"json_schema\", json_schema: { name: \"recipe\", strict: true, schema } },\n  },\n} }];\n"
+   }
+  },
+  {
+   "id": "a3",
+   "name": "Continue?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "c1",
+       "leftValue": "={{ $json.stop }}",
+       "rightValue": false,
+       "operator": {
+        "type": "boolean",
+        "operation": "false",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "a4",
+   "name": "Parse recipe (OpenRouter)",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    660,
+    -100
+   ],
+   "credentials": {
+    "openRouterApi": {
+     "id": "l86vEWp9ZQt60YHZ",
+     "name": "OpenRouter account 2"
+    }
+   },
+   "parameters": {
+    "method": "POST",
+    "url": "https://openrouter.ai/api/v1/chat/completions",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "openRouterApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.llmRequest) }}",
+    "options": {
+     "timeout": 300000
+    }
+   }
+  },
+  {
+   "id": "a5",
+   "name": "Create in Grocy",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    -100
+   ],
+   "parameters": {
+    "jsCode": "\nconst GROCY = \"http://grocy-test/api\";\nconst GROCY_KEY = \"__GROCY_API_KEY__\";\nconst src = $(\"Read TikTok\").first().json;\nconst llm = $input.first().json;\n// Models sometimes emit half of an emoji pair, which is invalid UTF-8 once stored\nconst clean = (s) => String(s || \"\").toWellFormed().replace(/\\uFFFD/g, \"\");\nconst esc = (s) => clean(s).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\");\n\nlet r;\ntry {\n  r = JSON.parse(llm.choices[0].message.content);\n} catch (e) {\n  r = { name: \"\", servings: null, has_recipe: false, ingredients: [], steps: [], diet_flags: [] };\n}\nconst captionTitle = (src.caption.split(/[#\\n]|Ingr/)[0] || \"\").replace(/[^\\p{L}\\p{N}' -]/gu, \"\").trim();\nconst looksLikeIngredient = r.ingredients.some(i => (i.name || \"\").toLowerCase() === (r.name || \"\").toLowerCase().trim());\nconst title = ((looksLikeIngredient ? \"\" : r.name) || captionTitle || \"Recette TikTok\").trim().slice(0, 80);\nlet name = clean(r.has_recipe ? title : \"[À compléter] \" + title);\nif (r.diet_flags && r.diet_flags.length) name = \"⚠️ \" + name;\n\nlet html = \"\";\nif (r.diet_flags && r.diet_flags.length) {\n  html += \"<p><strong>⚠️ Attention : \" + esc(r.diet_flags.join(\", \")) + \"</strong></p>\";\n}\nif (r.ingredients.length) {\n  html += \"<h3>Ingrédients</h3><ul>\" + r.ingredients.map(i =>\n    \"<li>\" + esc([i.quantity, i.name].filter(Boolean).join(\" \")) + (i.note ? \" <em>(\" + esc(i.note.replace(/^\\(+|\\)+$/g, \"\")) + \")</em>\" : \"\") + \"</li>\").join(\"\") + \"</ul>\";\n}\nif (r.steps.length) {\n  html += \"<h3>Préparation</h3><ol>\" + r.steps.map(s => \"<li>\" + esc(s) + \"</li>\").join(\"\") + \"</ol>\";\n}\nhtml += \"<h3>Description d'origine</h3><p>\" + esc(src.caption).replace(/\\n/g, \"<br>\") + \"</p>\";\nhtml += '<p>Source : <a href=\"' + src.url + '\">' + esc(src.url) + \"</a>\" +\n        (src.author ? \" · \" + esc(src.author) : \"\") + \"</p>\";\n\nconst headers = { \"GROCY-API-KEY\": GROCY_KEY };\nconst created = await this.helpers.httpRequest({ method: \"POST\", url: GROCY + \"/objects/recipes\", headers, json: true,\n  body: { name, description: html, base_servings: r.servings || 1, desired_servings: r.servings || 1 } });\nconst recipeId = Number(created.created_object_id);\n\nconst fileName = \"tiktok-\" + (src.videoId || recipeId) + \".jpg\";\nreturn [{ json: { ok: true, recipeId, name, hasRecipe: r.has_recipe,\n  thumbnailUrl: src.thumbnailUrl, fileName, fileNameB64: Buffer.from(fileName).toString(\"base64\"),\n  ingredients: r.ingredients.length, steps: r.steps.length, dietFlags: r.diet_flags,\n  model: llm.model || \"\", message: \"Recette ajoutée : \" + name } }];\n"
+   }
+  },
+  {
+   "id": "a6",
+   "name": "Stop",
+   "type": "n8n-nodes-base.noOp",
+   "typeVersion": 1,
+   "position": [
+    660,
+    100
+   ],
+   "parameters": {}
+  },
+  {
+   "id": "a7",
+   "name": "Download thumbnail",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1100,
+    -100
+   ],
+   "onError": "continueRegularOutput",
+   "parameters": {
+    "url": "={{ $json.thumbnailUrl }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "User-Agent",
+       "value": "Mozilla/5.0"
+      }
+     ]
+    },
+    "options": {
+     "response": {
+      "response": {
+       "responseFormat": "file",
+       "outputPropertyName": "data"
+      }
+     }
+    }
+   }
+  },
+  {
+   "id": "a8",
+   "name": "Upload photo",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    1320,
+    -100
+   ],
+   "onError": "continueRegularOutput",
+   "parameters": {
+    "method": "PUT",
+    "url": "=http://grocy-test/api/files/recipepictures/{{ $('Create in Grocy').item.json.fileNameB64 }}",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "GROCY-API-KEY",
+       "value": "__GROCY_API_KEY__"
+      }
+     ]
+    },
+    "sendBody": true,
+    "contentType": "binaryData",
+    "inputDataFieldName": "data",
+    "options": {}
+   }
+  },
+  {
+   "id": "a9",
+   "name": "Link photo",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    1540,
+    -100
+   ],
+   "parameters": {
+    "jsCode": "const GROCY = \"http://grocy-test/api\";\nconst created = $(\"Create in Grocy\").first().json;\nconst upload = $input.first().json;\nconst hasImage = !!($(\"Download thumbnail\").first().binary || {}).data;\nlet photo = false;\nif (hasImage && !upload.error) {\n  try {\n    await this.helpers.httpRequest({ method: \"PUT\", url: GROCY + \"/objects/recipes/\" + created.recipeId,\n      headers: { \"GROCY-API-KEY\": \"__GROCY_API_KEY__\" }, json: true, body: { picture_file_name: created.fileName } });\n    photo = true;\n  } catch (e) { photo = false; }\n}\nconst { thumbnailUrl, fileName, fileNameB64, ...summary } = created;\nreturn [{ json: { ...summary, photo } }];\n"
+   }
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Read TikTok",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Read TikTok": {
+   "main": [
+    [
+     {
+      "node": "Continue?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Continue?": {
+   "main": [
+    [
+     {
+      "node": "Parse recipe (OpenRouter)",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Stop",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse recipe (OpenRouter)": {
+   "main": [
+    [
+     {
+      "node": "Create in Grocy",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Create in Grocy": {
+   "main": [
+    [
+     {
+      "node": "Download thumbnail",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download thumbnail": {
+   "main": [
+    [
+     {
+      "node": "Upload photo",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Upload photo": {
+   "main": [
+    [
+     {
+      "node": "Link photo",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1"
+ },
+ "pinData": {}
+}

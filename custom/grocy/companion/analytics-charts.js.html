@@ -1,0 +1,161 @@
+<script>
+(function () {
+	if (!window.GC) return;
+	var NS = "http://www.w3.org/2000/svg";
+	var SERIES = 8;
+
+	function svg(tag, attrs) {
+		var el = document.createElementNS(NS, tag);
+		Object.keys(attrs || {}).forEach(function (k) { el.setAttribute(k, attrs[k]); });
+		return el;
+	}
+
+	function short(v) {
+		var n = Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10;
+		var s = String(n).replace(".", GL.lang === "fr" ? "," : ".");
+		return GL.lang === "fr" ? s + " €" : "€" + s;
+	}
+
+	function niceMax(v) {
+		if (!(v > 0)) return 1;
+		var p = Math.pow(10, Math.floor(Math.log10(v))), f = v / p;
+		return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+	}
+
+	function tip($box) {
+		var $t = $('<div class="gc-tip" role="status" hidden></div>').appendTo($box);
+		return {
+			show: function (html, x, y) {
+				$t.html(html).prop("hidden", false);
+				var w = $t.outerWidth(), bw = $box.width();
+				$t.css({ left: Math.max(0, Math.min(bw - w, x - w / 2)) + "px", top: Math.max(0, y - $t.outerHeight() - 10) + "px" });
+			},
+			hide: function () { $t.prop("hidden", true); }
+		};
+	}
+
+	function hover(el, t, html, $box) {
+		function at(e) {
+			var r = $box[0].getBoundingClientRect(), p = e.touches ? e.touches[0] : e;
+			t.show(html, p.clientX - r.left, p.clientY - r.top);
+		}
+		el.addEventListener("mousemove", at);
+		el.addEventListener("touchstart", at, { passive: true });
+		el.addEventListener("mouseleave", t.hide);
+	}
+
+	function colorVar(i) { return i < SERIES ? "var(--gc-s" + (i + 1) + ")" : "var(--g-faint)"; }
+
+	function yAxis(g, W, top, H, max, left) {
+		[0, 0.5, 1].forEach(function (f) {
+			var y = top + H - f * H;
+			g.appendChild(svg("line", { x1: left, x2: W, y1: y, y2: y, "class": f ? "gc-grid" : "gc-base" }));
+			var tx = svg("text", { x: left - 6, y: y + 4, "text-anchor": "end", "class": "gc-axis" });
+			tx.textContent = short(max * f);
+			g.appendChild(tx);
+		});
+	}
+
+	// Vertical bars over time: items [{label, value, tip}]
+	function bars($box, items) {
+		$box.empty().addClass("gc-chart");
+		var W = Math.max(280, $box.width()), H = 180, top = 10, left = 48, bottom = 24;
+		var max = niceMax(Math.max.apply(null, items.map(function (d) { return d.value; }).concat([0])));
+		var root = svg("svg", { width: W, height: H + top + bottom, role: "img" });
+		yAxis(root, W, top, H, max, left);
+		var band = (W - left) / Math.max(1, items.length), bw = Math.max(3, Math.min(36, band - 2));
+		var every = Math.ceil(items.length / Math.max(1, Math.floor((W - left) / 54)));
+		var t = tip($box);
+		items.forEach(function (d, i) {
+			var x = left + i * band + (band - bw) / 2, h = d.value / max * H;
+			if (h > 0) root.appendChild(svg("path", { d: roundTop(x, top + H - h, bw, h, Math.min(4, bw / 2)), "class": "gc-bar" }));
+			var hit = svg("rect", { x: left + i * band, y: top, width: band, height: H, "class": "gc-hit" });
+			hover(hit, t, d.tip, $box);
+			root.appendChild(hit);
+			if (i % every === 0) {
+				var tx = svg("text", { x: x + bw / 2, y: top + H + 16, "text-anchor": "middle", "class": "gc-axis" });
+				tx.textContent = d.label;
+				root.appendChild(tx);
+			}
+		});
+		$box[0].appendChild(root);
+	}
+
+	function roundTop(x, y, w, h, r) {
+		r = Math.min(r, h);
+		return "M" + x + "," + (y + h) + "V" + (y + r) + "Q" + x + "," + y + " " + (x + r) + "," + y + "H" + (x + w - r) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + r) + "V" + (y + h) + "Z";
+	}
+
+	// Horizontal bar rows: rows [{label, value, text, sub, color, onClick}]
+	function hbars(rows) {
+		var max = Math.max.apply(null, rows.map(function (r) { return r.value; }).concat([0])) || 1;
+		var $l = $('<div class="gc-hbars"></div>');
+		rows.forEach(function (r) {
+			var $r = $('<div class="gc-hbar"></div>').appendTo($l);
+			var $name = $('<div class="gc-hbar-name"></div>').appendTo($r);
+			if (r.color) $('<span class="gc-swatch"></span>').css("background", r.color).appendTo($name);
+			$("<span></span>").text(r.label).appendTo($name);
+			if (r.sub) $('<span class="gc-sub"></span>').text(r.sub).appendTo($name);
+			$('<div class="gc-hbar-val gc-num"></div>').text(r.text).appendTo($r);
+			$('<div class="gc-hbar-track"><i></i></div>').appendTo($r).find("i").css({ width: Math.max(1, r.value / max * 100) + "%", background: r.color || "" });
+			if (r.onClick) $r.attr({ role: "button", tabindex: 0 }).addClass("gc-click").on("click keydown", function (e) { if (e.type === "click" || e.key === "Enter") r.onClick(); });
+		});
+		return $l;
+	}
+
+	// Price lines per store: series [{name, color, points:[{date, price}]}]
+	function lines($box, series, fmt) {
+		$box.empty().addClass("gc-chart");
+		var all = [];
+		series.forEach(function (s) { s.points.forEach(function (p) { all.push(p); }); });
+		if (!all.length) return;
+		var W = Math.max(280, $box.width()), H = 200, top = 10, left = 52, right = 10, bottom = 24;
+		var ts = all.map(function (p) { return moment(p.date, "YYYY-MM-DD").valueOf(); });
+		var t0 = Math.min.apply(null, ts), t1 = Math.max.apply(null, ts), span = t1 - t0 || 86400000;
+		var lo0 = Math.min.apply(null, all.map(function (p) { return p.price; }));
+		var max = niceMax(Math.max.apply(null, all.map(function (p) { return p.price; })) * 1.05);
+		var lo = lo0 > max * 0.4 ? Math.floor(lo0 * 0.8 / (max / 10)) * (max / 10) : 0;
+		var X = function (d) { return left + (moment(d, "YYYY-MM-DD").valueOf() - t0) / span * (W - left - right - 8) + 4; };
+		var Y = function (v) { return top + H - (v - lo) / (max - lo) * H; };
+		var root = svg("svg", { width: W, height: H + top + bottom, role: "img" });
+		[0, 0.5, 1].forEach(function (f) {
+			var v = lo + (max - lo) * f, y = Y(v);
+			root.appendChild(svg("line", { x1: left, x2: W - right, y1: y, y2: y, "class": f ? "gc-grid" : "gc-base" }));
+			var tx = svg("text", { x: left - 6, y: y + 4, "text-anchor": "end", "class": "gc-axis" });
+			tx.textContent = fmt(v);
+			root.appendChild(tx);
+		});
+		[t0, t0 + span / 2, t1].forEach(function (t, i) {
+			var tx = svg("text", { x: i === 0 ? left : i === 2 ? W - right : left + (W - left - right) / 2, y: top + H + 16, "text-anchor": i === 0 ? "start" : i === 2 ? "end" : "middle", "class": "gc-axis" });
+			tx.textContent = GC.dateLabel(moment(t).format("YYYY-MM-DD"), "day");
+			root.appendChild(tx);
+		});
+		var t = tip($box);
+		series.forEach(function (s) {
+			var pts = s.points.slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+			if (pts.length > 1) root.appendChild(svg("polyline", { points: pts.map(function (p) { return X(p.date).toFixed(1) + "," + Y(p.price).toFixed(1); }).join(" "), "class": "gc-line", style: "stroke:" + s.color }));
+			pts.forEach(function (p) {
+				root.appendChild(svg("circle", { cx: X(p.date), cy: Y(p.price), r: 4, "class": "gc-dot", style: "fill:" + s.color }));
+				var hit = svg("circle", { cx: X(p.date), cy: Y(p.price), r: 12, "class": "gc-hit" });
+				hover(hit, t, "<b>" + GC.esc(s.name) + "</b><br>" + GC.esc(GC.dateLabel(p.date, "day")) + " · " + GC.esc(fmt(p.price)), $box);
+				root.appendChild(hit);
+			});
+		});
+		$box[0].appendChild(root);
+	}
+
+	function legend(series) {
+		var $l = $('<div class="gc-legend"></div>');
+		series.forEach(function (s) { $('<span class="gc-legend-item"><span class="gc-swatch"></span><span></span></span>').appendTo($l).find(".gc-swatch").css("background", s.color).end().find("span").last().text(s.name); });
+		return $l;
+	}
+
+	GC.dateLabel = function (date, mode) {
+		var d = moment(date, "YYYY-MM-DD").toDate(), loc = GL.lang === "fr" ? "fr-FR" : "en-GB";
+		if (mode === "month") return d.toLocaleDateString(loc, { month: "short", year: "2-digit" });
+		return d.toLocaleDateString(loc, { day: "numeric", month: "short", year: mode === "day" ? "2-digit" : undefined });
+	};
+
+	GC.chart = { bars: bars, hbars: hbars, lines: lines, legend: legend, colorVar: colorVar, short: short };
+})();
+</script>
