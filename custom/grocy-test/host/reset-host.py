@@ -3,6 +3,7 @@
 import fcntl
 import json
 import os
+import re
 import secrets
 import shutil
 import sqlite3
@@ -22,6 +23,10 @@ CONTAINER = "grocy-test"
 KEYS_CONF = Path("/home/miira/apps/docker/n8n-templates/keys.conf")
 TEST_PASSWORD_KEY = "GROCY_TEST_PASSWORD"
 TEST_USER = "miira"
+TOOLS = Path("/home/miira/apps/docker/grocy/tools")
+SCHEMA_ORDER = ["grocy-shopping-schema.sh", "grocy-schema-chores.sh", "grocy-schema-19.sh", "grocy-schema-p20.sh"]
+SCHEMA_GLOBS = ["grocy-schema-*.sh", "grocy-*-schema.sh"]
+TEST_HOST = "grocy-test.audibox.cc"
 
 
 def log(msg):
@@ -115,6 +120,40 @@ def first_get(deadline_s=120):
     raise RuntimeError(f"grocy-test not ready, last status {code}")
 
 
+def schema_args(text):
+    if TEST_HOST not in text:
+        return None
+    if "--target test" in text:
+        return ["--target", "test"]
+    if re.search(r"\btest\|real\b", text) and "--apply" in text:
+        return ["test", "--apply"]
+    return None
+
+
+def schema_scripts():
+    found = {p.name for g in SCHEMA_GLOBS for p in TOOLS.glob(g)}
+    ordered = [n for n in SCHEMA_ORDER if n in found] + sorted(found - set(SCHEMA_ORDER))
+    for name in ordered:
+        args = schema_args((TOOLS / name).read_text())
+        if args is None:
+            log(f"schema {name}: no test target, skipped")
+            continue
+        yield name, args
+
+
+def reapply_test_schema():
+    applied = []
+    for name, args in schema_scripts():
+        res = subprocess.run(["bash", str(TOOLS / name), *args], cwd=TOOLS,
+                             capture_output=True, text=True, timeout=120)
+        tail = (res.stdout + res.stderr).strip().splitlines()[-1:] or [""]
+        log(f"schema {name} {' '.join(args)}: exit {res.returncode}, {tail[0]}")
+        if res.returncode != 0:
+            raise RuntimeError(f"schema {name} failed: {tail[0][:200]}")
+        applied.append(name)
+    return applied
+
+
 def reset():
     copied_at = stage_copy()
     exists = container_exists()
@@ -127,7 +166,8 @@ def reset():
             run("docker", "start", CONTAINER)
     if exists:
         first_get()
-    return copied_at
+        return copied_at, reapply_test_schema()
+    return copied_at, []
 
 
 def main():
@@ -140,9 +180,9 @@ def main():
             return
         started = time.monotonic()
         try:
-            copied_at = reset()
+            copied_at, schema = reset()
             log(f"reset ok in {time.monotonic() - started:.1f}s, copied_at {copied_at}")
-            print(json.dumps({"ok": True, "copied_at": copied_at}), flush=True)
+            print(json.dumps({"ok": True, "copied_at": copied_at, "schema": schema}), flush=True)
         except subprocess.CalledProcessError as exc:
             log(f"reset failed: {exc} {exc.stderr}")
             print(json.dumps({"ok": False, "error": f"{' '.join(exc.cmd[:3])} failed: {exc.stderr.strip()[:200]}"}), flush=True)

@@ -1,6 +1,10 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
-const BASE = 'https://grocy.audibox.cc';
+const { execFileSync } = require('child_process');
+const BASE = (process["env"].GROCY_BASE || 'https://grocy.audibox.cc').replace(/\/+$/, '');
+const TEST_HOST = 'grocy-test.audibox.cc';
+const KEYS_CONF = '/home/miira/apps/docker/n8n-templates/keys.conf';
+const IS_TEST = new URL(BASE).hostname === TEST_HOST;
 const TAG = process.argv[2] || 'v2';
 const OUT = '/tmp/grocy-' + TAG;
 fs.mkdirSync(OUT, { recursive: true });
@@ -8,9 +12,24 @@ const PAGES = (process.argv[3] ? process.argv[3].split(',') : ['stockoverview', 
 const VIEWPORTS = [[1440, { width: 1440, height: 1100 }], [390, { width: 390, height: 844 }]];
 const log = [];
 
+function testPassword() {
+  if (!IS_TEST) throw new Error('refusing the grocy-test password outside ' + TEST_HOST);
+  const script = `sed -n 's/^GROCY_TEST_PASSWORD=//p' ${KEYS_CONF}`;
+  const out = fs.existsSync(KEYS_CONF)
+    ? execFileSync('sh', ['-c', script], { encoding: 'utf8' })
+    : execFileSync('ssh', ['audibox', script], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+  if (!out.trim()) throw new Error('GROCY_TEST_PASSWORD missing from keys.conf');
+  return out.trim();
+}
+function password() {
+  if (IS_TEST) return testPassword();
+  if (!process["env"].GROCY_PASSWORD) throw new Error('GROCY_PASSWORD not set (keys.conf is only read for ' + TEST_HOST + ')');
+  return process["env"].GROCY_PASSWORD;
+}
 async function login(page) {
+  const pw = password();
   await page.goto(BASE + '/login', { waitUntil: 'networkidle' });
-  await page.fill('#username', 'miira'); await page.fill('#password_input', process["env"].GROCY_PASSWORD);
+  await page.evaluate(([u, p]) => { document.querySelector('#username').value = u; document.querySelector('#password_input').value = p; }, ['miira', pw]);
   await page.click('#login-button');
   await page.waitForLoadState('networkidle');
 }
@@ -34,7 +53,7 @@ async function consoleErrors(page, sink) {
 }
 
 (async () => {
-  const browser = await chromium.launch();
+  const browser = await chromium.launch({ executablePath: process["env"].CHROME_BIN || undefined });
   for (const [w, vp] of VIEWPORTS) {
     const ctx = await browser.newContext({ viewport: vp, deviceScaleFactor: 1, ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
