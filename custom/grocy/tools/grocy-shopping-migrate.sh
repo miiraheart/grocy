@@ -23,7 +23,9 @@ while [ $# -gt 0 ]; do
 done
 case "$TARGET" in test|real) ;; *) usage ;; esac
 
-. "$(dirname "$0")/grocy-lib.sh"
+GROCY_LIB=${GROCY_LIB:-$(dirname "$0")/grocy-lib.sh}
+[ -f "$GROCY_LIB" ] || GROCY_LIB=/Users/kbs/projects/grocy-server/custom/grocy/tools/grocy-lib.sh
+. "$GROCY_LIB"
 
 TEST_HOST=grocy-test.audibox.cc
 LIST_ID=1
