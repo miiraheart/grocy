@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
-const BASE = (process["env"].GROCY_BASE || 'https://grocy.audibox.cc').replace(/\/+$/, '');
+const BASE = (process["env"].GROCY_SHOT_BASE || process["env"].GROCY_BASE || 'https://grocy.audibox.cc').replace(/\/+$/, '');
 const TEST_HOST = 'grocy-test.audibox.cc';
 const KEYS_CONF = '/home/miira/apps/docker/n8n-templates/keys.conf';
 const IS_TEST = new URL(BASE).hostname === TEST_HOST;
