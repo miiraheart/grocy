@@ -31,10 +31,26 @@
 			var p = state.products[id];
 			if (+p.active !== 0) push({ key: "p:" + id, name: p.name, product_id: +id, kind: "product" });
 		});
+		if (S.catalogWords && cfg.autocomplete) S.catalogWords().forEach(function (w) { push({ key: "t:" + w, name: w, kind: "catalog" }); });
 		return out;
 	}
 
-	var ICONS = { active: "fa-list", crossed: "fa-list", favorite: "fa-star", recent: "fa-clock-rotate-left", product: "fa-box" };
+	/// Every web add: the diet gate (D-38), then the no duplicate add of SPEC 6.2 step 3.
+	function submit(state, draft, done) {
+		var gate = S.diet ? S.diet.gate(draft.name) : Promise.resolve({ add: true });
+		return gate.then(function (verdict) {
+			if (!verdict.add) return null;
+			draft.guest = verdict.guest;
+			return S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
+				.then(function (result) {
+					if (result.kind !== "created") toastr.info(GL.t(result.kind === "uncrossed" ? "shop.putBack" : "shop.already", { name: draft.name }));
+					done(result);
+					return result;
+				});
+		}).catch(function (e) { toastr.error(e.message); });
+	}
+
+	var ICONS = { active: "fa-list", crossed: "fa-list", favorite: "fa-star", recent: "fa-clock-rotate-left", product: "fa-box", catalog: "fa-basket-shopping" };
 
 	function mount($box, state, done) {
 		var $input = $('<input type="text" class="form-control gc-shop-input" autocomplete="off">').attr("placeholder", GL.t("shop.addItem"))
@@ -56,11 +72,7 @@
 			var draft = item ? { name: item.name, product_id: item.product_id, amount: typed.amount, unit: typed.unit }
 				: { name: typed.name, amount: typed.amount, unit: typed.unit };
 			if (!draft.name) return;
-			S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
-				.then(function (result) {
-					if (result.kind !== "created") toastr.info(GL.t(result.kind === "uncrossed" ? "shop.putBack" : "shop.already", { name: draft.name }));
-					done(result);
-				}, function (e) { toastr.error(e.message); });
+			submit(state, draft, done);
 			$input.val("");
 			items = []; index = -1; draw();
 		}
@@ -77,8 +89,7 @@
 				var q = S.parseQty(fields[2].val() + " x");
 				var draft = { name: fields[0].val().trim(), note: fields[1].val().trim(), amount: q.amount, unit: q.unit === "x" ? null : q.unit };
 				if (!draft.name) return;
-				S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
-					.then(done, function (err) { toastr.error(err.message); });
+				submit(state, draft, done);
 			});
 			$box.find(".gc-shop-new").remove();
 			$box.append($form);
@@ -105,6 +116,6 @@
 		$input.on("blur", function () { setTimeout(function () { $menu.hide(); }, 150); });
 	}
 
-	GC.shopAdd = { mount: mount, suggestions: suggestions };
+	GC.shopAdd = { mount: mount, suggestions: suggestions, submit: submit };
 })();
 </script>

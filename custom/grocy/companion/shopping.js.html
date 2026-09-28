@@ -1,7 +1,7 @@
 <script>
 (function () {
 	if (!window.GC || !window.Grocy || Grocy.View !== "shoppinglist") return;
-	var S = GC.shop, CLASSIC = "gc.shop.classic", LAST = "gc.shop.list";
+	var S = GC.shop, CLASSIC = "gc.shop.classic", LAST = "gc.shop.list", FILTER = "gc.shop.filter.";
 	var state = { lists: [], rows: [], products: {}, groups: {}, stores: {}, units: {}, folders: [], config: null, filter: null, flash: null };
 
 	function store(key, value) {
@@ -58,9 +58,12 @@
 		var price = S.num(u.al_price);
 		if (price !== null && cfg.showPrices) $('<span class="gc-shop-price"></span>').text(money(price)).appendTo($r);
 		if (state.flash === +row.id) $r.addClass("is-flash");
+		if (GC.shopEdit) $('<button type="button" class="btn btn-sm btn-link gc-shop-edit"><i class="fa-solid fa-pen"></i></button>').attr("title", GL.t("shop.editItem"))
+			.on("click", function (e) { e.stopPropagation(); GC.shopEdit.open(row, state, refresh); }).appendTo($r);
 		$r.on("click keydown", function (e) {
 			if (e.type === "keydown" && e.key !== " " && e.key !== "Enter") return;
 			e.preventDefault();
+			if (e.type === "click" && (e.metaKey || e.ctrlKey || e.shiftKey) && GC.shopKeys) { GC.shopKeys.select($r, e.shiftKey); return; }
 			var now = !$r.hasClass("is-crossed");
 			$r.toggleClass("is-crossed", now);
 			S.cross(row.id, now).then(refresh, function (err) { $r.toggleClass("is-crossed", !now); toastr.error(err.message); });
@@ -80,17 +83,30 @@
 		return $bar;
 	}
 
+	/// The selected filter is view state, kept per browser per list like iOS keeps it per device (SPEC 2.4.2).
+	function choose(filter) {
+		state.filter = filter;
+		store(FILTER + state.config.id, filter ? filter.id : "");
+		render();
+	}
+
 	function filterBar() {
-		var cfg = state.config;
-		if (!cfg.stores.length) return null;
+		var filters = GC.shopPanels ? GC.shopPanels.allFilters(state) : [];
+		if (!filters.length) return null;
 		var $bar = $('<div class="gc-shop-filters" role="toolbar"></div>');
-		[null].concat(cfg.stores).forEach(function (id) {
-			var on = id === null ? !state.filter : state.filter && state.filter.store === id;
+		[null].concat(filters).forEach(function (f) {
+			var on = f === null ? !state.filter : state.filter && state.filter.id === f.id;
 			$('<button type="button" class="gc-chip"></button>').attr("aria-pressed", on ? "true" : "false")
-				.text(id === null ? GL.t("shop.allStores") : ((state.stores[id] || {}).name || "#" + id))
-				.on("click", function () { state.filter = id === null ? null : { store: id, unassigned: true }; render(); }).appendTo($bar);
+				.text(f === null ? GL.t("shop.allStores") : f.name).on("click", function () { choose(f); }).appendTo($bar);
 		});
 		return $bar;
+	}
+
+	/// A filter bound to a category set shows the list in that set (AL-EDGE-14).
+	function viewConfig() {
+		var cfg = state.config;
+		if (!state.filter || !state.filter.set || !cfg.categories) return cfg;
+		return Object.assign({}, cfg, { categories: Object.assign({}, cfg.categories, { active: state.filter.set }) });
 	}
 
 	function header() {
@@ -103,13 +119,24 @@
 			.on("click", function () {
 				GC.api("PUT", "userfields/shopping_lists/" + cfg.id, { al_hide_crossed: cfg.hideCrossed ? "off" : "on" }).then(refresh);
 			}).appendTo($h);
+		[["favorites", "fa-star", "shop.favorites"], ["recents", "fa-clock-rotate-left", "shop.recents"], ["starters", "fa-bookmark", "shop.starters"], ["filters", "fa-filter", "shop.filters"]]
+			.forEach(function (b) {
+				if (!GC.shopPanels) return;
+				$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("title", GL.t(b[2])).attr("data-panel", b[0])
+					.append($('<i class="fa-solid"></i>').addClass(b[1])).on("click", function () { panel(b[0]); }).appendTo($h);
+			});
 		$('<button type="button" class="btn btn-sm btn-link gc-shop-classic"></button>').text(GL.t("shop.classic"))
 			.on("click", function () { store(CLASSIC, "1"); classic(true); }).appendTo($h);
 		return $h;
 	}
 
+	function panel(kind) {
+		if (kind === "filters") GC.shopPanels.filters(state, refresh, choose);
+		else GC.shopPanels[kind](state, refresh);
+	}
+
 	function render() {
-		var cfg = state.config, $root = $("#gc-shop").empty();
+		var cfg = viewConfig(), $root = $("#gc-shop").empty();
 		if (GC.shopLists) GC.shopLists.render($('<aside class="gc-shop-pane"></aside>').appendTo($root), state);
 		var $page = $('<section class="gc-shop-page"></section>').appendTo($root);
 		if (cfg.theme.banner) $page.css("--gc-shop-banner", cfg.theme.banner);
@@ -127,12 +154,21 @@
 		});
 		if (!state.rows.length) $('<p class="gc-shop-empty"></p>').text(GL.t("shop.empty")).appendTo($page);
 		$page.append(totalsBar(visible));
+		if (S.diet) $('<p class="gc-shop-footer"></p>').text(GL.t("shop.dietVersion", { v: S.diet.version })).appendTo($page);
 		var $flash = $page.find(".is-flash")[0];
 		if ($flash) $flash.scrollIntoView({ block: "center" });
 		state.flash = null;
 	}
 
-	function refresh() { return load().then(render, function (e) { toastr.error(e.message); }); }
+	function refresh() {
+		return load().then(function () {
+			var wanted = store(FILTER + state.config.id);
+			state.filter = wanted && GC.shopPanels ? GC.shopPanels.allFilters(state).filter(function (f) { return f.id === wanted; })[0] || null : null;
+			render();
+		}, function (e) { toastr.error(e.message); });
+	}
+
+	GC.shopPage = { state: state, refresh: refresh, render: render, panel: panel, choose: choose };
 
 	function classic(on) {
 		$("body").toggleClass("gc-shop-on", !on);
