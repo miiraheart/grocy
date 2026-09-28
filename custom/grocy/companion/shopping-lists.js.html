@@ -1,0 +1,80 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop) return;
+	var S = GC.shop, OPEN = "gc.shop.folders";
+	var ICONS = { cart: "fa-cart-shopping", leaf: "fa-leaf", gift: "fa-gift", house: "fa-house", airplane: "fa-plane", "fork.knife": "fa-utensils",
+		basket: "fa-basket-shopping", "cart.fill": "fa-cart-shopping", "house.fill": "fa-house", "gift.fill": "fa-gift" };
+
+	function icon(name) { return ICONS[name] || "fa-list"; }
+	function href(id) { return GC.url("/shoppinglist?list=" + id); }
+
+	function openFolders() {
+		try { return JSON.parse(localStorage.getItem(OPEN) || "{}") || {}; } catch (e) { return {}; }
+	}
+	function saveOpen(open) { try { localStorage.setItem(OPEN, JSON.stringify(open)); } catch (e) { /* private mode */ } }
+
+	/// Lists of one folder level ordered by al_order, then name (SPEC 6.19).
+	function ordered(lists, folderId) {
+		return lists.filter(function (l) { return (S.config(l).folder || null) === folderId; }).sort(function (a, b) {
+			var oa = S.config(a).order, ob = S.config(b).order;
+			if (oa !== null && ob !== null && oa !== ob) return oa - ob;
+			if (oa !== null && ob === null) return -1;
+			if (oa === null && ob !== null) return 1;
+			return String(a.name).localeCompare(String(b.name));
+		});
+	}
+
+	function listItem(list, state) {
+		var cfg = S.config(list), current = +list.id === state.config.id;
+		var $a = $('<a class="gc-shop-list"></a>').attr("href", href(list.id)).toggleClass("is-current", current).attr("aria-current", current ? "page" : null);
+		$a.append($('<i class="fa-solid"></i>').addClass(icon(cfg.icon))).append($('<span class="gc-shop-list-name"></span>').text(list.name));
+		if (cfg.locked) $a.append($('<i class="fa-solid fa-lock gc-shop-lock"></i>'));
+		else $a.append($('<span class="gc-shop-count"></span>').text(state.remaining[list.id] || ""));
+		return $("<li></li>").append($a);
+	}
+
+	function level($ul, state, parentId, open) {
+		state.folders.filter(function (f) { return (f.parent || null) === parentId; })
+			.sort(function (a, b) { return (a.order || 0) - (b.order || 0) || String(a.name).localeCompare(String(b.name)); })
+			.forEach(function (folder) {
+				var isOpen = open[folder.id] !== false;
+				var $li = $('<li class="gc-shop-folder"></li>').appendTo($ul);
+				$('<button type="button" class="gc-shop-folder-btn"></button>').attr("aria-expanded", isOpen ? "true" : "false")
+					.append($('<i class="fa-solid"></i>').addClass(isOpen ? "fa-chevron-down" : "fa-chevron-right"))
+					.append($("<span></span>").text(folder.name))
+					.on("click", function () { open[folder.id] = !isOpen; saveOpen(open); render($ul.closest(".gc-shop-pane"), state); })
+					.appendTo($li);
+				if (isOpen) level($('<ul class="gc-shop-lists"></ul>').appendTo($li), state, folder.id, open);
+			});
+		ordered(state.lists, parentId).forEach(function (list) { $ul.append(listItem(list, state)); });
+	}
+
+	/// Under 900 px the pane is a picker.
+	function picker(state) {
+		var $select = $('<select class="custom-select custom-select-sm gc-shop-picker"></select>').attr("aria-label", GL.t("shop.lists"));
+		state.lists.forEach(function (l) {
+			$("<option></option>").val(l.id).text(l.name).prop("selected", +l.id === state.config.id).appendTo($select);
+		});
+		return $select.on("change", function () { location.href = href($select.val()); });
+	}
+
+	function render($pane, state) {
+		$pane.empty();
+		$('<h3 class="gc-shop-pane-title"></h3>').text(GL.t("shop.lists")).appendTo($pane);
+		level($('<ul class="gc-shop-lists"></ul>').appendTo($pane), state, null, openFolders());
+		$pane.append(picker(state));
+	}
+
+	/// Cmd or Ctrl Up and Down move between the lists of the current folder (SPEC 6.18).
+	$(document).on("keydown", function (e) {
+		if (!(e.metaKey || e.ctrlKey) || (e.key !== "ArrowUp" && e.key !== "ArrowDown") || !$(".gc-shop-list.is-current").length) return;
+		var $siblings = $(".gc-shop-list.is-current").closest("ul").children("li").children(".gc-shop-list");
+		var i = $siblings.index($(".gc-shop-list.is-current")) + (e.key === "ArrowDown" ? 1 : -1);
+		if (i < 0 || i >= $siblings.length) return;
+		e.preventDefault();
+		location.href = $siblings.eq(i).attr("href");
+	});
+
+	GC.shopLists = { render: render, ordered: ordered };
+})();
+</script>

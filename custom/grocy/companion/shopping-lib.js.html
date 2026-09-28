@@ -1,0 +1,189 @@
+<script>
+(function (root) {
+	var GC = root.GC = root.GC || {};
+	var UF = { note: "al_note", qtyText: "al_qty_text", pkg: "al_package", price: "al_price", priceQty: "al_price_qty", stores: "al_stores",
+		category: "al_category", position: "al_position", addedBy: "al_added_by", crossedAt: "al_crossed_at", source: "al_source" };
+	var UNITS = ["kg", "g", "mg", "l", "cl", "ml", "dl", "lb", "oz", "x", "pc", "pcs", "piece", "pieces", "pack", "packs", "boite", "boites", "sachet", "sachets", "bouteille", "bouteilles", "paquet", "paquets"];
+
+	var fold = /*fold*/function (name) {
+		var plain = String(name || "").toLowerCase().replace(/œ/g, "oe").replace(/æ/g, "ae").normalize("NFKD").replace(/[̀-ͯ]/g, "");
+		var words = plain.split(/\s+/).map(function (w) { return w.replace(/^[\p{P}]+|[\p{P}]+$/gu, ""); }).filter(function (w) { return w.length; });
+		if (words.length) {
+			var w = words.pop();
+			if (/(ses|xes|zes|ches|shes)$/.test(w) && w.length - 2 >= 3) w = w.slice(0, -2);
+			else if (/[sx]$/.test(w) && !/ss$/.test(w) && w.length - 1 >= 3) w = w.slice(0, -1);
+			words.push(w);
+		}
+		return words.join(" ");
+	}/*/fold*/;
+
+	function json(text) {
+		if (!text) return null;
+		try { var v = JSON.parse(text); return v && typeof v === "object" ? v : null; } catch (e) { return null; }
+	}
+	function num(v) { if (v === null || v === undefined || v === "") return null; var n = parseFloat(String(v).replace(",", ".")); return isNaN(n) ? null : n; }
+	function ids(v) { return String(v || "").split(",").map(function (s) { return parseInt(s, 10); }).filter(function (n) { return !isNaN(n); }); }
+	function flag(v) { return v === "on" ? true : v === "off" ? false : null; }
+	function pad(n) { return (n < 10 ? "0" : "") + n; }
+	function stamp(d) {
+		d = d || new Date();
+		return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+	}
+
+	function keyOf(row) { return row.product_id ? "p:" + row.product_id : "t:" + fold(row.note); }
+
+	/// "2 kg pommes", "pommes 2 kg", "1,5 l lait": leading or trailing number and unit (SPEC 6.2 step 1).
+	function parseQty(text) {
+		var t = String(text || "").trim(), m;
+		var unit = "(?:\\s*(" + UNITS.join("|") + ")\\b)?";
+		if ((m = t.match(new RegExp("^(\\d+(?:[.,]\\d+)?)" + unit + "\\s+(.+)$", "i")))) return { name: m[3].trim(), amount: num(m[1]), unit: m[2] || null };
+		if ((m = t.match(new RegExp("^(.+?)\\s+(\\d+(?:[.,]\\d+)?)" + unit + "$", "i")))) return { name: m[1].trim(), amount: num(m[2]), unit: m[3] || null };
+		return { name: t, amount: null, unit: null };
+	}
+
+	/// List settings with the SPEC 7.1 defaults; an empty userfield is the default.
+	function config(list) {
+		var u = (list && list.userfields) || {};
+		var type = ["grocery", "categorized", "simple"].indexOf(u.al_type) >= 0 ? u.al_type : "grocery";
+		var headers = flag(u.al_headers);
+		return {
+			id: list ? +list.id : 1, name: list ? list.name : "", type: type, icon: u.al_icon || "cart", theme: json(u.al_theme) || {},
+			folder: u.al_folder || null, order: num(u.al_order), sort: u.al_sort === "alpha" ? "alpha" : "manual",
+			insert: u.al_insert === "top" ? "top" : "bottom", headers: headers === null ? type !== "simple" : headers,
+			hideCrossed: flag(u.al_hide_crossed) === true, showPrices: flag(u.al_show_prices) !== false,
+			showStoreNames: flag(u.al_show_store_names) !== false, totals: flag(u.al_totals) !== false,
+			totalLeft: u.al_total_left || "crossed", totalRight: u.al_total_right || "remaining",
+			locked: !!u.al_passcode, stores: ids(u.al_stores), categories: json(u.al_categories), memory: json(u.al_memory) || { items: {} }
+		};
+	}
+
+	function activeSet(cfg) {
+		var doc = cfg.categories;
+		if (!doc || !doc.sets || !doc.sets.length) return null;
+		return doc.sets.filter(function (s) { return s.id === doc.active; })[0] || doc.sets[0];
+	}
+
+	/// SPEC 6.3 steps 1, 2, 3 and 5 (step 4, the grocery catalog, comes with plan 17-11). Without a category document
+	/// the Grocy product group stands in, so the page still groups.
+	function categoryOf(row, cfg, products, groups) {
+		var set = activeSet(cfg), u = row.userfields || {}, product = row.product_id ? products[row.product_id] : null;
+		if (!set) {
+			var g = product && product.product_group_id ? groups[product.product_group_id] : null;
+			return g ? { id: "g" + g.id, name: g.name, order: +g.id } : { id: "other", name: "", order: 1e9 };
+		}
+		var find = function (id) { for (var i = 0; i < set.cats.length; i++) if (set.cats[i].id === id) return { id: id, name: set.cats[i].name, order: i }; return null; };
+		var own = json(u[UF.category]);
+		if (own && own[set.id] && find(own[set.id])) return find(own[set.id]);
+		var mem = cfg.memory.items && cfg.memory.items[keyOf(row)];
+		if (!mem && product) mem = ((json((product.userfields || {}).al_memory) || {}).lists || {})[cfg.id];
+		if (mem && mem.cat && mem.cat[set.id] && find(mem.cat[set.id])) return find(mem.cat[set.id]);
+		if (product && product.product_group_id) {
+			for (var i = 0; i < set.cats.length; i++) if (+set.cats[i].group === +product.product_group_id) return find(set.cats[i].id);
+		}
+		return find(cfg.categories.default) || find((set.cats[set.cats.length - 1] || {}).id) || { id: "other", name: "", order: 1e9 };
+	}
+
+	function nameOf(row, products) { return row.product_id ? ((products[row.product_id] || {}).name || "") : (row.note || ""); }
+
+	/// SPEC 6.4: manual (al_position, then creation time) or alphabetical inside each category; crossed stay in place.
+	function sections(rows, cfg, products, groups, filter) {
+		var visible = rows.filter(function (r) { return (!cfg.hideCrossed || +r.done !== 1) && matches(r, filter); });
+		var cmp = cfg.sort === "alpha"
+			? function (a, b) { return fold(nameOf(a, products)).localeCompare(fold(nameOf(b, products))); }
+			: function (a, b) {
+				var pa = num((a.userfields || {})[UF.position]), pb = num((b.userfields || {})[UF.position]);
+				if (pa !== null && pb !== null && pa !== pb) return pa - pb;
+				if (pa !== null && pb === null) return -1;
+				if (pa === null && pb !== null) return 1;
+				return String(a.row_created_timestamp || "").localeCompare(String(b.row_created_timestamp || "")) || a.id - b.id;
+			};
+		if (!cfg.headers) return [{ id: "all", name: "", rows: visible.slice().sort(cmp) }];
+		var by = {};
+		visible.forEach(function (r) {
+			var c = categoryOf(r, cfg, products, groups);
+			(by[c.id] = by[c.id] || { id: c.id, name: c.name, order: c.order, rows: [] }).rows.push(r);
+		});
+		return Object.keys(by).map(function (k) { return by[k]; }).sort(function (a, b) { return a.order - b.order; })
+			.map(function (s) { s.rows.sort(cmp); return s; });
+	}
+
+	/// A store filter shows rows for its store plus unassigned rows (SPEC 6.9).
+	function matches(row, filter) {
+		if (!filter) return true;
+		var stores = ids((row.userfields || {})[UF.stores]);
+		return stores.indexOf(+filter.store) >= 0 || (filter.unassigned !== false && !stores.length);
+	}
+
+	/// Running totals over the visible rows: price times (al_price_qty, else amount); rows without a price add 0.
+	function totals(rows) {
+		var t = { all: 0, crossed: 0, remaining: 0, missing: 0 };
+		rows.forEach(function (r) {
+			var u = r.userfields || {}, price = num(u[UF.price]);
+			if (price === null) { t.missing++; return; }
+			var cost = price * (num(u[UF.priceQty]) || num(r.amount) || 1);
+			t.all += cost;
+			if (+r.done === 1) t.crossed += cost; else t.remaining += cost;
+		});
+		return t;
+	}
+
+	/// SPEC 2.9: fresh read, key level merge, write, read back and compare; at most 3 tries.
+	function docRead(entity, id, field) {
+		return GC.api("GET", "objects/" + entity + "/" + id).then(function (o) { return json(((o || {}).userfields || {})[field]) || { v: 1 }; });
+	}
+	function docMerge(entity, id, field, mutate, tries) {
+		tries = tries || 1;
+		return docRead(entity, id, field).then(function (doc) {
+			mutate(doc);
+			doc.v = doc.v || 1;
+			var body = {};
+			body[field] = JSON.stringify(doc);
+			return GC.api("PUT", "userfields/" + entity + "/" + id, body).then(function () {
+				return docRead(entity, id, field);
+			}).then(function (back) {
+				if (JSON.stringify(back) === body[field] || tries >= 3) return back;
+				return docMerge(entity, id, field, mutate, tries + 1);
+			});
+		});
+	}
+
+	/// Crossing writes done and al_crossed_at; uncrossing clears the stamp (AL-CROSS-01).
+	function cross(rowId, done) {
+		var uf = {};
+		uf[UF.crossedAt] = done ? stamp() : "";
+		return GC.api("PUT", "objects/shopping_list/" + rowId, { done: done ? 1 : 0 })
+			.then(function () { return GC.api("PUT", "userfields/shopping_list/" + rowId, uf); });
+	}
+
+	/// SPEC 6.2 step 3: an active row with the same key and category is flashed, a crossed one uncrossed in place,
+	/// else a new row (product_id, or note for free text) then its userfields. Never stock/shoppinglist/add-product.
+	function addItem(ctx, draft) {
+		var cfg = ctx.config, key = draft.product_id ? "p:" + draft.product_id : "t:" + fold(draft.name);
+		var probe = { product_id: draft.product_id || null, note: draft.product_id ? null : draft.name, userfields: {} };
+		var cat = categoryOf(probe, cfg, ctx.products, ctx.groups).id;
+		var same = ctx.rows.filter(function (r) { return keyOf(r) === key && categoryOf(r, cfg, ctx.products, ctx.groups).id === cat; });
+		var active = same.filter(function (r) { return +r.done !== 1; })[0];
+		if (active) return Promise.resolve({ kind: "highlighted", id: +active.id });
+		if (same.length) return cross(same[0].id, false).then(function () { return { kind: "uncrossed", id: +same[0].id }; });
+		var positions = ctx.rows.map(function (r) { return num((r.userfields || {})[UF.position]); }).filter(function (n) { return n !== null; });
+		var position = !positions.length ? 0 : cfg.insert === "top" ? Math.min.apply(null, positions) - 1 : Math.max.apply(null, positions) + 1;
+		var row = { shopping_list_id: cfg.id, amount: draft.amount || 1 };
+		if (draft.product_id) { row.product_id = +draft.product_id; if (draft.qu_id) row.qu_id = +draft.qu_id; if (draft.note) row.note = draft.note; }
+		else row.note = draft.name;
+		return GC.api("POST", "objects/shopping_list", row).then(function (created) {
+			var id = +created.created_object_id, uf = {};
+			uf[UF.position] = String(position);
+			uf[UF.source] = "web";
+			if (root.Grocy && Grocy.UserId > 0) uf[UF.addedBy] = String(Grocy.UserId);
+			if (!draft.product_id && draft.note) uf[UF.note] = draft.note;
+			if (draft.unit && !draft.qu_id) uf[UF.qtyText] = draft.unit;
+			if (ctx.filter && ctx.filter.store) uf[UF.stores] = String(ctx.filter.store);
+			return GC.api("PUT", "userfields/shopping_list/" + id, uf).then(function () { return { kind: "created", id: id }; });
+		});
+	}
+
+	GC.shop = { UF: UF, fold: fold, json: json, num: num, ids: ids, flag: flag, stamp: stamp, keyOf: keyOf, parseQty: parseQty,
+		config: config, activeSet: activeSet, categoryOf: categoryOf, nameOf: nameOf, sections: sections, matches: matches, totals: totals,
+		docs: { read: docRead, merge: docMerge }, cross: cross, addItem: addItem };
+})(window);
+</script>

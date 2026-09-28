@@ -1,0 +1,152 @@
+<script>
+(function () {
+	if (!window.GC || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, CLASSIC = "gc.shop.classic", LAST = "gc.shop.list";
+	var state = { lists: [], rows: [], products: {}, groups: {}, stores: {}, units: {}, folders: [], config: null, filter: null, flash: null };
+
+	function store(key, value) {
+		try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; }
+		return null;
+	}
+	function byId(list) { var o = {}; (list || []).forEach(function (x) { o[x.id] = x; }); return o; }
+
+	function currentListId() {
+		var q = new URLSearchParams(location.search).get("list");
+		return parseInt(q || store(LAST) || "1", 10) || 1;
+	}
+
+	function load() {
+		var listId = currentListId();
+		return Promise.all([
+			GC.api("GET", "objects/shopping_lists"), GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + listId),
+			GC.api("GET", "objects/products"), GC.api("GET", "objects/product_groups"), GC.api("GET", "objects/shopping_locations"),
+			GC.api("GET", "objects/quantity_units"), GC.api("GET", "user/settings/al_folders").catch(function () { return null; }),
+			GC.api("GET", "objects/shopping_list")
+		]).then(function (r) {
+			state.lists = r[0] || [];
+			var list = state.lists.filter(function (l) { return +l.id === listId; })[0] || state.lists[0];
+			state.config = S.config(list);
+			state.rows = r[1] || [];
+			state.products = byId(r[2]); state.groups = byId(r[3]); state.stores = byId(r[4]); state.units = byId(r[5]);
+			state.folders = ((S.json(r[6] && r[6].value) || {}).folders) || [];
+			state.remaining = {};
+			(r[7] || []).forEach(function (row) { if (+row.done !== 1) state.remaining[row.shopping_list_id] = (state.remaining[row.shopping_list_id] || 0) + 1; });
+			store(LAST, String(state.config.id));
+		});
+	}
+
+	function money(n) { return GL.money(n); }
+
+	function quantity(row) {
+		var u = row.userfields || {}, amount = S.num(row.amount), unit = u.al_qty_text || ((state.units[row.qu_id] || {}).name) || "";
+		var text = amount && (amount !== 1 || unit) ? String(amount).replace(".", document.documentElement.lang === "fr" ? "," : ".") + (unit ? " " + unit : "") : "";
+		return [text, u.al_package || ""].filter(Boolean).join(", ");
+	}
+
+	function rowView(row) {
+		var u = row.userfields || {}, cfg = state.config, done = +row.done === 1;
+		var note = row.product_id ? row.note : u.al_note;
+		var $r = $('<li class="gc-shop-row" tabindex="0"></li>').attr("data-id", row.id).toggleClass("is-crossed", done);
+		$('<span class="gc-shop-check" aria-hidden="true"></span>').appendTo($r);
+		var $main = $('<div class="gc-shop-main"></div>').appendTo($r);
+		var $title = $('<div class="gc-shop-name"></div>').text(S.nameOf(row, state.products)).appendTo($main);
+		var qty = quantity(row);
+		if (qty) $('<span class="gc-shop-qty"></span>').text(" (" + qty + ")").appendTo($title);
+		if (note) $('<div class="gc-shop-note"></div>').text(note).appendTo($main);
+		var stores = S.ids(u.al_stores).map(function (id) { return (state.stores[id] || {}).name; }).filter(Boolean);
+		if (stores.length && cfg.showStoreNames) $('<div class="gc-shop-stores"></div>').text(stores.join(" · ")).appendTo($main);
+		var price = S.num(u.al_price);
+		if (price !== null && cfg.showPrices) $('<span class="gc-shop-price"></span>').text(money(price)).appendTo($r);
+		if (state.flash === +row.id) $r.addClass("is-flash");
+		$r.on("click keydown", function (e) {
+			if (e.type === "keydown" && e.key !== " " && e.key !== "Enter") return;
+			e.preventDefault();
+			var now = !$r.hasClass("is-crossed");
+			$r.toggleClass("is-crossed", now);
+			S.cross(row.id, now).then(refresh, function (err) { $r.toggleClass("is-crossed", !now); toastr.error(err.message); });
+		});
+		return $r;
+	}
+
+	function totalsBar(rows) {
+		var cfg = state.config;
+		if (!cfg.totals) return null;
+		var t = S.totals(rows), label = { all: GL.t("shop.total.all"), crossed: GL.t("shop.total.crossed"), remaining: GL.t("shop.total.remaining") };
+		var $bar = $('<div class="gc-shop-totals"></div>');
+		[cfg.totalLeft, cfg.totalRight].forEach(function (slot) {
+			$('<span></span>').text(label[slot] + " " + money(t[slot] || 0)).appendTo($bar);
+		});
+		if (t.missing) $('<span class="gc-shop-missing"></span>').text(GL.t("shop.noPrice", { n: t.missing })).appendTo($bar);
+		return $bar;
+	}
+
+	function filterBar() {
+		var cfg = state.config;
+		if (!cfg.stores.length) return null;
+		var $bar = $('<div class="gc-shop-filters" role="toolbar"></div>');
+		[null].concat(cfg.stores).forEach(function (id) {
+			var on = id === null ? !state.filter : state.filter && state.filter.store === id;
+			$('<button type="button" class="gc-chip"></button>').attr("aria-pressed", on ? "true" : "false")
+				.text(id === null ? GL.t("shop.allStores") : ((state.stores[id] || {}).name || "#" + id))
+				.on("click", function () { state.filter = id === null ? null : { store: id, unassigned: true }; render(); }).appendTo($bar);
+		});
+		return $bar;
+	}
+
+	function header() {
+		var cfg = state.config;
+		var $h = $('<div class="gc-shop-head"></div>');
+		$('<h2 class="gc-shop-title"></h2>').text(cfg.name).appendTo($h);
+		$('<button type="button" class="btn btn-sm btn-outline-secondary gc-shop-eye"></button>')
+			.attr("title", GL.t(cfg.hideCrossed ? "shop.showCrossed" : "shop.hideCrossed"))
+			.append($('<i class="fa-solid"></i>').addClass(cfg.hideCrossed ? "fa-eye-slash" : "fa-eye"))
+			.on("click", function () {
+				GC.api("PUT", "userfields/shopping_lists/" + cfg.id, { al_hide_crossed: cfg.hideCrossed ? "off" : "on" }).then(refresh);
+			}).appendTo($h);
+		$('<button type="button" class="btn btn-sm btn-link gc-shop-classic"></button>').text(GL.t("shop.classic"))
+			.on("click", function () { store(CLASSIC, "1"); classic(true); }).appendTo($h);
+		return $h;
+	}
+
+	function render() {
+		var cfg = state.config, $root = $("#gc-shop").empty();
+		if (GC.shopLists) GC.shopLists.render($('<aside class="gc-shop-pane"></aside>').appendTo($root), state);
+		var $page = $('<section class="gc-shop-page"></section>').appendTo($root);
+		if (cfg.theme.banner) $page.css("--gc-shop-banner", cfg.theme.banner);
+		$page.append(header());
+		if (GC.shopAdd) GC.shopAdd.mount($('<div class="gc-shop-add"></div>').appendTo($page), state, function (result) {
+			state.flash = result && result.id;
+			refresh();
+		});
+		$page.append(filterBar());
+		var visible = state.rows.filter(function (r) { return S.matches(r, state.filter); });
+		S.sections(state.rows, cfg, state.products, state.groups, state.filter).forEach(function (section) {
+			if (section.name && cfg.headers) $('<h3 class="gc-shop-banner"></h3>').text(section.name).appendTo($page);
+			var $ul = $('<ul class="gc-shop-rows"></ul>').appendTo($page);
+			section.rows.forEach(function (row) { $ul.append(rowView(row)); });
+		});
+		if (!state.rows.length) $('<p class="gc-shop-empty"></p>').text(GL.t("shop.empty")).appendTo($page);
+		$page.append(totalsBar(visible));
+		var $flash = $page.find(".is-flash")[0];
+		if ($flash) $flash.scrollIntoView({ block: "center" });
+		state.flash = null;
+	}
+
+	function refresh() { return load().then(render, function (e) { toastr.error(e.message); }); }
+
+	function classic(on) {
+		$("body").toggleClass("gc-shop-on", !on);
+		$("#gc-shop").toggle(!on);
+		$("#gc-shop-back").toggle(on);
+	}
+
+	$(function () {
+		$('<div id="gc-shop"></div>').insertBefore("#shoppinglist-main");
+		$('<button type="button" id="gc-shop-back" class="btn btn-sm btn-link"></button>').text(GL.t("shop.anylistView"))
+			.on("click", function () { store(CLASSIC, "0"); classic(false); refresh(); }).insertBefore("#gc-shop");
+		var isClassic = store(CLASSIC) === "1";
+		classic(isClassic);
+		if (!isClassic) refresh();
+	});
+})();
+</script>
