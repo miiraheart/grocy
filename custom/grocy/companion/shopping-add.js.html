@@ -1,0 +1,110 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop) return;
+	var S = GC.shop, LIMIT = 8;
+
+	/// Suggestions (SPEC 6.18): rows already on the list first, then this list's favorites and recents, then products.
+	function suggestions(state, text) {
+		var q = S.fold(S.parseQty(text).name), out = [], seen = {};
+		if (!q) return out;
+		function push(item) {
+			if (seen[item.key] || out.length >= LIMIT) return;
+			if (S.fold(item.name).indexOf(q) === -1) return;
+			seen[item.key] = true;
+			out.push(item);
+		}
+		state.rows.forEach(function (r) {
+			push({ key: S.keyOf(r), name: S.nameOf(r, state.products), product_id: r.product_id, kind: +r.done === 1 ? "crossed" : "active" });
+		});
+		var cfg = state.config, memory = [];
+		Object.keys(cfg.memory.items || {}).forEach(function (key) {
+			var m = cfg.memory.items[key];
+			if (!m.recentHidden) memory.push({ key: key, name: m.name || key.slice(2), fav: !!m.fav, at: m.recentAt || "" });
+		});
+		Object.keys(state.products).forEach(function (id) {
+			var p = state.products[id], m = ((S.json((p.userfields || {}).al_memory) || {}).lists || {})[cfg.id];
+			if (m && !m.recentHidden && (m.fav || m.recentAt)) memory.push({ key: "p:" + id, name: p.name, product_id: +id, fav: !!m.fav, at: m.recentAt || "" });
+		});
+		memory.sort(function (a, b) { return (b.fav - a.fav) || b.at.localeCompare(a.at); })
+			.forEach(function (m) { push({ key: m.key, name: m.name, product_id: m.product_id, kind: m.fav ? "favorite" : "recent" }); });
+		Object.keys(state.products).forEach(function (id) {
+			var p = state.products[id];
+			if (+p.active !== 0) push({ key: "p:" + id, name: p.name, product_id: +id, kind: "product" });
+		});
+		return out;
+	}
+
+	var ICONS = { active: "fa-list", crossed: "fa-list", favorite: "fa-star", recent: "fa-clock-rotate-left", product: "fa-box" };
+
+	function mount($box, state, done) {
+		var $input = $('<input type="text" class="form-control gc-shop-input" autocomplete="off">').attr("placeholder", GL.t("shop.addItem"))
+			.attr("aria-label", GL.t("shop.addItem")).appendTo($box);
+		var $menu = $('<ul class="gc-shop-suggest" role="listbox"></ul>').appendTo($box).hide();
+		var items = [], index = -1;
+
+		function draw() {
+			$menu.empty().toggle(items.length > 0);
+			items.forEach(function (item, i) {
+				$('<li role="option"></li>').toggleClass("is-selected", i === index).addClass("is-" + item.kind)
+					.append($('<i class="fa-solid"></i>').addClass(ICONS[item.kind])).append($("<span></span>").text(item.name))
+					.on("mousedown", function (e) { e.preventDefault(); add(item); }).appendTo($menu);
+			});
+		}
+
+		function add(item) {
+			var typed = S.parseQty($input.val());
+			var draft = item ? { name: item.name, product_id: item.product_id, amount: typed.amount, unit: typed.unit }
+				: { name: typed.name, amount: typed.amount, unit: typed.unit };
+			if (!draft.name) return;
+			S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
+				.then(function (result) {
+					if (result.kind !== "created") toastr.info(GL.t(result.kind === "uncrossed" ? "shop.putBack" : "shop.already", { name: draft.name }));
+					done(result);
+				}, function (e) { toastr.error(e.message); });
+			$input.val("");
+			items = []; index = -1; draw();
+		}
+
+		function newItemForm() {
+			var $form = $('<form class="gc-shop-new"></form>');
+			var fields = [["name", "shop.name"], ["note", "shop.note"], ["qty", "shop.quantity"]].map(function (f) {
+				return $('<input type="text" class="form-control form-control-sm">').attr("name", f[0]).attr("placeholder", GL.t(f[1])).appendTo($form);
+			});
+			fields[0].val($input.val());
+			$('<button type="submit" class="btn btn-sm btn-primary"></button>').text(GL.t("add")).appendTo($form);
+			$form.on("submit", function (e) {
+				e.preventDefault();
+				var q = S.parseQty(fields[2].val() + " x");
+				var draft = { name: fields[0].val().trim(), note: fields[1].val().trim(), amount: q.amount, unit: q.unit === "x" ? null : q.unit };
+				if (!draft.name) return;
+				S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
+					.then(done, function (err) { toastr.error(err.message); });
+			});
+			$box.find(".gc-shop-new").remove();
+			$box.append($form);
+			fields[0].trigger("focus");
+		}
+
+		$input.on("input", function () { items = suggestions(state, $input.val()); index = items.length ? 0 : -1; draw(); });
+		$input.on("keydown", function (e) {
+			if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+				e.preventDefault();
+				if (!items.length) return;
+				index = (index + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+				draw();
+			} else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+				e.preventDefault();
+				newItemForm();
+			} else if (e.key === "Enter") {
+				e.preventDefault();
+				add(index >= 0 && S.fold(items[index].name) === S.fold(S.parseQty($input.val()).name) || index > 0 ? items[index] : null);
+			} else if (e.key === "Escape") {
+				items = []; draw(); $input.trigger("blur");
+			}
+		});
+		$input.on("blur", function () { setTimeout(function () { $menu.hide(); }, 150); });
+	}
+
+	GC.shopAdd = { mount: mount, suggestions: suggestions };
+})();
+</script>
