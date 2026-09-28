@@ -7,8 +7,11 @@
 			.append($("<i></i>").attr("class", on ? "fa-solid fa-star" : "fa-regular fa-star"));
 	}
 
+	/// Recipes keep their own favori userfield; products use the per list memory above.
 	GC.setFavori = function (entity, id, on) {
-		return GC.api("PUT", "userfields/" + entity + "/" + id, { favori: on ? "1" : "" });
+		var body = {};
+		body.favori = on ? "1" : "";
+		return GC.api("PUT", "userfields/" + entity + "/" + id, body);
 	};
 
 	function section($p, title, sub) {
@@ -28,38 +31,46 @@
 			GC.api("GET", "objects/shopping_list")
 		]).then(function (r) {
 			$p.empty();
-			renderProducts($p, r[0], r[2]);
+			renderProducts($p, r[0], r[2], r[3]);
 			renderRecipes($p, r[1]);
 			renderLists($p, r[2], r[3]);
 		}, function (err) { $p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(err.message); });
 	};
 
-	function renderProducts($p, products, lists) {
-		var favs = products.filter(function (p) { return (p.userfields || {}).favori === "1"; });
+	/// Per list favorites (D-05, D-24): the product's al_memory lists[listId].fav, the same JSON iOS reads.
+	function renderProducts($p, products, lists, items) {
+		var listId = +(localStorage.getItem("gc.shop.list") || (lists[0] || {}).id || 1);
+		var fav = function (p) { return !!((((GC.shop.json((p.userfields || {}).al_memory) || {}).lists) || {})[listId] || {}).fav; };
+		var favs = products.filter(fav);
 		var $s = section($p, GL.t("fav.products"), GL.t("fav.nProducts", { n: favs.length }));
 		var $tools = $('<div class="gc-inline"></div>').appendTo($s);
+		var $list = $('<select class="form-control gc-list-select"></select>').attr("aria-label", GL.t("shop.lists")).appendTo($tools);
+		lists.forEach(function (l) { $list.append($("<option></option>").val(l.id).text(l.name).prop("selected", +l.id === listId)); });
+		$list.on("change", function () { try { localStorage.setItem("gc.shop.list", $list.val()); } catch (e) { /* private mode */ } GC.favoris($p); });
 		var $pick = $('<input class="form-control" list="gc-fav-products">').attr("placeholder", GL.t("fav.pickPh")).appendTo($tools);
 		var $dl = $('<datalist id="gc-fav-products"></datalist>').appendTo($tools);
-		products.forEach(function (p) { if ((p.userfields || {}).favori !== "1") $dl.append($("<option></option>").val(p.name)); });
+		products.forEach(function (p) { if (!fav(p)) $dl.append($("<option></option>").val(p.name)); });
+		var toggle = function (p, on) {
+			return GC.shopEdit.setFavorite({ product_id: p.id }, listId, on).then(function () { GC.favoris($p); }, function (e) { GC.toast("error", e.message); });
+		};
 		$('<button type="button" class="btn btn-sm btn-primary"><i class="fa-solid fa-star"></i><span></span></button>').appendTo($tools).find("span").text(GL.t("add")).end().on("click", function () {
 			var p = products.filter(function (x) { return x.name === $pick.val(); })[0];
 			if (!p) { GC.toast("warning", GL.t("fav.pickWarn")); return; }
-			GC.setFavori("products", p.id, true).then(function () { GC.favoris($p); }, function (e) { GC.toast("error", e.message); });
+			toggle(p, true);
 		});
-		var $list = $('<select class="form-control gc-list-select"></select>').appendTo($tools);
-		lists.forEach(function (l) { $list.append($("<option></option>").val(l.id).text(l.name)); });
 		if (!favs.length) { $('<div class="gc-empty gc-empty-sm"></div>').text(GL.t("fav.empty")).appendTo($s); return; }
 		var $ul = $('<div class="gc-list"></div>').appendTo($s);
+		var list = lists.filter(function (l) { return +l.id === listId; })[0];
 		favs.forEach(function (p) {
 			var $r = $('<div class="gc-row gc-row-compact"></div>').appendTo($ul);
 			var $m = $('<div class="gc-row-main"></div>').appendTo($r);
-			$('<div class="gc-row-title"></div>').append(star(true).on("click", function () {
-				GC.setFavori("products", p.id, false).then(function () { GC.favoris($p); });
-			})).append($("<a></a>").attr("href", GC.url("/product/" + p.id)).text(p.name)).appendTo($m);
+			$('<div class="gc-row-title"></div>').append(star(true).on("click", function () { toggle(p, false); }))
+				.append($("<a></a>").attr("href", GC.url("/product/" + p.id)).text(p.name)).appendTo($m);
 			var $a = $('<div class="gc-row-act"></div>').appendTo($r);
 			$('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-cart-plus"></i><span></span></button>').appendTo($a).find("span").text(GL.t("fav.shopping")).end().on("click", function () {
-				GC.api("POST", "stock/shoppinglist/add-product", { product_id: +p.id, list_id: +$list.val(), product_amount: 1 })
-					.then(function () { GC.toast("success", GL.t("fav.addedTo", { name: p.name, list: $list.find("option:selected").text() })); }, function (e) { GC.toast("error", e.message); });
+				var ctx = { config: GC.shop.config(list), rows: items.filter(function (i) { return +i.shopping_list_id === listId; }), products: GC.byId(products), groups: {}, filter: null };
+				GC.shop.addItem(ctx, { name: p.name, product_id: +p.id })
+					.then(function () { GC.toast("success", GL.t("fav.addedTo", { name: p.name, list: list ? list.name : "" })); GC.favoris($p); }, function (e) { GC.toast("error", e.message); });
 			});
 		});
 	}

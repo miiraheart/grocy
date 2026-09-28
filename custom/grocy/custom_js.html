@@ -442,7 +442,7 @@
 <?php
 if (defined('GROCY_AUTHENTICATED') && GROCY_AUTHENTICATED)
 {
-	foreach (array('common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-add', 'shopping-lists', 'shopping') as $gcPart)
+	foreach (array('common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-catalog', 'shopping-diet', 'shopping-add', 'shopping-edit', 'shopping-panels', 'shopping-keys', 'shopping-lists', 'shopping') as $gcPart)
 	{
 		include __DIR__ . '/companion/' . $gcPart . '.js.html';
 	}

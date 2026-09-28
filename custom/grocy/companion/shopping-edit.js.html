@@ -1,0 +1,200 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop) return;
+	var S = GC.shop, UF = S.UF, MAX_SIDE = 1600;
+
+	function today() { return new Date().toISOString(); }
+
+	/// Where an item's memory lives: the product's al_memory per list, or the list's al_memory for free text (SPEC 2.4.4, 2.4.5).
+	function remember(row, listId, mutate) {
+		if (row.product_id) {
+			return S.docs.merge("products", row.product_id, "al_memory", function (doc) {
+				doc.lists = doc.lists || {};
+				doc.lists[listId] = doc.lists[listId] || {};
+				mutate(doc.lists[listId]);
+			});
+		}
+		var key = "t:" + S.fold(row.note);
+		return S.docs.merge("shopping_lists", listId, "al_memory", function (doc) {
+			doc.items = doc.items || {};
+			doc.items[key] = doc.items[key] || { name: row.note };
+			mutate(doc.items[key]);
+		});
+	}
+
+	function setFavorite(row, listId, on) {
+		return remember(row, listId, function (m) { m.fav = on; m.favAt = on ? today() : null; if (!on) delete m.favAt; });
+	}
+
+	function memoryOf(row, state) {
+		if (row.product_id) return (((S.json(((state.products[row.product_id] || {}).userfields || {}).al_memory) || {}).lists) || {})[state.config.id] || {};
+		return (state.config.memory.items || {})["t:" + S.fold(row.note)] || {};
+	}
+
+	/// SPEC 2.9: native fields on the row, then only the changed userfields, then the memory (AL-ADD-08).
+	function save(row, form, state) {
+		var u = row.userfields || {}, cfg = state.config, set = S.activeSet(cfg), native = {}, uf = {};
+		var amount = S.num(form.amount) || 1;
+		if (+row.amount !== amount) native.amount = amount;
+		if (row.product_id) {
+			if (form.qu_id && +form.qu_id !== +row.qu_id) native.qu_id = +form.qu_id;
+			if ((row.note || "") !== form.note) native.note = form.note;
+		} else {
+			if (form.name && form.name !== row.note) native.note = form.name;
+			if ((u[UF.note] || "") !== form.note) uf[UF.note] = form.note;
+		}
+		[[UF.qtyText, form.qtyText], [UF.pkg, form.pkg], [UF.price, form.price], [UF.priceQty, form.priceQty], [UF.stores, form.stores.join(",")]]
+			.forEach(function (p) { if ((u[p[0]] || "") !== (p[1] || "")) uf[p[0]] = p[1] || ""; });
+		var cat = null;
+		if (set && form.category) {
+			var own = S.json(u[UF.category]) || {};
+			if (own[set.id] !== form.category) { own[set.id] = form.category; uf[UF.category] = JSON.stringify(own); }
+			cat = form.category;
+		}
+		var chain = Object.keys(native).length ? GC.api("PUT", "objects/shopping_list/" + row.id, native) : Promise.resolve();
+		return chain.then(function () {
+			return Object.keys(uf).length ? GC.api("PUT", "userfields/shopping_list/" + row.id, uf) : null;
+		}).then(function () {
+			var learned = Object.assign({}, row, native);
+			return remember(learned, cfg.id, function (m) {
+				m.amount = amount; m.note = form.note || null; m.qtyText = form.qtyText || null; m.package = form.pkg || null;
+				m.stores = form.stores.length ? form.stores.map(Number) : null;
+				if (row.product_id && form.qu_id) m.qu = +form.qu_id;
+				if (form.price) { m.price = S.num(form.price); m.priceQty = S.num(form.priceQty); m.priceAt = today().slice(0, 10); }
+				if (cat && set) { m.cat = m.cat || {}; m.cat[set.id] = cat; }
+				if (form.fav !== !!m.fav) { m.fav = form.fav; if (form.fav) m.favAt = today(); else delete m.favAt; }
+				if (!row.product_id) m.name = learned.note;
+			});
+		}).then(function () { return saveStorePrices(row, cfg.id, form.storePrices); });
+	}
+
+	/// Store prices: products al_store_prices for products, the list memory for free text (AL-PRICE-04).
+	function saveStorePrices(row, listId, prices) {
+		var keys = Object.keys(prices || {});
+		if (!keys.length) return Promise.resolve();
+		function apply(stores) {
+			keys.forEach(function (id) {
+				var p = prices[id];
+				if (p.price === null) delete stores[id];
+				else stores[id] = { price: p.price, note: p.note || null, at: today().slice(0, 10) };
+			});
+		}
+		if (row.product_id) return S.docs.merge("products", row.product_id, "al_store_prices", function (doc) { doc.stores = doc.stores || {}; apply(doc.stores); });
+		return remember(row, listId, function (m) { m.storePrices = m.storePrices || {}; apply(m.storePrices); });
+	}
+
+	/// A new category at the end of the active set (a first "Standard" set when the list has none).
+	function newCategory(listId, name) {
+		var id = "c" + Date.now().toString(36);
+		return S.docs.merge("shopping_lists", listId, "al_categories", function (doc) {
+			doc.sets = doc.sets || [];
+			if (!doc.sets.length) { doc.sets.push({ id: "s1", name: "Standard", cats: [] }); doc.active = "s1"; }
+			var set = doc.sets.filter(function (s) { return s.id === doc.active; })[0] || doc.sets[0];
+			set.cats.push({ id: id, name: name });
+		}).then(function () { return id; });
+	}
+
+	/// T-17-11-02: images only, downscaled to 1600 px JPEG before upload.
+	function shrink(file) {
+		return new Promise(function (resolve, reject) {
+			if (!/^image\//.test(file.type)) { reject(new Error(GL.t("shop.photo.notImage"))); return; }
+			var img = new Image();
+			img.onload = function () {
+				var scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height)), canvas = document.createElement("canvas");
+				canvas.width = Math.round(img.width * scale); canvas.height = Math.round(img.height * scale);
+				canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+				canvas.toBlob(function (blob) { URL.revokeObjectURL(img.src); resolve(blob); }, "image/jpeg", 0.85);
+			};
+			img.onerror = function () { reject(new Error(GL.t("shop.photo.notImage"))); };
+			img.src = URL.createObjectURL(file);
+		});
+	}
+
+	function uploadPhoto(row, listId, file) {
+		var group = row.product_id ? "productpictures" : "userfiles";
+		var name = "al-" + (row.product_id ? "p" + row.product_id : "t") + "-" + Date.now().toString(36) + ".jpg";
+		return shrink(file).then(function (blob) {
+			return new Promise(function (resolve, reject) { Grocy.Api.UploadFile(blob, group, name, resolve, function (x) { reject(new Error("HTTP " + x.status)); }); });
+		}).then(function () {
+			if (row.product_id) return GC.api("PUT", "objects/products/" + row.product_id, { picture_file_name: name });
+			return remember(row, listId, function (m) { m.photo = name; });
+		});
+	}
+
+	function field($form, label, $input) {
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t(label))).append($input).appendTo($form);
+		return $input;
+	}
+	function input(value, type) { return $('<input class="form-control form-control-sm">').attr("type", type || "text").val(value === null || value === undefined ? "" : value); }
+
+	/// The item editor (pencil or e): name, note, quantity, package, price, stores, category, favorite, store prices, photo.
+	function open(row, state, done) {
+		var u = row.userfields || {}, cfg = state.config, set = S.activeSet(cfg), mem = memoryOf(row, state);
+		var $form = $('<form class="gc-edit"></form>');
+		var $name = field($form, "shop.name", input(S.nameOf(row, state.products))).prop("disabled", !!row.product_id);
+		var $note = field($form, "shop.note", $('<textarea class="form-control form-control-sm" rows="2"></textarea>').val(row.product_id ? row.note || "" : u[UF.note] || ""));
+		var $qty = $('<div class="gc-edit-row"></div>');
+		var $amount = input(row.amount, "number").attr("step", "any").appendTo($qty);
+		var $unit = $('<select class="custom-select custom-select-sm"></select>').appendTo($qty);
+		$("<option></option>").val("").text("").appendTo($unit);
+		Object.keys(state.units).forEach(function (id) { $("<option></option>").val(id).text(state.units[id].name).prop("selected", +id === +row.qu_id).appendTo($unit); });
+		$unit.prop("disabled", !row.product_id);
+		var $qtyText = input(u[UF.qtyText]).attr("placeholder", GL.t("shop.qtyText")).appendTo($qty);
+		field($form, "shop.quantity", $qty);
+		var $pkg = field($form, "shop.package", input(u[UF.pkg]));
+		var $price = field($form, "shop.price", input(u[UF.price]).attr("inputmode", "decimal"));
+		var $priceQty = field($form, "shop.priceQty", input(u[UF.priceQty]).attr("inputmode", "decimal"));
+		var $stores = field($form, "shop.stores", $('<select multiple class="custom-select custom-select-sm"></select>'));
+		var mine = S.ids(u[UF.stores]);
+		cfg.stores.forEach(function (id) { $("<option></option>").val(id).text((state.stores[id] || {}).name || "#" + id).prop("selected", mine.indexOf(id) >= 0).appendTo($stores); });
+		var $cat = null;
+		if (set) {
+			$cat = field($form, "shop.category", $('<select class="custom-select custom-select-sm"></select>'));
+			var current = S.categoryOf(row, cfg, state.products, state.groups).id;
+			set.cats.forEach(function (c) { $("<option></option>").val(c.id).text(c.name).prop("selected", c.id === current).appendTo($cat); });
+			$("<option></option>").val("__new").text(GL.t("shop.newCategory")).appendTo($cat);
+		}
+		var $fav = $('<input type="checkbox">').prop("checked", !!mem.fav);
+		$('<label class="gc-edit-check"></label>').append($fav).append($("<span></span>").text(GL.t("shop.favorite"))).appendTo($form);
+		var existing = row.product_id ? (S.json(((state.products[row.product_id] || {}).userfields || {}).al_store_prices) || {}).stores || {} : mem.storePrices || {};
+		var $sp = $('<fieldset class="gc-edit-prices"></fieldset>').append($("<legend></legend>").text(GL.t("shop.storePrices"))).appendTo($form);
+		var spInputs = {};
+		cfg.stores.forEach(function (id) {
+			var e = existing[id] || {}, $r = $('<div class="gc-edit-row"></div>').appendTo($sp);
+			$("<span></span>").text((state.stores[id] || {}).name || "#" + id).appendTo($r);
+			spInputs[id] = { price: input(e.price).attr("inputmode", "decimal").appendTo($r), note: input(e.note).attr("placeholder", GL.t("shop.note")).appendTo($r), had: e.price !== undefined };
+		});
+		var $photo = field($form, "shop.photo", $('<input type="file" accept="image/*" class="form-control-file">'));
+
+		function collect() {
+			var sp = {};
+			Object.keys(spInputs).forEach(function (id) {
+				var v = S.num(spInputs[id].price.val());
+				if (v !== null || spInputs[id].had) sp[id] = { price: v, note: spInputs[id].note.val().trim() };
+			});
+			return { name: $name.val().trim(), note: $note.val().trim(), amount: $amount.val(), qu_id: $unit.val(), qtyText: $qtyText.val().trim(),
+				pkg: $pkg.val().trim(), price: $price.val().trim().replace(",", "."), priceQty: $priceQty.val().trim().replace(",", "."),
+				stores: $stores.val() || [], category: $cat ? $cat.val() : null, fav: $fav.prop("checked"), storePrices: sp };
+		}
+		function submit() {
+			var form = collect(), file = $photo[0].files[0];
+			var cat = form.category === "__new"
+				? new Promise(function (resolve) { bootbox.prompt(GL.t("shop.newCategory"), function (n) { resolve(n ? newCategory(cfg.id, n.trim()) : null); }); })
+				: Promise.resolve(form.category);
+			return cat.then(function (id) {
+				form.category = id;
+				return save(row, form, state);
+			}).then(function () { return file ? uploadPhoto(row, cfg.id, file) : null; }).then(done, function (e) { toastr.error(e.message); });
+		}
+		bootbox.dialog({ title: GL.t("shop.editItem"), message: $form, size: "large", buttons: {
+			cancel: { label: GL.t("cancel"), className: "btn-secondary" },
+			save: { label: GL.t("save"), className: "btn-primary", callback: function () { submit(); } }
+		} });
+		$form.on("submit", function (e) { e.preventDefault(); submit(); bootbox.hideAll(); });
+		setTimeout(function () { ($name.prop("disabled") ? $note : $name).trigger("focus"); }, 300);
+	}
+
+	GC.shopEdit = { open: open, save: save, remember: remember, memoryOf: memoryOf, setFavorite: setFavorite, newCategory: newCategory,
+		saveStorePrices: saveStorePrices, uploadPhoto: uploadPhoto };
+})();
+</script>

@@ -50,6 +50,8 @@
 			id: list ? +list.id : 1, name: list ? list.name : "", type: type, icon: u.al_icon || "cart", theme: json(u.al_theme) || {},
 			folder: u.al_folder || null, order: num(u.al_order), sort: u.al_sort === "alpha" ? "alpha" : "manual",
 			insert: u.al_insert === "top" ? "top" : "bottom", headers: headers === null ? type !== "simple" : headers,
+			autocomplete: flag(u.al_autocomplete) === null ? type === "grocery" : flag(u.al_autocomplete),
+			filters: json(u.al_filters) || { store: {}, custom: [] }, starters: json(u.al_starters) || { lists: [] },
 			hideCrossed: flag(u.al_hide_crossed) === true, showPrices: flag(u.al_show_prices) !== false,
 			showStoreNames: flag(u.al_show_store_names) !== false, totals: flag(u.al_totals) !== false,
 			totalLeft: u.al_total_left || "crossed", totalRight: u.al_total_right || "remaining",
@@ -63,7 +65,7 @@
 		return doc.sets.filter(function (s) { return s.id === doc.active; })[0] || doc.sets[0];
 	}
 
-	/// SPEC 6.3 steps 1, 2, 3 and 5 (step 4, the grocery catalog, comes with plan 17-11). Without a category document
+	/// SPEC 6.3 steps 1 to 5 (step 4 needs shopping-catalog). Without a category document
 	/// the Grocy product group stands in, so the page still groups.
 	function categoryOf(row, cfg, products, groups) {
 		var set = activeSet(cfg), u = row.userfields || {}, product = row.product_id ? products[row.product_id] : null;
@@ -79,6 +81,10 @@
 		if (mem && mem.cat && mem.cat[set.id] && find(mem.cat[set.id])) return find(mem.cat[set.id]);
 		if (product && product.product_group_id) {
 			for (var i = 0; i < set.cats.length; i++) if (+set.cats[i].group === +product.product_group_id) return find(set.cats[i].id);
+		}
+		var builtin = GC.shop.catalogKey ? GC.shop.catalogKey(nameOf(row, products)) : null;
+		if (builtin) {
+			for (var j = 0; j < set.cats.length; j++) if (set.cats[j].builtin === builtin) return find(set.cats[j].id);
 		}
 		return find(cfg.categories.default) || find((set.cats[set.cats.length - 1] || {}).id) || { id: "other", name: "", order: 1e9 };
 	}
@@ -110,8 +116,9 @@
 	/// A store filter shows rows for its store plus unassigned rows (SPEC 6.9).
 	function matches(row, filter) {
 		if (!filter) return true;
-		var stores = ids((row.userfields || {})[UF.stores]);
-		return stores.indexOf(+filter.store) >= 0 || (filter.unassigned !== false && !stores.length);
+		var stores = ids((row.userfields || {})[UF.stores]), wanted = filter.stores || [filter.store];
+		if (!stores.length) return filter.unassigned !== false;
+		return stores.some(function (id) { return wanted.map(Number).indexOf(id) >= 0; });
 	}
 
 	/// Running totals over the visible rows: price times (al_price_qty, else amount); rows without a price add 0.
@@ -156,7 +163,7 @@
 	}
 
 	/// SPEC 6.2 step 3: an active row with the same key and category is flashed, a crossed one uncrossed in place,
-	/// else a new row (product_id, or note for free text) then its userfields. Never stock/shoppinglist/add-product.
+	/// else a new row (product_id, or note for free text) then its userfields. Never Grocy's stock add to list endpoint.
 	function addItem(ctx, draft) {
 		var cfg = ctx.config, key = draft.product_id ? "p:" + draft.product_id : "t:" + fold(draft.name);
 		var probe = { product_id: draft.product_id || null, note: draft.product_id ? null : draft.name, userfields: {} };
@@ -177,7 +184,11 @@
 			if (root.Grocy && Grocy.UserId > 0) uf[UF.addedBy] = String(Grocy.UserId);
 			if (!draft.product_id && draft.note) uf[UF.note] = draft.note;
 			if (draft.unit && !draft.qu_id) uf[UF.qtyText] = draft.unit;
-			if (ctx.filter && ctx.filter.store) uf[UF.stores] = String(ctx.filter.store);
+			var stores = ctx.filter ? (ctx.filter.stores || [ctx.filter.store]).filter(Boolean) : [];
+			if (stores.length) uf[UF.stores] = stores.join(",");
+			if (draft.guest) uf.al_flags = "guest";
+			if (draft.qtyText) uf[UF.qtyText] = draft.qtyText;
+			if (draft.pkg) uf[UF.pkg] = draft.pkg;
 			return GC.api("PUT", "userfields/shopping_list/" + id, uf).then(function () { return { kind: "created", id: id }; });
 		});
 	}

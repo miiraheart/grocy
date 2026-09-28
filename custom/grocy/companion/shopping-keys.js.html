@@ -1,0 +1,168 @@
+<script>
+(function () {
+	if (!window.GC || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, anchor = null;
+
+	function page() { return GC.shopPage; }
+	function rows() { return $(".gc-shop-row"); }
+	function rowOf($r) { var id = +$r.attr("data-id"); return page().state.rows.filter(function (r) { return +r.id === id; })[0]; }
+	function selected() { return $(".gc-shop-row.is-selected"); }
+	function targets() {
+		var $s = selected();
+		if (!$s.length) $s = $(".gc-shop-row:focus");
+		return $s.toArray().map(function (el) { return rowOf($(el)); }).filter(Boolean);
+	}
+
+	/// Cmd or Ctrl click toggles one row, Shift click selects the range from the last one (SPEC 6.18).
+	function select($r, range) {
+		if (range && anchor) {
+			var all = rows(), a = all.index(anchor), b = all.index($r);
+			all.slice(Math.min(a, b), Math.max(a, b) + 1).addClass("is-selected");
+		} else {
+			$r.toggleClass("is-selected");
+			anchor = $r;
+		}
+		toolbar();
+	}
+	function clear() { selected().removeClass("is-selected"); anchor = null; toolbar(); }
+
+	function done() { clear(); return page().refresh(); }
+	function each(list, fn) { return list.reduce(function (c, r) { return c.then(function () { return fn(r); }); }, Promise.resolve()).then(done, function (e) { toastr.error(e.message); }); }
+	function putUf(row, uf) { return GC.api("PUT", "userfields/shopping_list/" + row.id, uf); }
+
+	function choose(title, options, multiple) {
+		return new Promise(function (resolve) {
+			bootbox.prompt({ title: title, inputType: multiple ? "checkbox" : "select", inputOptions: options, callback: function (v) { resolve(v); } });
+		});
+	}
+
+	var actions = {
+		edit: function (list) { if (list[0]) GC.shopEdit.open(list[0], page().state, done); },
+		category: function (list) {
+			var set = S.activeSet(page().state.config);
+			if (!set) return;
+			choose(GL.t("shop.category"), set.cats.map(function (c) { return { text: c.name, value: c.id }; })).then(function (id) {
+				if (id) each(list, function (r) { var own = S.json((r.userfields || {}).al_category) || {}; own[set.id] = id; return putUf(r, { al_category: JSON.stringify(own) }); });
+			});
+		},
+		stores: function (list) {
+			var st = page().state;
+			choose(GL.t("shop.stores"), st.config.stores.map(function (id) { return { text: (st.stores[id] || {}).name || "#" + id, value: String(id) }; }), true)
+				.then(function (ids) { if (ids) each(list, function (r) { return putUf(r, { al_stores: ids.join(",") }); }); });
+		},
+		price: function (list) {
+			bootbox.prompt({ title: GL.t("shop.price"), inputType: "text", callback: function (v) {
+				if (v !== null) each(list, function (r) { return putUf(r, { al_price: String(v).trim().replace(",", ".") }); });
+			} });
+		},
+		photo: function (list) {
+			if (!list[0]) return;
+			$('<input type="file" accept="image/*">').on("change", function () {
+				if (this.files[0]) GC.shopEdit.uploadPhoto(list[0], page().state.config.id, this.files[0]).then(done, function (e) { toastr.error(e.message); });
+			}).trigger("click");
+		},
+		favorite: function (list) {
+			var st = page().state;
+			each(list, function (r) { return GC.shopEdit.setFavorite(r, st.config.id, !GC.shopEdit.memoryOf(r, st).fav); });
+		},
+		move: function (list) { transfer(list, false); },
+		copy: function (list) { transfer(list, true); },
+		cross: function (list) {
+			var on = list.some(function (r) { return +r.done !== 1; });
+			each(list, function (r) { return S.cross(r.id, on); });
+		},
+		remove: function (list, ask) {
+			var go = function () { each(list, function (r) { return GC.api("DELETE", "objects/shopping_list/" + r.id); }); };
+			if (!list.length) return;
+			if (!ask) { go(); return; }
+			bootbox.confirm(GL.t("shop.deleteItems", { n: list.length }), function (ok) { if (ok) go(); });
+		},
+		amount: function (list, step) {
+			each(list, function (r) { return GC.api("PUT", "objects/shopping_list/" + r.id, { amount: Math.max(1, (S.num(r.amount) || 1) + step) }); });
+		}
+	};
+
+	/// Move changes the list and clears the row's category; copy writes a new row with the same fields (AL-BULK-02, AL-CAT-07).
+	function transfer(list, copy) {
+		var st = page().state;
+		var options = st.lists.filter(function (l) { return +l.id !== st.config.id; }).map(function (l) { return { text: l.name, value: String(l.id) }; });
+		options.push({ text: GL.t("shop.newList"), value: "__new" });
+		choose(GL.t(copy ? "shop.copyTo" : "shop.moveTo"), options).then(function (to) {
+			if (!to) return null;
+			if (to !== "__new") return +to;
+			return new Promise(function (resolve) {
+				bootbox.prompt(GL.t("shop.newList"), function (name) {
+					if (!name) { resolve(null); return; }
+					GC.api("POST", "objects/shopping_lists", { name: name.trim() }).then(function (c) { resolve(+c.created_object_id); });
+				});
+			});
+		}).then(function (listId) {
+			if (!listId) return;
+			each(list, function (r) {
+				var uf = Object.assign({}, r.userfields || {});
+				uf.al_category = "";
+				if (!copy) return GC.api("PUT", "objects/shopping_list/" + r.id, { shopping_list_id: listId }).then(function () { return putUf(r, { al_category: "" }); });
+				var body = { shopping_list_id: listId, amount: r.amount, note: r.note };
+				if (r.product_id) { body.product_id = r.product_id; body.qu_id = r.qu_id; }
+				return GC.api("POST", "objects/shopping_list", body).then(function (c) {
+					Object.keys(uf).forEach(function (k) { if (uf[k] === null) delete uf[k]; });
+					uf.al_crossed_at = "";
+					return GC.api("PUT", "userfields/shopping_list/" + c.created_object_id, uf);
+				});
+			});
+		});
+	}
+
+	var BAR = [["edit", "fa-pen", "shop.editItem"], ["category", "fa-tag", "shop.changeCategory"], ["price", "fa-euro-sign", "shop.editPrice"],
+		["stores", "fa-store", "shop.assignStores"], ["photo", "fa-camera", "shop.addPhoto"], ["favorite", "fa-star", "shop.addFavorites"],
+		["move", "fa-arrow-right", "shop.moveTo"], ["copy", "fa-copy", "shop.copyTo"], ["cross", "fa-check", "shop.crossOff"], ["remove", "fa-trash", "delete"]];
+
+	function toolbar() {
+		$(".gc-shop-select").remove();
+		var n = selected().length;
+		if (!n) return;
+		var $bar = $('<div class="gc-shop-select" role="toolbar"></div>').append($('<span class="gc-shop-select-n"></span>').text(GL.t("shop.selected", { n: n })));
+		BAR.forEach(function (b) {
+			$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("title", GL.t(b[2])).append($('<i class="fa-solid"></i>').addClass(b[1]))
+				.on("click", function () { actions[b[0]](targets(), true); }).appendTo($bar);
+		});
+		$('<button type="button" class="btn btn-sm btn-link"></button>').text(GL.t("cancel")).on("click", clear).appendTo($bar);
+		$bar.insertAfter(".gc-shop-head");
+	}
+
+	function typing(el) { return $(el).is("input, textarea, select, [contenteditable]") || $(".modal.show").length > 0; }
+
+	$(document).on("keydown", function (e) {
+		if (!$("#gc-shop").is(":visible") || typing(e.target)) return;
+		var cmd = e.metaKey || e.ctrlKey, key = e.key, t = targets(), handled = true;
+		if (e.altKey && ["KeyF", "KeyR", "KeyL"].indexOf(e.code) >= 0) page().panel({ KeyF: "favorites", KeyR: "recents", KeyL: "filters" }[e.code]);
+		else if (e.ctrlKey && e.shiftKey && (e.code === "KeyM" || e.code === "KeyC")) actions[e.code === "KeyM" ? "move" : "copy"](t);
+		else if (e.ctrlKey && key === "/") $("body").toggleClass("gc-shop-nopane");
+		else if (e.ctrlKey && ["1", "2", "3"].indexOf(key) >= 0) location.href = GC.url({ 1: "/shoppinglist", 2: "/recipes", 3: "/mealplan" }[key]);
+		else if (cmd && key === "a") { rows().addClass("is-selected"); toolbar(); }
+		else if (cmd && (key === "ArrowUp" || key === "ArrowDown")) handled = false;
+		else if (key === "Backspace" || key === "Delete") actions.remove(t, !cmd);
+		else if (cmd || e.altKey) handled = false;
+		else if (key === "ArrowDown" || key === "ArrowUp") {
+			var all = rows(), i = all.index($(".gc-shop-row:focus"));
+			all.eq(Math.max(0, Math.min(all.length - 1, i + (key === "ArrowDown" ? 1 : -1)))).trigger("focus");
+		}
+		else if (key === "a") $(".gc-shop-input").trigger("focus");
+		else if (key === "Escape") clear();
+		else if (key === "h") $(".gc-shop-eye").trigger("click");
+		else if (key === "x") actions.cross(t);
+		else if (key === "e") actions.edit(t);
+		else if (key === "c") actions.category(t);
+		else if (key === "s") actions.stores(t);
+		else if (key === "P") actions.price(t);
+		else if (key === "p") actions.photo(t);
+		else if (key === "f") actions.favorite(t);
+		else if (key === "-") actions.amount(t, -1);
+		else if (key === "+" || key === "=") actions.amount(t, 1);
+		else handled = false;
+		if (handled) e.preventDefault();
+	});
+
+	GC.shopKeys = { select: select, clear: clear, actions: actions };
+})();
+</script>
