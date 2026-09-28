@@ -297,6 +297,8 @@ window.GL = (function () {
 		return lang === "fr" ? s.replace(".", ",") + " €" : "€" + s;
 	}
 
-	return { lang: lang, t: t, captions: captions, money: money, hookCore: hookCore, inLang: inLang };
+	function add(dict) { Object.keys(dict).forEach(function (k) { if (!D[k]) D[k] = dict[k]; }); }
+
+	return { lang: lang, t: t, add: add, captions: captions, money: money, hookCore: hookCore, inLang: inLang };
 })();
 </script>

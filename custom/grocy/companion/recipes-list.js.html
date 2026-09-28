@@ -1,0 +1,77 @@
+<script>
+(function () {
+	if (!window.GC || !window.Grocy) return;
+
+	GL.add({
+		"rl.toImport": ["To import", "À importer"],
+		"ms.breakfast": ["Breakfast", "Petit déjeuner"], "ms.lunch": ["Lunch", "Déjeuner"], "ms.snack": ["Snack", "Goûter"],
+		"ms.dinner": ["Dinner", "Dîner"]
+	});
+
+	var IMPORTING = ["pending", "ready", "failed"];
+	var SECTIONS = { "petit dejeuner": "ms.breakfast", "dejeuner": "ms.lunch", "gouter": "ms.snack", "diner": "ms.dinner" };
+
+	function fold(s) {
+		return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
+	}
+
+	function recipesList() {
+		if (!$("#recipes-table").length && !$(".recipe-gallery-item").length) return;
+		GC.api("GET", "objects/recipes?query[]=type=normal").then(function (recipes) {
+			var byId = {};
+			recipes.forEach(function (r) { byId[r.id] = r.userfields || {}; });
+			$(".recipe-gallery-item[data-recipe-id]").each(function () {
+				var u = byId[$(this).attr("data-recipe-id")];
+				if (!u) return;
+				var $chips = $('<div class="gc-recipe-card-chips"></div>');
+				(GC.dietChips ? GC.dietChips(u.diet_flags) : []).forEach(function ($c) { $chips.append($c); });
+				if (String(u.queue) === "1") $chips.append($('<span class="gc-rchip gc-rchip-queue"><i class="fa-solid fa-bookmark"></i></span>'));
+				if (IMPORTING.indexOf(u.import_status) >= 0) $chips.append($('<span class="gc-rchip gc-rchip-import"></span>').text(GL.t("rc.import." + u.import_status)));
+				if ($chips.children().length) $(this).find(".card-body").first().append($chips);
+			});
+			var importing = recipes.filter(function (r) { return IMPORTING.indexOf((r.userfields || {}).import_status) >= 0; })
+				.map(function (r) { return String(r.id); });
+			var $chip = $('<button type="button" class="gc-chip" aria-pressed="false"></button>')
+				.append($('<i class="fa-solid fa-cloud-arrow-down"></i>')).append($("<span></span>").text(GL.t("rl.toImport")))
+				.append($('<span class="gc-chip-n"></span>').text(importing.length));
+			$('<div class="col-12 gc-import-filter"></div>').append($chip).appendTo("#table-filter-row");
+			$chip.on("click", function () {
+				var on = $chip.attr("aria-pressed") !== "true";
+				$chip.attr("aria-pressed", on ? "true" : "false");
+				$(".recipe-gallery-item[data-recipe-id]").each(function () {
+					$(this).toggle(!on || importing.indexOf($(this).attr("data-recipe-id")) >= 0);
+				});
+				$("#recipes-table tbody tr[id^='recipe-row-']").each(function () {
+					$(this).toggle(!on || importing.indexOf(this.id.replace("recipe-row-", "")) >= 0);
+				});
+			});
+		}, function (e) { console.log("recipes list", e.message); });
+	}
+
+	function mealPlanSections() {
+		GC.api("GET", "objects/meal_plan_sections").then(function (sections) {
+			var byId = {};
+			sections.forEach(function (s) { byId[s.id] = s; });
+			$(".calendar[data-section-id]").each(function () {
+				var s = byId[$(this).attr("data-section-id")];
+				if (!s || !s.name) return;
+				var key = SECTIONS[fold(s.name)];
+				var label = key ? GL.t(key) : s.name;
+				$(this).find(".fc-axis .gc-section-label, .fc-axis").filter(function () {
+					return fold($(this).text()).indexOf(fold(s.name)) >= 0;
+				}).each(function () {
+					var $cell = $(this);
+					$cell.find("*").addBack().contents().filter(function () { return this.nodeType === 3 && fold(this.textContent).indexOf(fold(s.name)) >= 0; })
+						.each(function () { this.textContent = this.textContent.replace(s.name, label); });
+					if (s.time_info && !$cell.find(".g-section-time").length) $('<span class="g-section-time"></span>').text(s.time_info).appendTo($cell.children().first().length ? $cell.children().first() : $cell);
+				});
+			});
+		}, function (e) { console.log("meal plan sections", e.message); });
+	}
+
+	$(function () {
+		if (Grocy.View === "recipes") recipesList();
+		if (Grocy.View === "mealplan") setTimeout(mealPlanSections, 600);
+	});
+})();
+</script>

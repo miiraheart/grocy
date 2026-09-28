@@ -223,4 +223,28 @@ body.fixed-nav .gc-an-stores td, body.fixed-nav .gc-an-stores th { white-space: 
 	body.fixed-nav .gc-export-bar .btn { flex: 1 1 auto; }
 	body.fixed-nav .gc-table tbody td:first-child { position: static; }
 }
+body.fixed-nav .gc-recipe-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -8px 0 16px; }
+body.fixed-nav .gc-rchip { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 500; background: var(--g-panel-2); border: 1px solid var(--g-border); color: var(--g-fg); white-space: nowrap; }
+body.fixed-nav .gc-rchip i { font-size: 11px; color: var(--g-muted); }
+body.fixed-nav a.gc-rchip-source, body.fixed-nav a.gc-rchip-source:hover { color: var(--g-accent); border-color: var(--g-accent-line); text-decoration: none; }
+body.fixed-nav .gc-rchip-rating { color: var(--g-warn); letter-spacing: 1px; }
+body.fixed-nav .gc-rchip-queue, body.fixed-nav .gc-rchip-tag { background: var(--g-accent-soft); border-color: var(--g-accent-line); color: var(--g-accent); }
+body.fixed-nav .gc-rchip-diet-danger { background: var(--g-danger-soft); border-color: var(--g-danger-line); color: var(--g-danger); }
+body.fixed-nav .gc-rchip-diet-danger i { color: var(--g-danger); }
+body.fixed-nav .gc-rchip-diet-avoid { background: var(--g-warn-soft); border-color: var(--g-warn-line); color: var(--g-warn); }
+body.fixed-nav .gc-rchip-diet-limit { background: rgba(214, 170, 20, 0.14); border-color: rgba(214, 170, 20, 0.4); color: #9a7a00; }
+body.fixed-nav.night-mode .gc-rchip-diet-limit { color: #e2c24a; }
+body.fixed-nav .gc-rchip-diet-info, body.fixed-nav .gc-rchip-import, body.fixed-nav .gc-rchip-cooked { color: var(--g-muted); }
+body.fixed-nav .gc-rchip-import { border-style: dashed; }
+body.fixed-nav .gc-recipe-doc h3 { font-size: 15px; font-weight: 600; color: var(--g-fg-strong); margin: 18px 0 8px; }
+body.fixed-nav .gc-recipe-doc h3:first-child { margin-top: 4px; }
+body.fixed-nav .gc-recipe-doc h4 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--g-muted); margin: 14px 0 6px; }
+body.fixed-nav .gc-recipe-doc ul, body.fixed-nav .gc-recipe-doc ol { padding-left: 1.4em; margin-bottom: 10px; }
+body.fixed-nav .gc-recipe-doc li { margin: 4px 0; line-height: 1.5; }
+body.fixed-nav .gc-recipe-doc ol > li::marker { color: var(--g-accent); font-weight: 600; }
+body.fixed-nav .gc-recipe-doc img { max-width: 100%; height: auto; border-radius: 8px; margin-top: 6px; }
+body.fixed-nav .gc-recipe-card-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 6px; }
+body.fixed-nav .gc-recipe-card-chips .gc-rchip { height: 20px; padding: 0 8px; font-size: 11px; }
+body.fixed-nav .gc-import-filter { margin: 8px 0 4px; }
+body.fixed-nav .g-section-time { color: var(--g-muted); font-family: var(--g-mono); font-size: 11px; margin-left: 6px; }
 </style>

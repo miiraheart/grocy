@@ -1,0 +1,103 @@
+<script>
+(function () {
+	if (!window.GC || !window.Grocy || Grocy.View !== "recipes") return;
+
+	GL.add({
+		"rc.prep": ["Prep {n} min", "Préparation {n} min"], "rc.cook": ["Cook {n} min", "Cuisson {n} min"],
+		"rc.wait": ["Wait {n} min", "Attente {n} min"], "rc.rating": ["Rated {n} out of 5", "Noté {n} sur 5"],
+		"rc.source": ["Source", "Source"], "rc.cooked": ["Cooked {n} times, last {d}", "Cuisinée {n} fois, dernière le {d}"],
+		"rc.cookedOnce": ["Cooked once, on {d}", "Cuisinée une fois, le {d}"], "rc.never": ["Never cooked", "Jamais cuisinée"],
+		"rc.queue": ["Cook soon", "À cuisiner bientôt"],
+		"rc.import.pending": ["Import pending", "Import en attente"], "rc.import.ready": ["Import to review", "Import à relire"],
+		"rc.import.failed": ["Import failed", "Import échoué"],
+		"rc.diet.danger": ["Danger", "Danger"], "rc.diet.avoid": ["Avoid", "À éviter"], "rc.diet.limit": ["Limit", "À limiter"],
+		"rc.diet.info": ["Note", "À noter"]
+	});
+
+	var LEVELS = ["danger", "avoid", "limit"];
+
+	function recipeId() {
+		var q = new URLSearchParams(window.location.search).get("recipe");
+		if (q && /^\d+$/.test(q)) return parseInt(q, 10);
+		var $b = $("#selectedRecipeCard .recipe-consume[data-recipe-id]").first();
+		return $b.length ? parseInt($b.attr("data-recipe-id"), 10) : null;
+	}
+
+	function chip(text, kind, icon) {
+		var $c = $('<span class="gc-rchip"></span>').addClass(kind ? "gc-rchip-" + kind : "");
+		if (icon) $("<i></i>").attr("class", icon).appendTo($c);
+		return $c.append($("<span></span>").text(text));
+	}
+
+	function day(value) {
+		var d = String(value || "").slice(0, 10);
+		if (!d) return "";
+		var p = d.split("-");
+		return GL.lang === "fr" ? p[2] + "/" + p[1] + "/" + p[0] : d;
+	}
+
+	GC.dietChips = function (flags) {
+		return String(flags || "").split(";").map(function (part) { return $.trim(part); }).filter(Boolean).map(function (part) {
+			var i = part.indexOf(":"), key = i < 0 ? "" : $.trim(part.slice(0, i)), word = $.trim(i < 0 ? part : part.slice(i + 1));
+			var level = LEVELS.indexOf(key) >= 0 ? key : "info";
+			var label = GL.t("rc.diet." + level) + " " + (level === "info" && key ? key + " " : "") + word;
+			return chip(label, "diet-" + level, level === "danger" ? "fa-solid fa-triangle-exclamation" : null);
+		});
+	};
+
+	GC.cookStats = function (rows) {
+		var byTx = {};
+		(rows || []).forEach(function (r) {
+			var k = r.transaction_id || ("row" + r.id);
+			var d = String(r.used_date || r.row_created_timestamp || "").slice(0, 10);
+			if (!byTx[k] || d > byTx[k]) byTx[k] = d;
+		});
+		var days = Object.keys(byTx).map(function (k) { return byTx[k]; });
+		return { count: days.length, last: days.sort().pop() || "" };
+	};
+
+	function render(recipe, log) {
+		var u = recipe.userfields || {};
+		var $row = $('<div class="gc-recipe-chips"></div>');
+		String(u.tags || "").split(",").map(function (t) { return $.trim(t); }).filter(Boolean).forEach(function (t) {
+			$row.append(chip(t, "tag", "fa-solid fa-tag"));
+		});
+		var rating = parseInt(u.rating, 10);
+		if (rating > 0) {
+			$row.append(chip("★★★★★".slice(0, rating) + "☆☆☆☆☆".slice(0, 5 - rating), "rating").attr("aria-label", GL.t("rc.rating", { n: rating })));
+		}
+		[["prep_minutes", "rc.prep", "fa-regular fa-clock"], ["cook_minutes", "rc.cook", "fa-solid fa-fire"],
+			["lead_minutes", "rc.wait", "fa-solid fa-hourglass-half"]].forEach(function (f) {
+			var n = parseInt(u[f[0]], 10);
+			if (n > 0) $row.append(chip(GL.t(f[1], { n: n }), "time", f[2]));
+		});
+		if (String(u.queue) === "1") $row.append(chip(GL.t("rc.queue"), "queue", "fa-solid fa-bookmark"));
+		if (/^https?:\/\//i.test(u.source_url || "")) {
+			var host = "";
+			try { host = new URL(u.source_url).hostname.replace(/^www\./, ""); } catch (e) { host = ""; }
+			var $a = $('<a class="gc-rchip gc-rchip-source" target="_blank" rel="noopener noreferrer"></a>').attr("href", u.source_url);
+			$a.append($('<i class="fa-solid fa-arrow-up-right-from-square"></i>')).append($("<span></span>").text(u.source_author || host || GL.t("rc.source")));
+			$row.append($a);
+		}
+		GC.dietChips(u.diet_flags).forEach(function ($c) { $row.append($c); });
+		if (u.import_status && u.import_status !== "done") $row.append(chip(GL.t("rc.import." + u.import_status), "import", "fa-solid fa-cloud-arrow-down"));
+		var stats = GC.cookStats(log);
+		var cooked = stats.count === 0 ? GL.t("rc.never") : stats.count === 1 ? GL.t("rc.cookedOnce", { d: day(stats.last) })
+			: GL.t("rc.cooked", { n: stats.count, d: day(stats.last) });
+		$row.append(chip(cooked, "cooked", "fa-solid fa-utensils"));
+		var $title = $("#selectedRecipeCard .card-body > .mb-4").first();
+		$("#selectedRecipeCard .gc-recipe-chips").remove();
+		if ($title.length) $row.insertAfter($title); else $("#selectedRecipeCard .card-body").first().prepend($row);
+	}
+
+	$(function () {
+		var id = recipeId();
+		if (!id || !$("#selectedRecipeCard").length) return;
+		$("#selectedRecipeCard .recipe-content-container").addClass("gc-recipe-doc");
+		Promise.all([
+			GC.api("GET", "objects/recipes/" + id),
+			GC.api("GET", "objects/stock_log?query[]=recipe_id=" + id + "&query[]=transaction_type=consume&query[]=undone=0")
+		]).then(function (r) { render(r[0], r[1]); }, function (e) { console.log("recipe chips", e.message); });
+	});
+})();
+</script>
