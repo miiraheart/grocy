@@ -1,0 +1,177 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop) return;
+	var S = GC.shop;
+
+	function activeRow(state, key) {
+		return state.rows.filter(function (r) { return S.keyOf(r) === key && +r.done !== 1; })[0];
+	}
+
+	/// Favorites and recents of every list from the product and list memories (SPEC 2.4.4, 2.4.5).
+	function memories(state, allLists) {
+		var out = [];
+		var lists = allLists ? state.lists : state.lists.filter(function (l) { return +l.id === state.config.id; });
+		lists.forEach(function (list) {
+			var items = (S.config(list).memory.items) || {};
+			Object.keys(items).forEach(function (key) { out.push({ key: key, name: items[key].name || key.slice(2), m: items[key], list: list }); });
+			Object.keys(state.products).forEach(function (id) {
+				var m = (((S.json((state.products[id].userfields || {}).al_memory) || {}).lists) || {})[list.id];
+				if (m) out.push({ key: "p:" + id, product_id: +id, name: state.products[id].name, m: m, list: list });
+			});
+		});
+		return out;
+	}
+
+	function draftOf(item) {
+		var m = item.m || {};
+		return { name: item.name, product_id: item.product_id, amount: m.amount, qu_id: m.qu, qtyText: m.qtyText, pkg: m.package, note: m.note };
+	}
+
+	function row(item, caption, onClick, extra) {
+		var $li = $('<li class="gc-panel-row"></li>');
+		var $b = $('<button type="button" class="gc-panel-item"></button>').append($("<span></span>").text(item.name)).on("click", onClick).appendTo($li);
+		if (caption) $('<small class="gc-panel-caption"></small>').text(caption).appendTo($b);
+		if (extra) $li.append(extra);
+		return $li;
+	}
+
+	function dialog(title, $body) {
+		return bootbox.dialog({ title: title, message: $body, onEscape: true, backdrop: true, className: "gc-panel-dialog" });
+	}
+
+	/// AnyList toggle (AL-FAV-04): a favorite already on the list comes off it, else it is added with its details.
+	function favorites(state, done, allLists) {
+		var $body = $("<div></div>");
+		$('<label class="gc-edit-check"></label>').append($('<input type="checkbox">').prop("checked", !!allLists).on("change", function () {
+			bootbox.hideAll(); favorites(state, done, this.checked);
+		})).append($("<span></span>").text(GL.t("shop.allFavorites"))).appendTo($body);
+		var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		var favs = memories(state, allLists).filter(function (i) { return i.m.fav; });
+		if (!favs.length) $('<li class="gc-shop-empty"></li>').text(GL.t("shop.noFavorites")).appendTo($ul);
+		favs.forEach(function (item) {
+			var on = activeRow(state, item.key);
+			var $r = row(item, allLists ? item.list.name : "", function () {
+				var p = on ? GC.api("DELETE", "objects/shopping_list/" + on.id).then(function () { return null; }) : GC.shopAdd.submit(state, draftOf(item), function () {});
+				Promise.resolve(p).then(function () { bootbox.hideAll(); done(); });
+			});
+			if (on) $r.find(".gc-panel-item").prepend($('<i class="fa-solid fa-list gc-on-list"></i>'));
+			$r.find(".gc-panel-item").prepend($('<i class="fa-solid fa-star gc-fav"></i>'));
+			$ul.append($r);
+		});
+		dialog(GL.t("shop.favorites"), $body);
+	}
+
+	/// Crossed rows plus deleted items (memory recentAt), newest first; x hides one (AL-REC-02).
+	function recents(state, done) {
+		var $ul = $('<ul class="gc-panel-list"></ul>'), seen = {};
+		var crossed = state.rows.filter(function (r) { return +r.done === 1; }).map(function (r) {
+			return { key: S.keyOf(r), name: S.nameOf(r, state.products), product_id: r.product_id, at: (r.userfields || {}).al_crossed_at || "", m: {} };
+		});
+		var memory = memories(state, false).filter(function (i) { return i.m.recentAt && !i.m.recentHidden; })
+			.map(function (i) { i.at = i.m.recentAt; return i; });
+		crossed.concat(memory).sort(function (a, b) { return String(b.at).localeCompare(String(a.at)); }).forEach(function (item) {
+			if (seen[item.key]) return;
+			seen[item.key] = true;
+			var $hide = $('<button type="button" class="btn btn-sm btn-link gc-panel-hide"><i class="fa-solid fa-xmark"></i></button>').attr("title", GL.t("shop.hideRecent"))
+				.on("click", function () {
+					GC.shopEdit.remember({ product_id: item.product_id, note: item.name }, state.config.id, function (m) { m.recentHidden = true; })
+						.then(function () { bootbox.hideAll(); done(); });
+				});
+			$ul.append(row(item, String(item.at).slice(0, 10), function () {
+				GC.shopAdd.submit(state, draftOf(item), function () { bootbox.hideAll(); done(); });
+			}, $hide));
+		});
+		if (!$ul.children().length) $('<li class="gc-shop-empty"></li>').text(GL.t("shop.noRecents")).appendTo($ul);
+		dialog(GL.t("shop.recents"), $ul);
+	}
+
+	function starterDraft(state, item) {
+		var id = String(item.key).indexOf("p:") === 0 ? +item.key.slice(2) : null;
+		return { name: item.name || (id && (state.products[id] || {}).name) || item.key.slice(2), product_id: id, amount: item.amount, qu_id: item.qu, qtyText: item.qtyText, note: item.note };
+	}
+
+	/// Starter lists (AL-START-01 to 03): one item, or Add All one after the other.
+	function starters(state, done) {
+		var $body = $("<div></div>"), lists = state.config.starters.lists || [];
+		if (!lists.length) $('<p class="gc-shop-empty"></p>').text(GL.t("shop.noStarters")).appendTo($body);
+		lists.forEach(function (st) {
+			var $h = $('<div class="gc-panel-head"></div>').append($("<strong></strong>").text(st.name)).appendTo($body);
+			$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("shop.addAll")).on("click", function () {
+				(st.items || []).reduce(function (chain, item) {
+					return chain.then(function () { return GC.shopAdd.submit(state, starterDraft(state, item), function () {}); });
+				}, Promise.resolve()).then(function () { bootbox.hideAll(); done(); });
+			}).appendTo($h);
+			var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+			(st.items || []).forEach(function (item) {
+				var d = starterDraft(state, item);
+				$ul.append(row(d, "", function () { GC.shopAdd.submit(state, d, function () { bootbox.hideAll(); done(); }); }));
+			});
+		});
+		dialog(GL.t("shop.starters"), $body);
+	}
+
+	/// Store filters (one per list store, overrides in al_filters.store) and custom filters (SPEC 2.4.2, 6.9).
+	function allFilters(state) {
+		var doc = state.config.filters, out = [];
+		state.config.stores.forEach(function (id) {
+			var o = (doc.store || {})[id] || {};
+			out.push({ id: "store:" + id, name: (state.stores[id] || {}).name || "#" + id, stores: [id], unassigned: o.unassigned !== false, set: o.set || null, store: id });
+		});
+		(doc.custom || []).forEach(function (f) { out.push({ id: f.id, name: f.name, stores: f.stores || [], unassigned: !!f.unassigned, set: f.set || null, custom: true }); });
+		return out;
+	}
+
+	function filterForm(state, f, done) {
+		var $form = $('<form class="gc-edit"></form>');
+		var $name = $('<input class="form-control form-control-sm">').val(f.name || "").prop("disabled", !!f.store);
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("shop.name"))).append($name).appendTo($form);
+		var $stores = $('<select multiple class="custom-select custom-select-sm"></select>').prop("disabled", !!f.store);
+		state.config.stores.forEach(function (id) { $("<option></option>").val(id).text((state.stores[id] || {}).name || "#" + id).prop("selected", (f.stores || []).indexOf(id) >= 0).appendTo($stores); });
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("shop.stores"))).append($stores).appendTo($form);
+		var $un = $('<input type="checkbox">').prop("checked", f.unassigned !== false);
+		$('<label class="gc-edit-check"></label>').append($un).append($("<span></span>").text(GL.t("shop.unassigned"))).appendTo($form);
+		var $set = $('<select class="custom-select custom-select-sm"></select>').append($("<option></option>").val("").text(GL.t("shop.listSet")));
+		((state.config.categories || {}).sets || []).forEach(function (st) { $("<option></option>").val(st.id).text(st.name).prop("selected", st.id === f.set).appendTo($set); });
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("shop.categorySet"))).append($set).appendTo($form);
+		bootbox.dialog({ title: GL.t(f.id ? "shop.editFilter" : "shop.newFilter"), message: $form, buttons: {
+			cancel: { label: GL.t("cancel"), className: "btn-secondary" },
+			save: { label: GL.t("save"), className: "btn-primary", callback: function () {
+				var name = $name.val().trim(), stores = ($stores.val() || []).map(Number), unassigned = $un.prop("checked"), set = $set.val() || null;
+				if (!f.store && !name) return false;
+				S.docs.merge("shopping_lists", state.config.id, "al_filters", function (doc) {
+					doc.store = doc.store || {}; doc.custom = doc.custom || [];
+					if (f.store) { doc.store[f.store] = { unassigned: unassigned, set: set }; return; }
+					var id = f.id || "f" + Date.now().toString(36), entry = { id: id, name: name, stores: stores, unassigned: unassigned, set: set };
+					var i = doc.custom.map(function (c) { return c.id; }).indexOf(id);
+					if (i >= 0) doc.custom[i] = entry; else doc.custom.push(entry);
+				}).then(done, function (e) { toastr.error(e.message); });
+			} }
+		} });
+	}
+
+	function filters(state, done, choose) {
+		var $body = $("<div></div>"), $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		$ul.append(row({ name: GL.t("shop.noFilter") }, "", function () { bootbox.hideAll(); choose(null); }));
+		allFilters(state).forEach(function (f) {
+			var $tools = $('<span class="gc-panel-tools"></span>');
+			$('<button type="button" class="btn btn-sm btn-link"><i class="fa-solid fa-pen"></i></button>').attr("title", GL.t("shop.editFilter"))
+				.on("click", function () { bootbox.hideAll(); filterForm(state, f, done); }).appendTo($tools);
+			if (f.custom) $('<button type="button" class="btn btn-sm btn-link text-danger"><i class="fa-solid fa-trash"></i></button>').attr("title", GL.t("delete"))
+				.on("click", function () {
+					bootbox.confirm(GL.t("shop.deleteFilter", { name: f.name }), function (ok) {
+						if (!ok) return;
+						S.docs.merge("shopping_lists", state.config.id, "al_filters", function (doc) {
+							doc.custom = (doc.custom || []).filter(function (c) { return c.id !== f.id; });
+						}).then(function () { bootbox.hideAll(); done(); });
+					});
+				}).appendTo($tools);
+			$ul.append(row(f, f.stores.map(function (id) { return (state.stores[id] || {}).name; }).join(", "), function () { bootbox.hideAll(); choose(f); }, $tools));
+		});
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("shop.newFilter"))
+			.on("click", function () { bootbox.hideAll(); filterForm(state, {}, done); }).appendTo($body);
+		dialog(GL.t("shop.filters"), $body);
+	}
+
+	GC.shopPanels = { filters: filters, allFilters: allFilters, favorites: favorites, recents: recents, starters: starters, memories: memories };
+})();
+</script>
