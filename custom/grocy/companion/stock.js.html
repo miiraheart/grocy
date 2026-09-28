@@ -73,19 +73,30 @@
 		$b.find("span").text(GL.t("stock.low"));
 		$r.prepend($b);
 		$b.on("click", function () {
-			var key = function (i) { return i.id + ":" + i.amount; };
 			$b.prop("disabled", true);
-			var before;
-			GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + ID.shoppingList).then(function (a) {
-				before = (a || []).map(key);
-				return GC.api("POST", "stock/shoppinglist/add-missing-products", { list_id: ID.shoppingList });
-			}).then(function () {
-				return GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + ID.shoppingList);
-			}).then(function (after) {
-				var n = (after || []).filter(function (i) { return before.indexOf(key(i)) === -1; }).length;
+			lowToList().then(function (n) {
 				GC.toast(n ? "success" : "info", n ? GL.t("stock.lowAdded", { n: n }) : GL.t("stock.lowNone"));
 				try { sessionStorage.removeItem("g-nav-counts"); } catch (e) {}
 			}, function (e) { GC.toast("error", e.message); }).then(function () { $b.prop("disabled", false); });
+		});
+	}
+
+	/// Below minimum products go to the web's current list through the no duplicate add (SPEC 6.2 step 3, D-24).
+	function lowToList() {
+		var listId = +(localStorage.getItem("gc.shop.list") || ID.shoppingList);
+		return Promise.all([GC.api("GET", "stock/volatile"), GC.api("GET", "objects/shopping_lists/" + listId),
+			GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + listId), GC.api("GET", "objects/products")]).then(function (r) {
+			var missing = (r[0] || {}).missing_products || [], added = 0;
+			var ctx = { config: GC.shop.config(r[1]), rows: r[2] || [], products: GC.byId(r[3]), groups: {}, filter: null };
+			return missing.reduce(function (chain, m) {
+				return chain.then(function () {
+					var p = ctx.products[m.id];
+					if (!p) return null;
+					return GC.shop.addItem(ctx, { name: p.name, product_id: +m.id, amount: Math.max(1, Math.ceil(+m.amount_missing || 1)) }).then(function (res) {
+						if (res.kind === "created") { added++; ctx.rows.push({ id: res.id, product_id: +m.id, done: 0, userfields: {} }); }
+					});
+				});
+			}, Promise.resolve()).then(function () { return added; });
 		});
 	}
 

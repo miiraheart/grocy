@@ -23,18 +23,34 @@
 		var $b = $('<button type="button" class="btn btn-primary"><i class="fa-solid fa-boxes-stacked"></i><span></span></button>').appendTo($box);
 		$b.find("span").text(GL.t("tk.restock", { n: items.length }));
 		$b.on("click", function () {
-			$b.prop("disabled", true).find("span").text(GL.t("tk.restocking"));
-			restock(receipt, items, products).then(function (r) {
-				$box.empty().append($('<div class="gc-note gc-note-ok"><i class="fa-solid fa-boxes-stacked"></i><span></span></div>').find("span").text(GL.t("tk.restockDone", r)).end());
-				GC.clearNavCounts();
-			}, function (e) {
-				$b.prop("disabled", false).find("span").text(GL.t("tk.restock", { n: items.length }));
-				GC.toast("error", e.message);
+			pickList().then(function (listId) {
+				if (!listId) return;
+				$b.prop("disabled", true).find("span").text(GL.t("tk.restocking"));
+				return restock(receipt, items, products, listId).then(function (r) {
+					$box.empty().append($('<div class="gc-note gc-note-ok"><i class="fa-solid fa-boxes-stacked"></i><span></span></div>').find("span").text(GL.t("tk.restockDone", r)).end());
+					GC.clearNavCounts();
+				}, function (e) {
+					$b.prop("disabled", false).find("span").text(GL.t("tk.restock", { n: items.length }));
+					GC.toast("error", e.message);
+				});
 			});
 		});
 	};
 
-	function restock(receipt, items, products) {
+	/// Which shopping list the receipt ticks (D-24), the web's current list first.
+	function pickList() {
+		return GC.api("GET", "objects/shopping_lists").then(function (lists) {
+			if ((lists || []).length < 2) return lists && lists[0] ? +lists[0].id : 1;
+			var current = localStorage.getItem("gc.shop.list") || String(lists[0].id);
+			return new Promise(function (resolve) {
+				bootbox.prompt({ title: GL.t("tk.whichList"), inputType: "select", value: current,
+					inputOptions: lists.map(function (l) { return { text: l.name, value: String(l.id) }; }),
+					callback: function (v) { resolve(v ? +v : null); } });
+			});
+		});
+	}
+
+	function restock(receipt, items, products, listId) {
 		var date = receipt.date || GC.today();
 		var res = { a: 0, s: 0, k: 0 };
 		return Promise.all([products(), GC.api("GET", "objects/shopping_list"), GC.api("GET", "objects/shopping_locations")]).then(function (r) {
@@ -55,8 +71,11 @@
 						else if (days > 0) body.best_before_date = GC.addDays(date, days);
 						return GC.api("POST", "stock/products/" + it.product_id + "/add", body).then(function () { res.a++; });
 					}).then(function () {
-						var open = list.filter(function (x) { return +x.product_id === +it.product_id && String(x.done) !== "1"; });
-						return Promise.all(open.map(function (x) { return GC.api("PUT", "objects/shopping_list/" + x.id, { done: 1 }); })).then(function () { res.s += open.length; });
+						var open = list.filter(function (x) { return +x.shopping_list_id === +listId && +x.product_id === +it.product_id && String(x.done) !== "1"; });
+						var unit = Math.round(it.total / it.amount * 100) / 100;
+						return Promise.all(open.map(function (x) {
+							return GC.shop.cross(x.id, true).then(function () { return unit > 0 ? GC.api("PUT", "userfields/shopping_list/" + x.id, { al_price: String(unit) }) : null; });
+						})).then(function () { res.s += open.length; });
 					});
 				});
 			}, Promise.resolve());
