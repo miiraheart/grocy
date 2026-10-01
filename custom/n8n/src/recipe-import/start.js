@@ -26,7 +26,7 @@ let resolveError = "";
 if (kind === "url") {
   try { url = await normaliseUrl(this.helpers, rawUrl); } catch (e) { url = rawUrl.slice(0, 2000); resolveError = e.message; }
 }
-const isTiktok = (() => { try { return /(^|\.)tiktok\.com$/i.test(new URL(url).hostname); } catch (e) { return false; } })();
+const isTiktok = (() => { try { return /(^|\.)tiktok\.com$/i.test(parseUrl(url).hostname); } catch (e) { return false; } })();
 const sourceKind = kind === "text" ? "text" : kind === "ocr" ? "photo" : isTiktok ? "tiktok" : "web";
 const ref = isTiktok && tiktokId(url) ? "tiktok:" + tiktokId(url) : "";
 

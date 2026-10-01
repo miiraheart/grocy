@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { runCode, source } from "./load.mjs";
+import { loadLib, runCode, source } from "./load.mjs";
 
 const PLAN = ["lines-lib.js", "html-lib.js", "parse-plan.js"];
-const READ = ["lines-lib.js", "net-lib.js", "grocy-lib.js", "html-lib.js", "read.js"];
+const READ = ["lines-lib.js", "url-lib.js", "net-lib.js", "grocy-lib.js", "html-lib.js", "read.js"];
 const ctx = (extra = {}) => ({ recipe_id: 1, kind: "url", source_kind: "web", url: "https://example.org/r", ref: "", text: "", options: { heuristic: true }, ...extra });
 const plan = (html, extra = {}, more = {}) => runCode(PLAN, { ctx: ctx(extra), html, page: { title: "Page title" }, ...more });
 
@@ -59,8 +59,24 @@ test("a TikTok caption without ingredient lines fails at read", async () => {
 });
 
 test("private and non http links are refused before any fetch", async () => {
-  for (const url of ["http://grocy/api/recipes", "http://192.168.1.10/x", "http://100.101.1.2/", "file:///etc/passwd", "https://grocy.audibox.cc/"]) {
+  for (const url of ["http://grocy/api/recipes", "http://192.168.1.10/x", "http://100.101.1.2/", "file:///etc/passwd", "https://grocy.audibox.cc/", "http://0x7f.1/", "http://[::ffff:7f00:1]/", "http://a@127.0.0.1\\@example.com/"]) {
     const out = await runCode(READ, { ctx: ctx({ url }) }, { httpRequest: async () => { throw new Error("fetched " + url); } });
     assert.equal(out.error.stage, "resolve", url);
+    assert.notEqual(out.error.message, "resolve: not a link", url);
+  }
+});
+
+test("links parse, resolve and lose tracking without the URL global", async () => {
+  const lib = loadLib(["url-lib.js", "net-lib.js"], ["parseUrl", "resolveUrl", "formatUrl", "stripTracking"]);
+  const base = "https://Www.Example.com:443/recettes/a/b.html?x=1#top";
+  assert.equal(lib.formatUrl(lib.parseUrl(base)), "https://www.example.com/recettes/a/b.html?x=1#top");
+  const cases = { "../img/p.jpg": "https://www.example.com/recettes/img/p.jpg", "/p.jpg": "https://www.example.com/p.jpg",
+    "//cdn.example.com/p.jpg": "https://cdn.example.com/p.jpg", "?y=2": "https://www.example.com/recettes/a/b.html?y=2",
+    "http://other.example.org/x": "http://other.example.org/x", "./c": "https://www.example.com/recettes/a/c" };
+  for (const [ref, want] of Object.entries(cases)) assert.equal(lib.formatUrl(lib.resolveUrl(ref, base)), want, ref);
+  assert.equal(lib.stripTracking("https://www.example.com/r?utm_source=x&id=3&fbclid=9#top"), "https://www.example.com/r?id=3");
+  assert.equal(lib.stripTracking("https://www.tiktok.com/@a/video/1?_r=1&lang=fr"), "https://www.tiktok.com/@a/video/1");
+  for (const bad of ["not a link", "http://", "https://exa mple.com/", "http://%31%32%37.0.0.1/", "http://ｌｏｃａｌｈｏｓｔ/"]) {
+    assert.throws(() => lib.parseUrl(bad), /resolve: not a link/, bad);
   }
 });

@@ -1,4 +1,4 @@
-// Draft (19-SPEC 7.5): model answer or structured result to import_draft v2, photo, status ready; any error to failed.
+// Draft (19-SPEC 7.5): model answer or structured result to import_draft v2 and the photo; Finish writes it. Any error to failed.
 const TWIN = false;
 const plan = $("Parse").first().json;
 const { ctx, page } = plan;
@@ -51,16 +51,16 @@ async function modelAnswer() {
   throw new Error("parse: " + errors.join("; "));
 }
 
-async function savePhoto(imageUrl) {
+// The photo goes to Grocy from the "Upload photo" node: a Buffer body cannot cross the task runner RPC to helpers.httpRequest.
+async function fetchPhoto(imageUrl) {
   if (!imageUrl) return null;
-  const res = await fetchPublic(helpers, new URL(imageUrl, ctx.url || undefined).toString(), { binary: true, maxBytes: 8 * 1024 * 1024 });
+  const res = await fetchPublic(helpers, formatUrl(resolveUrl(imageUrl, ctx.url || "")), { binary: true, maxBytes: 8 * 1024 * 1024 });
   if (res.status >= 400 || res.body.length < 100) return null;
   const hex = Array.from({ length: 8 }, () => Math.floor(Math.random() * 16).toString(16)).join("");
   const fileName = "r" + ctx.recipe_id + "-" + hex + ".jpg";
-  await helpers.httpRequest({ method: "PUT", url: GROCY + "/files/recipepictures/" + Buffer.from(fileName).toString("base64"),
-    headers: { "GROCY-API-KEY": GROCY_KEY, "Content-Type": "application/octet-stream" }, body: res.body, json: false, timeout: 30000 });
-  await grocyCall(helpers, "PUT", "/objects/recipes/" + ctx.recipe_id, { picture_file_name: fileName });
-  return fileName;
+  const mimeType = String(headerOf(res.headers, "content-type") || "image/jpeg").split(";")[0].trim();
+  return { file_name: fileName, name_b64: Buffer.from(fileName).toString("base64"),
+    binary: { data: res.body.toString("base64"), mimeType: /^image\//.test(mimeType) ? mimeType : "image/jpeg", fileName } };
 }
 
 const raw = String(ctx.text || plan.model_text || "").slice(0, 60000);
@@ -85,12 +85,11 @@ try {
     groups: partial.groups, steps: partial.steps, parser, transcript: false,
     stages: ctx.kind === "url" ? ["resolve", "read", "parse", "write"] : ["parse", "write"] };
   let photo = null;
-  try { photo = await savePhoto(imageUrl); } catch (e) { photo = null; }
-  if (name) await grocyCall(helpers, "PUT", "/objects/recipes/" + ctx.recipe_id, { name });
-  await setFields(helpers, ctx.recipe_id, { import_status: "ready", import_error: "", import_draft: JSON.stringify(draft),
-    import_raw: raw, source_author: draft.source.author || "" });
-  return [{ json: { ok: true, recipe_id: ctx.recipe_id, import_status: "ready", parser, photo, lines: lineCount(partial), steps: partial.steps.length } }];
+  try { photo = await fetchPhoto(imageUrl); } catch (e) { photo = null; }
+  const json = { ok: true, done: false, recipe_id: ctx.recipe_id, name, draft, raw, parser, has_photo: Boolean(photo),
+    photo: photo ? { file_name: photo.file_name, name_b64: photo.name_b64 } : null, lines: lineCount(partial), steps: partial.steps.length };
+  return [photo ? { json, binary: { photo: photo.binary } } : { json }];
 } catch (e) {
   const error = await markFailed(helpers, ctx.recipe_id, stageOf(e.message, "write"), e.message, raw);
-  return [{ json: { ok: false, recipe_id: ctx.recipe_id, import_status: "failed", import_error: error } }];
+  return [{ json: { ok: false, done: true, has_photo: false, recipe_id: ctx.recipe_id, import_status: "failed", import_error: error } }];
 }
