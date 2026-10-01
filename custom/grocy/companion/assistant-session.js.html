@@ -1,0 +1,126 @@
+<script>
+/// One web assistant session (the app's RowReducer and ActionLog for the web): rows r1, r2 ... from the model's
+/// operations, drafts edited by later sentences, confirmed rows written to Grocy and to the shared history.
+(function () {
+	if (!window.GC || !window.GCAR || !GC.assist) return;
+	var GA = GC.assist, A = window.GCAR, KEY = "gc-assistant", IDLE = 30 * 60000;
+
+	function fresh() { return { session_id: A.uuid(), last: Date.now(), next: 1, turns: [], rows: {}, answered: [] }; }
+	var state = (function () {
+		try { var s = JSON.parse(sessionStorage.getItem(KEY) || "null"); if (s && Date.now() - s.last < IDLE) return s; } catch (e) {}
+		return fresh();
+	})();
+	function save() { state.last = Date.now(); try { sessionStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} }
+
+	function recentRows() {
+		return Object.keys(state.rows).map(function (k) { return state.rows[k]; }).filter(function (r) { return r.op && A.KINDS[r.op.op] && r.status !== "removed"; }).slice(-10).map(function (r) {
+			var o = r.op;
+			return { row_id: r.row_id, intent: o.op, status: r.status === "applied" || r.status === "failed" || r.status === "undone" ? r.status : "draft",
+				product_id: o.product_id, name: r.label, amount: o.amount || 0, best_before: o.best_before, location_id: o.location_id,
+				target_location_id: o.target_location_id, target_id: o.target_id, text: o.text, day: o.day };
+		});
+	}
+
+	function label(op, ctx) {
+		if (op.product_id && ctx.products[op.product_id]) return ctx.products[op.product_id].name;
+		if (op.target_id && /^task_/.test(op.op) && ctx.tasks[op.target_id]) return ctx.tasks[op.target_id].name;
+		if (op.target_id && op.op === "chore_done" && ctx.chores[op.target_id]) return ctx.chores[op.target_id].name;
+		return op.name_fr || op.text || op.name_spoken || "";
+	}
+	function addRow(op, ctx, extra) {
+		var id = "r" + state.next++, row = { row_id: id, op: op, status: "draft", label: label(op, ctx) };
+		Object.keys(extra || {}).forEach(function (k) { row[k] = extra[k]; });
+		if (!A.supported(op)) row.status = "unsupported";
+		state.rows[id] = row;
+		return row;
+	}
+	function applied() { return Object.keys(state.rows).map(function (k) { return state.rows[k]; }).filter(function (r) { return r.status === "applied" && r.action && A.canUndo(r.action); }); }
+
+	/// Several things in one out_of become one row each (the app's list values).
+	function expand(op, ctx) {
+		if (op.op !== "out_of" || !op.values || op.values.length < 2) return [op];
+		var products = Object.keys(ctx.products).map(function (k) { return ctx.products[k]; });
+		return op.values.map(function (v) {
+			var q = GC.shop && GC.shop.parseQty ? GC.shop.parseQty(v) : { name: v, amount: null };
+			var match = products.filter(function (p) { return A.fold(p.name) === A.fold(q.name); })[0];
+			return Object.assign({}, op, { values: null, name_spoken: q.name, name_fr: match ? null : q.name, product_id: match ? +match.id : null, amount: q.amount || null });
+		});
+	}
+
+	function undoRows(op, turns) {
+		var done = applied();
+		if (op.undo_target === "session") return done;
+		if (op.undo_target === "utterance") {
+			var prev = turns[turns.length - 2];
+			return prev ? done.filter(function (r) { return prev.rows.indexOf(r.row_id) !== -1; }) : [];
+		}
+		if (op.undo_target === "product") return done.filter(function (r) { return op.product_id ? +r.op.product_id === +op.product_id : A.fold(r.label) === A.fold(op.name_fr); }).slice(-1);
+		return done.slice(-(op.undo_count || 1));
+	}
+
+	/// Turns a model reply into rows and answers for one turn (what she typed or said).
+	function take(text, reply, ctx, source) {
+		var turn = { text: text, source: source, heard: reply.heard || [], answers: [], rows: [] };
+		state.turns.push(turn);
+		var asks = [];
+		(reply.operations || []).forEach(function (op) {
+			var target = op.row_id && state.rows[op.row_id];
+			var targets = op.row_ids && op.row_ids.length ? op.row_ids.map(function (id) { return state.rows[id]; }).filter(Boolean) : target ? [target] : [];
+			if (op.op === "ask") { asks.push(op); return; }
+			if (op.op === "undo") { undoRows(op, state.turns).forEach(function (r) { turn.rows.push(addRow({ op: "undo" }, ctx, { undo_of: r.row_id, label: r.summary || r.label }).row_id); }); return; }
+			if (op.op === "delete" || op.op === "update") {
+				targets.forEach(function (t) {
+					if (t.status === "draft" || t.status === "failed") {
+						if (op.op === "delete") t.status = "removed"; else { t.op = A.merge(t.op, op); t.label = label(t.op, ctx); t.status = "draft"; }
+					} else if (t.status === "applied") {
+						var extra = op.op === "delete" ? { undo_of: t.row_id, label: t.summary || t.label } : { edit_of: t.row_id };
+						turn.rows.push(addRow(op.op === "delete" ? { op: "undo" } : A.merge(t.op, op), ctx, extra).row_id);
+					}
+				});
+				return;
+			}
+			expand(op, ctx).forEach(function (o) { turn.rows.push(addRow(o, ctx).row_id); });
+		});
+		save();
+		return Promise.all(asks.map(function (op) { return GA.answer(op, ctx).catch(function (e) { return { title: e.message, lines: [], items: [] }; }); })).then(function (answers) {
+			turn.answers = answers;
+			var items = [];
+			answers.forEach(function (a) { items = items.concat(a.items || []); });
+			if (asks.length) state.answered = items.slice(0, 30);
+			save();
+			return turn;
+		});
+	}
+
+	function record(row, res, ctx, turn, parent) {
+		return { action_id: A.uuid(), created: A.stamp(), kind: A.KINDS[row.op.op], status: "applied", origin: "web", source: parent ? "edit" : (turn && turn.source) || "typed",
+			session_id: state.session_id, parent_id: parent || null, summary: res.summary, sentence: turn ? turn.text : "", record: res.record };
+	}
+
+	/// Writes one row: an undo row undoes its target, an edit row undoes the first version then applies the new one.
+	function apply(rowId, ctx) {
+		var row = state.rows[rowId], turn = state.turns.filter(function (t) { return t.rows.indexOf(rowId) !== -1; })[0];
+		if (!row || (row.status !== "draft" && row.status !== "failed")) return Promise.resolve(row);
+		if (row.op.op !== "undo" && A.missing(row.op)) return Promise.reject(new Error(GL.t("as.need." + A.missing(row.op))));
+		row.status = "working";
+		var first = row.undo_of || row.edit_of ? GC.actions.undo(state.rows[row.undo_of || row.edit_of].action).then(function () { state.rows[row.undo_of || row.edit_of].status = "undone"; }) : Promise.resolve();
+		var write = row.op.op === "undo" ? first.then(function () { return null; }) : first.then(function () { return GA.ops[row.op.op](row.op, ctx); });
+		return write.then(function (res) {
+			if (!res) { row.status = "applied"; row.summary = GL.t("as.undid", { what: row.label }); return row; }
+			var rec = record(row, res, ctx, turn, row.edit_of ? state.rows[row.edit_of].action.action_id : null);
+			row.status = "applied"; row.summary = res.summary; row.action = rec;
+			return GC.actions.add(rec).then(function () { return row; }, function (e) { row.warning = e.message; return row; });
+		}).catch(function (e) { row.status = "failed"; row.error = e.message; return row; }).then(function (r) { save(); return r; });
+	}
+
+	function undo(rowId) {
+		var row = state.rows[rowId];
+		return GC.actions.undo(row.action).then(function () { row.status = "undone"; save(); return row; }, function (e) { row.error = e.message; save(); throw e; });
+	}
+	function remove(rowId) { state.rows[rowId].status = "removed"; save(); }
+	function edit(rowId, patch) { var r = state.rows[rowId]; Object.keys(patch).forEach(function (k) { r.op[k] = patch[k]; }); save(); }
+	function reset() { state = fresh(); save(); }
+
+	GA.session = { get state() { return state; }, recentRows: recentRows, take: take, apply: apply, undo: undo, remove: remove, edit: edit, reset: reset, record: record, save: save };
+})();
+</script>

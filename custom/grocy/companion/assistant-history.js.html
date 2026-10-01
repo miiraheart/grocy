@@ -1,0 +1,77 @@
+<script>
+/// The shared assistant history (docs/action-history.md): one gc_actions userobject per action, written by the web
+/// and the app, so both list, undo and redo the same entries. Undo runs the Grocy calls the entry carries.
+(function () {
+	if (!window.GC || !window.GCAR) return;
+	var ENTITY = "userentity-gc_actions", A = window.GCAR, PARALLEL = 8;
+	var CALL_PATH = /^(stock|objects|userfields|tasks|chores|batteries|recipes|user)\/[A-Za-z0-9_\-\/.?=&%\[\]:]*$/;
+
+	function entityId() {
+		return GC.api("GET", "objects/userentities?query[]=name=gc_actions").then(function (rows) {
+			if (!rows || !rows.length) { var e = new Error(GL.t("as.noHistory")); e.code = "no_history"; throw e; }
+			return +rows[0].id;
+		});
+	}
+
+	/// Newest first; `limit` userobjects, each read with its fields (Grocy has no bulk read of userfield values).
+	function list(limit) {
+		return entityId().then(function (eid) {
+			return GC.api("GET", "objects/userobjects?query[]=userentity_id=" + eid + "&order=id:desc&limit=" + (limit || 100));
+		}).then(function (objs) {
+			var out = [], queue = (objs || []).slice();
+			function next() {
+				var o = queue.shift();
+				if (!o) return Promise.resolve();
+				return GC.api("GET", "userfields/" + ENTITY + "/" + o.id).then(function (f) {
+					var rec = A.fromRow({ id: o.id, userfields: f || {} });
+					if (rec) { if (!rec.created) rec.created = o.row_created_timestamp; out.push(rec); }
+				}, function () {}).then(next);
+			}
+			var workers = [];
+			for (var i = 0; i < PARALLEL; i++) workers.push(next());
+			return Promise.all(workers).then(function () { return out.sort(A.newest); });
+		});
+	}
+
+	function add(rec) {
+		return entityId().then(function (eid) { return GC.api("POST", "objects/userobjects", { userentity_id: eid }); }).then(function (r) {
+			rec.row_id = +r.created_object_id;
+			return GC.api("PUT", "userfields/" + ENTITY + "/" + rec.row_id, A.toFields(rec)).then(function () { return rec; });
+		});
+	}
+
+	/// Changes the status (and record details) of an entry in place; the other fields stay.
+	function update(rec, status, recordPatch) {
+		rec.status = status;
+		if (recordPatch) Object.keys(recordPatch).forEach(function (k) { rec.record[k] = recordPatch[k]; });
+		if (!rec.row_id) return Promise.resolve(rec);
+		return GC.api("PUT", "userfields/" + ENTITY + "/" + rec.row_id, { status: status, record: JSON.stringify(rec.record) }).then(function () { return rec; });
+	}
+
+	/// Runs an entry's Grocy calls in order (its undo list, or any list of { method, path, body }).
+	function run(calls) {
+		return (calls || []).reduce(function (p, c) {
+			return p.then(function () {
+				if (["GET", "POST", "PUT", "DELETE"].indexOf(c.method) === -1 || !CALL_PATH.test(String(c.path)) || /\.\./.test(c.path)) throw new Error("bad call " + c.path);
+				return GC.api(c.method, c.path, c.body === undefined || c.body === null ? undefined : c.body);
+			});
+		}, Promise.resolve());
+	}
+
+	function undo(rec) {
+		if (!A.canUndo(rec)) return Promise.reject(new Error(GL.t("as.undoPhone")));
+		return run(rec.record.undo).then(function () {
+			return update(rec, "undone", { undone_at: A.stamp(), undone_by: "web" });
+		}, function (e) {
+			return update(rec, "undoFailed", { error: e.message }).then(function () { throw e; });
+		});
+	}
+
+	/// Undo from here: every undoable entry of the session from this one on, newest first; stops at the first failure.
+	function undoFrom(rec, all) {
+		return A.fromHere(rec, all).reduce(function (p, r) { return p.then(function (n) { return undo(r).then(function () { return n + 1; }); }); }, Promise.resolve(0));
+	}
+
+	GC.actions = { list: list, add: add, update: update, run: run, undo: undo, undoFrom: undoFrom };
+})();
+</script>

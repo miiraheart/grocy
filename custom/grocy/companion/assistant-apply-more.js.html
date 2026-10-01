@@ -1,0 +1,136 @@
+<script>
+/// Web assistant writes for the shopping list, tasks and chores (the app's ActionExecutor+List, +Chores verbs), with
+/// the Grocy calls that undo each one. List rows go through the web shopping list's own helpers.
+(function () {
+	if (!window.GC || !window.GCAR || !GC.assist || !GC.shop) return;
+	var ops = GC.assist.ops, S = GC.shop, A = window.GCAR;
+
+	function listId(op, ctx) { return +(op.list_id || (ctx.screen.list && +ctx.screen.list.id) || ctx.activeListId); }
+	function listName(ctx, id) { var l = ctx.lists[id]; return l ? l.name : ""; }
+	function rowsOf(id) { return GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + id); }
+	function label(op, ctx) { return op.product_id && ctx.products[op.product_id] ? ctx.products[op.product_id].name : op.name_fr || op.name_spoken || op.text || ""; }
+	function crossCalls(id, done) {
+		var uf = {};
+		uf[S.UF.crossedAt] = done ? S.stamp() : "";
+		return [{ method: "PUT", path: "objects/shopping_list/" + id, body: { done: done ? 1 : 0 } }, { method: "PUT", path: "userfields/shopping_list/" + id, body: uf }];
+	}
+	function record(op, ctx, lid, rowId, undo, extra) {
+		var r = { v: 1, op: op, product_id: op.product_id || null, product_name: label(op, ctx), object_type: "listItem", object_id: rowId ? String(rowId) : null, list_id: lid, undo: undo };
+		Object.keys(extra || {}).forEach(function (k) { r[k] = extra[k]; });
+		return r;
+	}
+	/// The row an operation means: same product, else same text, preferring active rows for a tick and ticked ones for an untick.
+	function findRow(rows, op, ctx, wantDone) {
+		var name = A.fold(label(op, ctx));
+		var same = (rows || []).filter(function (r) {
+			if (op.product_id) return +r.product_id === +op.product_id;
+			var rn = r.product_id && ctx.products[r.product_id] ? ctx.products[r.product_id].name : r.note;
+			return A.fold(rn) === name;
+		});
+		if (wantDone === undefined) return same[0] || null;
+		return same.filter(function (r) { return (+r.done === 1) === wantDone; })[0] || null;
+	}
+
+	ops.out_of = function (op, ctx) {
+		var lid = listId(op, ctx), amount = op.amount || 1, name = label(op, ctx);
+		if (!lid) return Promise.reject(new Error(GL.t("as.err.list")));
+		return rowsOf(lid).then(function (rows) {
+			var row = findRow(rows, op, ctx);
+			var sum = GL.t("as.sum.outOf", { name: name, list: listName(ctx, lid) });
+			if (row && +row.done !== 1) {
+				var before = GC.num(row.amount);
+				return GC.api("PUT", "objects/shopping_list/" + row.id, { amount: before + amount }).then(function () {
+					return { summary: sum, record: record(op, ctx, lid, row.id, [{ method: "PUT", path: "objects/shopping_list/" + row.id, body: { amount: before } }], { amount_before: before }) };
+				});
+			}
+			if (row) return S.cross(row.id, false).then(function () { return { summary: sum, record: record(op, ctx, lid, row.id, crossCalls(row.id, true)) }; });
+			var draft = { name: name, product_id: op.product_id || null, amount: amount, qu_id: op.qu_id || null, source: "assistant" };
+			return S.createRow({ config: S.config(ctx.lists[lid]), rows: rows || [], filter: null }, draft).then(function (made) {
+				return { summary: sum, record: record(op, ctx, lid, made.id, [{ method: "DELETE", path: "objects/shopping_list/" + made.id }]) };
+			});
+		});
+	};
+
+	function tick(done) {
+		return function (op, ctx) {
+			var lid = listId(op, ctx);
+			return rowsOf(lid).then(function (rows) {
+				var row = findRow(rows, op, ctx, !done);
+				if (!row) throw new Error(GL.t("as.err.notOnList", { name: label(op, ctx) }));
+				return S.cross(row.id, done).then(function () {
+					return { summary: GL.t(done ? "as.sum.listDone" : "as.sum.listUndone", { name: label(op, ctx) }), record: record(op, ctx, lid, row.id, crossCalls(row.id, !done)) };
+				});
+			});
+		};
+	}
+	ops.list_done = tick(true);
+	ops.list_undone = tick(false);
+
+	ops.list_remove = function (op, ctx) {
+		var lid = listId(op, ctx);
+		return rowsOf(lid).then(function (rows) {
+			var row = findRow(rows, op, ctx);
+			if (!row) throw new Error(GL.t("as.err.notOnList", { name: label(op, ctx) }));
+			var back = { shopping_list_id: lid, amount: GC.num(row.amount), done: +row.done };
+			["product_id", "qu_id", "note"].forEach(function (k) { if (row[k] != null && row[k] !== "") back[k] = row[k]; });
+			return GC.api("DELETE", "objects/shopping_list/" + row.id).then(function () {
+				return { summary: GL.t("as.sum.listRemove", { name: label(op, ctx) }), record: record(op, ctx, lid, row.id, [{ method: "POST", path: "objects/shopping_list", body: back }]) };
+			});
+		});
+	};
+
+	ops.list_amount = function (op, ctx) {
+		var lid = listId(op, ctx);
+		return rowsOf(lid).then(function (rows) {
+			var row = findRow(rows, op, ctx, false) || findRow(rows, op, ctx);
+			if (!row) throw new Error(GL.t("as.err.notOnList", { name: label(op, ctx) }));
+			var before = GC.num(row.amount);
+			return GC.api("PUT", "objects/shopping_list/" + row.id, { amount: op.amount }).then(function () {
+				return { summary: GL.t("as.sum.listAmount", { name: label(op, ctx), n: op.amount }), record: record(op, ctx, lid, row.id, [{ method: "PUT", path: "objects/shopping_list/" + row.id, body: { amount: before } }], { amount_before: before }) };
+			});
+		});
+	};
+
+	ops.list_note = function (op, ctx) {
+		var lid = listId(op, ctx), text = op.text || op.name_spoken;
+		return GC.api("POST", "objects/shopping_list", { shopping_list_id: lid, note: text, amount: 1 }).then(function (r) {
+			var id = +r.created_object_id;
+			return { summary: GL.t("as.sum.listNote", { text: text }), record: record(op, ctx, lid, id, [{ method: "DELETE", path: "objects/shopping_list/" + id }]) };
+		});
+	};
+
+	function taskRecord(op, id, name, undo) { return { v: 1, op: op, product_id: null, product_name: name, object_type: "task", object_id: String(id), undo: undo }; }
+	function taskName(ctx, id) { var t = ctx.tasks[id]; return t ? t.name : "#" + id; }
+
+	ops.task_add = function (op) {
+		var name = op.text || op.name_spoken, body = { name: name, description: "" };
+		if (op.day) body.due_date = op.day;
+		return GC.api("POST", "objects/tasks", body).then(function (r) {
+			var id = +r.created_object_id;
+			return { summary: GL.t("as.sum.taskAdd", { name: name }), record: taskRecord(op, id, name, [{ method: "DELETE", path: "objects/tasks/" + id }]) };
+		});
+	};
+	ops.task_done = function (op, ctx) {
+		return GC.api("POST", "tasks/" + op.target_id + "/complete", { done_time: moment().format("YYYY-MM-DD HH:mm:ss") }).then(function () {
+			return { summary: GL.t("as.sum.taskDone", { name: taskName(ctx, op.target_id) }), record: taskRecord(op, op.target_id, taskName(ctx, op.target_id), [{ method: "POST", path: "tasks/" + op.target_id + "/undo" }]) };
+		});
+	};
+	ops.task_undone = function (op, ctx) {
+		return GC.api("POST", "tasks/" + op.target_id + "/undo").then(function () {
+			return { summary: GL.t("as.sum.taskUndone", { name: taskName(ctx, op.target_id) }), record: taskRecord(op, op.target_id, taskName(ctx, op.target_id), [{ method: "POST", path: "tasks/" + op.target_id + "/complete", body: {} }]) };
+		});
+	};
+
+	ops.chore_done = function (op, ctx) {
+		var when = op.details && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(op.details.done_at || "") ? op.details.done_at + ":00" : moment().format("YYYY-MM-DD HH:mm:ss");
+		var chore = ctx.chores[op.target_id], name = chore ? chore.name : "#" + op.target_id;
+		return GC.api("POST", "chores/" + op.target_id + "/execute", { tracked_time: when, done_by: Grocy.UserId }).then(function (log) {
+			var id = log && log.id ? Promise.resolve(+log.id) : GC.api("GET", "objects/chores_log?query[]=chore_id=" + op.target_id + "&order=id:desc&limit=1").then(function (r) { return +(r && r[0] && r[0].id); });
+			return id.then(function (logId) {
+				return { summary: GL.t("as.sum.choreDone", { name: name }), record: { v: 1, op: op, product_id: null, product_name: name, object_type: "chore",
+					object_id: String(op.target_id), chore_log_id: logId, undo: [{ method: "POST", path: "chores/executions/" + logId + "/undo" }] } };
+			});
+		});
+	};
+})();
+</script>

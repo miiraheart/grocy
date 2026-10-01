@@ -1,0 +1,88 @@
+<script>
+/// The web assistant's cards: one per row, editable while it is a draft (amount, date, place), with Apply, Remove
+/// and Undo, like the app's batch cards.
+(function () {
+	if (!window.GC || !window.GCAR || !GC.assist) return;
+	var GA = GC.assist, A = window.GCAR;
+	var AMOUNT_OPS = ["add", "consume", "spoil", "open", "move", "set_amount", "out_of", "list_amount"];
+	var DATE_OPS = ["add", "set_date"];
+
+	function chip(text, icon) {
+		var $c = $('<span class="gc-rchip"></span>');
+		if (icon) $c.append($("<i></i>").attr("class", icon));
+		return $c.append(document.createTextNode(text));
+	}
+
+	function details(op, ctx) {
+		var $d = $('<div class="gc-as-chips"></div>');
+		var place = function (id) { return ctx.locations[id] ? ctx.locations[id].name : null; };
+		if (op.whole) $d.append(chip(GL.t("as.all"), "fa-solid fa-layer-group"));
+		if (op.location_id && place(op.location_id)) $d.append(chip(place(op.location_id), "fa-solid fa-location-dot"));
+		if (op.target_location_id && place(op.target_location_id)) $d.append(chip("→ " + place(op.target_location_id), "fa-solid fa-right-left"));
+		if (op.best_before && DATE_OPS.indexOf(op.op) === -1) $d.append(chip(GC.fmtDate(op.best_before), "fa-regular fa-calendar"));
+		if (op.day) $d.append(chip(GC.fmtDate(op.day), "fa-regular fa-calendar"));
+		if (op.opened) $d.append(chip(GL.t("as.ans.opened"), "fa-solid fa-box-open"));
+		if (op.price != null) $d.append(chip(GL.money ? GL.money(op.price) : String(op.price), "fa-solid fa-euro-sign"));
+		if (!op.product_id && op.name_fr && op.op === "add") $d.append(chip(GL.t("as.newProduct"), "fa-solid fa-plus"));
+		return $d;
+	}
+
+	function editors(row, ctx) {
+		var op = row.op, $e = $('<div class="gc-as-edit"></div>');
+		if (AMOUNT_OPS.indexOf(op.op) !== -1 && !op.whole) {
+			$('<input type="number" min="0" step="any" class="form-control form-control-sm">').attr("aria-label", GL.t("as.amount"))
+				.val(op.amount || (op.op === "set_amount" ? "" : 1)).on("change", function () { var v = parseFloat(this.value); GA.session.edit(row.row_id, { amount: v > 0 || (v === 0 && op.op === "set_amount") ? v : null }); })
+				.appendTo($("<label></label>").text(GL.t("as.amount")).appendTo($e));
+		}
+		if (DATE_OPS.indexOf(op.op) !== -1) {
+			$('<input type="date" class="form-control form-control-sm">').val(op.best_before || "").on("change", function () {
+				GA.session.edit(row.row_id, { best_before: this.value || null, best_before_source: this.value ? "spoken" : "none" });
+			}).appendTo($("<label></label>").text(GL.t("as.date")).appendTo($e));
+		}
+		if (op.op === "add" || op.op === "move") {
+			var key = op.op === "move" ? "target_location_id" : "location_id";
+			var $s = $('<select class="form-control form-control-sm"></select>').append($("<option></option>").val("").text(op.op === "add" ? GL.t("as.usualPlace") : "-"));
+			Object.keys(ctx.locations).forEach(function (id) { $s.append($("<option></option>").val(id).text(ctx.locations[id].name)); });
+			$s.val(op[key] ? String(op[key]) : "").on("change", function () { var p = {}; p[key] = +this.value || null; GA.session.edit(row.row_id, p); });
+			$s.appendTo($("<label></label>").text(GL.t(op.op === "move" ? "as.to" : "as.place")).appendTo($e));
+		}
+		return $e.children().length ? $e : null;
+	}
+
+	/// One row as a card; `onChange` re-renders the panel after a write.
+	GA.card = function (row, ctx, onChange) {
+		var op = row.op, $c = $('<div class="gc-as-card"></div>').attr({ "data-row": row.row_id, "data-status": row.status });
+		var verb = op.op === "undo" ? GL.t("as.op.undo") : row.edit_of ? GL.t("as.op.edit") : GL.t("as.op." + op.op);
+		var $hd = $('<div class="gc-as-card-hd"></div>').appendTo($c);
+		$('<span class="gc-as-verb"></span>').text(verb).appendTo($hd);
+		$('<b class="gc-as-name"></b>').text(row.status === "applied" && row.summary ? row.summary : row.label || "").appendTo($hd);
+		if (AMOUNT_OPS.indexOf(op.op) !== -1 && row.status !== "draft" && op.amount && row.status !== "applied") $('<span class="gc-as-n"></span>').text("× " + op.amount).appendTo($hd);
+		$c.append(details(op, ctx));
+		if (row.status === "unsupported") $('<div class="gc-as-msg"></div>').text(GL.t("as.appOnly")).appendTo($c);
+		var need = row.status === "draft" && op.op !== "undo" ? A.missing(op) : null;
+		if (need) $('<div class="gc-as-msg gc-as-warn"></div>').text(GL.t("as.need." + need)).appendTo($c);
+		if (row.error) $('<div class="gc-as-msg gc-as-err"></div>').text(row.error).appendTo($c);
+		if (row.warning) $('<div class="gc-as-msg gc-as-warn"></div>').text(GL.t("as.historyWarn")).appendTo($c);
+		if (row.status === "draft" || row.status === "failed") { var $ed = editors(row, ctx); if ($ed) $c.append($ed); }
+
+		var $ft = $('<div class="gc-as-card-ft"></div>').appendTo($c);
+		var btn = function (cls, text, icon, fn) {
+			return $('<button type="button" class="btn btn-sm"></button>').addClass(cls).append($("<i></i>").attr("class", icon)).append($("<span></span>").text(text))
+				.on("click", function () { $(this).prop("disabled", true); fn(); }).appendTo($ft);
+		};
+		if (row.status === "draft" || row.status === "failed") {
+			btn("btn-outline-secondary", GL.t("as.remove"), "fa-solid fa-xmark", function () { GA.session.remove(row.row_id); onChange(); });
+			btn("btn-primary", GL.t("as.apply"), "fa-solid fa-check", function () { GA.session.apply(row.row_id, ctx).then(onChange, function (e) { GC.toast("warning", e.message); onChange(); }); });
+		} else if (row.status === "applied" && row.action && A.canUndo(row.action)) {
+			$('<span class="gc-as-done"></span>').append('<i class="fa-solid fa-circle-check"></i>').append($("<span></span>").text(GL.t("as.done"))).appendTo($ft);
+			btn("btn-outline-secondary", GL.t("as.menu.undo"), "fa-solid fa-rotate-left", function () { GA.session.undo(row.row_id).then(onChange, function (e) { GC.toast("error", e.message); onChange(); }); });
+		} else if (row.status === "applied" || row.status === "undone") {
+			$('<span class="gc-as-done"></span>').append($("<i></i>").attr("class", row.status === "undone" ? "fa-solid fa-rotate-left" : "fa-solid fa-circle-check"))
+				.append($("<span></span>").text(GL.t(row.status === "undone" ? "as.undone" : "as.done"))).appendTo($ft);
+		} else if (row.status === "working") {
+			$('<span class="gc-as-done"></span>').append('<i class="fa-solid fa-spinner fa-spin"></i>').append($("<span></span>").text(GL.t("saving"))).appendTo($ft);
+		}
+		return $c;
+	};
+})();
+</script>
