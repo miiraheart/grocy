@@ -17,9 +17,12 @@ try {
   if (ctx.source_kind === "tiktok") {
     const oembed = await this.helpers.httpRequest({ url: "https://www.tiktok.com/oembed?url=" + encodeURIComponent(ctx.url),
       json: true, timeout: 15000 }).catch((e) => { throw new Error("read: TikTok did not answer (" + String(e.message).slice(0, 80) + ")"); });
-    const caption = String(oembed.title || "").replace(/ {2,}/g, "\n").trim();
+    const caption = String(oembed.title || "").replace(/ {2,}/g, "\n")
+      .replace(/[ \t]*\b(ingr[ée]dients?|instructions?|pr[ée]paration|[ée]tapes|method)[ \t]*:[ \t]*/giu, "\n$1\n")
+      .replace(/[ \t]+(\d{1,2}[.)])[ \t]+(?=\p{Lu})/gu, "\n$1 ").trim();
     const author = oembed.author_unique_id ? "@" + oembed.author_unique_id : oembed.author_name || null;
-    const page = { title: null, image_url: oembed.thumbnail_url || null, author };
+    const firstLine = caption.split("\n")[0].replace(/#[\p{L}\p{N}_]+/gu, "").trim();
+    const page = { title: firstLine.length >= 3 && firstLine.length <= 80 ? firstLine : null, image_url: oembed.thumbnail_url || null, author };
     const linked = (caption.match(/https?:\/\/[^\s"'<>]+/g) || []).find((l) => !/tiktok\.com/i.test(l));
     if (linked) {
       try {

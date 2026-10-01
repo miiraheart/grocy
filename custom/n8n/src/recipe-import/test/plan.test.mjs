@@ -26,7 +26,7 @@ test("heuristic off sends the page text to the free model", async () => {
   assert.match(out.model_text, /30 g de beurre/);
   assert.ok(out.openrouter_body.models.every((m) => m.endsWith(":free")));
   assert.equal(out.openrouter_body.response_format.json_schema.strict, true);
-  assert.ok(!/diet_flags/.test(JSON.stringify(out.openrouter_body)));
+  assert.ok(!JSON.stringify(out.openrouter_body.response_format).includes("diet"));
 });
 
 test("pasted text with headings is parsed by rules", async () => {

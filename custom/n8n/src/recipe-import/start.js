@@ -47,7 +47,7 @@ if (retryId) {
     if (same) return stop(200, { ok: true, duplicate: true, recipe_id: Number(same.id), name: same.name });
   }
   const firstLine = text.split("\n").map(cleanLine).find((l) => l && !headingKind(l)) || "";
-  const quick = firstLine.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/[\p{Extended_Pictographic}️‍]/gu, "").replace(/\s+/g, " ").trim();
+  const quick = firstLine.replace(/#[\p{L}\p{N}_]+/gu, "").replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}️‍]/gu, "").replace(/\s+/g, " ").trim();
   const stamp = new Date().toLocaleString("sv-SE", { timeZone: "Europe/Paris" }).slice(0, 16);
   name = (quick.length >= 3 && quick.length <= 80 ? quick : "Import " + stamp);
   const created = await grocyCall(this.helpers, "POST", "/objects/recipes", { name, base_servings: 1, desired_servings: 1 });

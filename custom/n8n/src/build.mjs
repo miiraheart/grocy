@@ -9,7 +9,7 @@ const read = (...p) => readFileSync(join(SRC, ...p), "utf8");
 const OPENROUTER_CRED = { openRouterApi: { id: "l86vEWp9ZQt60YHZ", name: "OpenRouter account 2" } };
 // Twins never use the app OpenRouter key: test key credential (n8n/create-test-credential.sh) and one :free model.
 const OPENROUTER_TEST_CRED = { openRouterApi: { id: "orTestKey0000001", name: "OpenRouter test" } };
-const TEST_FREE_MODEL = "qwen/qwen3.8-27b:free";
+const TEST_FREE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
 const webhook = (path, x = 0) => ({ id: path + "-hook", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2,
   position: [x, 0], webhookId: path, parameters: { httpMethod: "POST", path, responseMode: "responseNode", options: {} } });

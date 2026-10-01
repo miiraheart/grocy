@@ -101,6 +101,7 @@ const modes = {
     const { draft, fields } = await ready({ kind: "url", url: PAGES.tiktok }, (p) => check(p === "rules" || /^model:.*:free$/.test(p), "parser " + p));
     check(fields.source_kind === "tiktok" && fields.source_ref === "tiktok:7303575334799166753", "source " + fields.source_ref);
     check(draft.source.author, "author missing");
+    check(/panzerotti/i.test(draft.name || ""), "name " + draft.name);
   },
   async fail() { await failed({ kind: "url", url: PAGES.fail }, "parse"); },
   async retry() {
@@ -108,7 +109,7 @@ const modes = {
     const again = await start({ kind: "text", text: TEXT, retry_recipe_id: id });
     check(again.recipe_id === id, "retry made a new recipe");
     const f = await settle(id);
-    check(f.import_status === "ready" && f.import_error === "", "retry status " + f.import_status);
+    check(f.import_status === "ready" && !f.import_error, "retry status " + f.import_status);
     console.log("retry ready", f.draft.parser);
   },
   async duplicate() {

@@ -3,7 +3,7 @@ const TWIN = false;
 const plan = $("Parse").first().json;
 const { ctx, page } = plan;
 const helpers = this.helpers;
-const cleanName = (s) => String(s || "").replace(/#[\p{L}\p{N}_]+/gu, "").replace(/[\p{Extended_Pictographic}️‍]/gu, "")
+const cleanName = (s) => String(s || "").replace(/#[\p{L}\p{N}_]+/gu, "").replace(/[\p{Extended_Pictographic}\p{Regional_Indicator}️‍]/gu, "")
   .replace(/\s+/g, " ").trim().slice(0, 120);
 const parseJson = (text) => { try { return JSON.parse(String(text).replace(/^\s*```(?:json)?|```\s*$/g, "").trim()); } catch (e) { return null; } };
 const minutes = (v) => (Number.isFinite(Number(v)) && v !== null && Number(v) > 0 ? Math.round(Number(v)) : null);
@@ -74,7 +74,7 @@ try {
     parser = "model:" + answer.model;
   }
   if (lineCount(partial) === 0 && (partial.has_recipe === false || !partial.steps.length)) throw new Error("parse: no recipe found");
-  const name = cleanName(partial.name) || cleanName(page.title);
+  const name = cleanName(partial.name) || cleanName(String(page.title || "").split(/ [|\-] /)[0]);
   const tags = [...new Set((partial.tags || []).map((t) => String(t).toLowerCase().trim()).filter(Boolean))].slice(0, 6);
   const imageUrl = partial.image_url || page.image_url || null;
   const draft = { v: 2, name: name || null, name_suggested: !cleanName(partial.name), language: partial.language || ctx.language_hint || null,
