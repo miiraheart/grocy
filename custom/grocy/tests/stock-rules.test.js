@@ -159,3 +159,17 @@ test("split keeps the rest and needs a different date or opened state", () => {
 	assert.deepEqual(s.part, { amount: 1.5, best_before_date: "2026-10-05", purchased_date: "2026-09-25", price: "2.5", location_id: 2, shopping_location_id: undefined, note: "x", open: false });
 	assert.equal(R.splitParts(e, 1, null, true).part.best_before_date, "2026-10-10");
 });
+
+test("every new string has English and French", () => {
+	for (const file of ["stock-add.js.html", "stock-batch.js.html", "stock-search.js.html", "cuisine-add.js.html", "cuisine.js.html"]) {
+		const html = fs.readFileSync(path.join(__dirname, "..", "companion", file), "utf8");
+		const m = /GL\.add\((\{[\s\S]*?\})\);/.exec(html);
+		assert.ok(m, file + " has GL.add");
+		const dict = new Function("return " + m[1])();
+		for (const [key, pair] of Object.entries(dict)) {
+			assert.equal(pair.length, 2, file + " " + key);
+			assert.ok(pair[0] && pair[1], file + " " + key + " empty");
+			assert.ok(!/[–—]/.test(pair.join("")), file + " " + key + " dash");
+		}
+	}
+});
