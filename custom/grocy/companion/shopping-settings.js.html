@@ -32,7 +32,7 @@
 		var cfg = state.config, current = TH.read(cfg.theme), $box = $('<div class="gc-themes" role="radiogroup"></div>');
 		TH.OFFERED.forEach(function (t) {
 			var on = current.id === t.id;
-			$('<button type="button" class="gc-swatch"></button>').toggleClass("is-soft", !!t.soft).toggleClass("is-on", on).attr({ role: "radio", "aria-checked": on ? "true" : "false", title: GL.t("ltheme." + t.name) })
+			$('<button type="button" class="gc-theme-swatch"></button>').toggleClass("is-soft", !!t.soft).toggleClass("is-on", on).attr({ role: "radio", "aria-checked": on ? "true" : "false", title: GL.t("ltheme." + t.name) })
 				.css(t.soft ? {} : { background: t.light }).append(on ? '<i class="fa-solid fa-check"></i>' : "")
 				.on("click", function () { pending.push(set(state, "al_theme", JSON.stringify({ id: t.id }))); $box.replaceWith(themes(Object.assign({}, state, { config: Object.assign({}, cfg, { theme: { id: t.id } }) }), pending)); })
 				.appendTo($box);

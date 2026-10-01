@@ -18,7 +18,7 @@ module.exports = async function (page, list, market, SHOTS) {
 	await L.openList(page, list);
 	await page.click('[data-panel="settings"]');
 	await page.waitForSelector(".gc-list-settings");
-	await page.click('.gc-swatch[title="Aqua"]');
+	await page.click('.gc-theme-swatch[title="Aqua"]');
 	await page.click('.gc-list-settings input[type="checkbox"] >> nth=1');
 	await page.click(".bootbox .btn-primary");
 	await page.waitForTimeout(1500);
@@ -69,7 +69,7 @@ module.exports = async function (page, list, market, SHOTS) {
 
 	// Lists menu: a folder is made and the market list moved into it, then the pane shows the folder.
 	await L.openList(page, list);
-	await page.click(".gc-shop-lists-edit");
+	await page.evaluate(() => GC.shopListsEdit.open(GC.shopPage.state));
 	await page.waitForSelector(".gc-lists-edit");
 	await page.fill('.gc-lists-edit input[placeholder="Folder name"]', "ZZ wp4 dossier");
 	await page.click('.gc-lists-edit button:has-text("New folder")');
@@ -79,6 +79,6 @@ module.exports = async function (page, list, market, SHOTS) {
 	await api("PUT", "userfields/shopping_lists/" + market, { al_folder: folder.id });
 	await L.openList(page, list);
 	assert.ok((await page.textContent(".gc-shop-pane")).includes("ZZ wp4 dossier"));
-	if (SHOTS) await L.shots(page, "web-lists-edit", async () => { await L.openList(page, list); await page.click(".gc-shop-lists-edit"); await page.waitForSelector(".gc-lists-edit"); }, SHOTS);
+	if (SHOTS) await L.shots(page, "web-lists-edit", async () => { await L.openList(page, list); await page.evaluate(() => GC.shopListsEdit.open(GC.shopPage.state)); await page.waitForSelector(".gc-lists-edit"); }, SHOTS);
 	ok("folder ZZ wp4 dossier made and shown in the pane");
 };

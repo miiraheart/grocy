@@ -88,6 +88,7 @@ const SHOTS = process.argv[2] || "";
 		assert.deepEqual(groups.sort(), ["ZZ wp4 Courses", "ZZ wp4 Marché"]);
 		assert.ok((await page.textContent(".gc-inbox-add")).includes("3"), await page.textContent(".gc-inbox-add"));
 		if (SHOTS) await L.shots(page, "web-inbox-review", async () => { await L.openList(page, list); await page.click(".gc-shop-inbox"); await page.waitForSelector(".gc-inbox .gc-panel-item"); await page.click(".gc-inbox .gc-panel-item"); await page.waitForSelector(".gc-inbox-line"); }, SHOTS);
+		if (SHOTS) { await L.openList(page, list); await page.click(".gc-shop-inbox"); await page.waitForSelector(".gc-inbox .gc-panel-item"); await page.click(".gc-inbox .gc-panel-item"); await page.waitForSelector(".gc-inbox-line"); }
 		await page.click(".gc-inbox-add");
 		await page.waitForTimeout(2500);
 		const m = await L.rowsOf(market), c = await api("GET", "objects/shopping_list/" + row);
