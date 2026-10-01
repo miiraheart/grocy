@@ -217,7 +217,7 @@
 	}
 
 	function direct(receipt, model, prods) {
-		return GC.api("POST", "objects/userobjects", { userentity_id: GC.IDS.entityTickets }).then(function (r) {
+		return GC.master().then(function (m) { return GC.api("POST", "objects/userobjects", { userentity_id: m.ids.entityTickets }); }).then(function (r) {
 			var id = r.created_object_id;
 			return GC.api("PUT", "userfields/" + ENTITY + "/" + id, {
 				store: receipt.store || "", purchased_at: receipt.date, total: String(receipt.total), currency: "EUR", status: "confirmed",

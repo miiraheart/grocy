@@ -11,7 +11,7 @@
 	GC.ticketsClearCache = function () { try { sessionStorage.removeItem(CACHE); } catch (e) {} };
 
 	GC.loadTickets = function () {
-		return GC.api("GET", "objects/userobjects?query[]=userentity_id=" + GC.IDS.entityTickets).then(function (objs) {
+		return GC.master().then(function (m) { return GC.api("GET", "objects/userobjects?query[]=userentity_id=" + m.ids.entityTickets); }).then(function (objs) {
 			var cache = {};
 			try { cache = JSON.parse(sessionStorage.getItem(CACHE) || "{}"); } catch (e) {}
 			var fresh = Date.now() - (cache.t || 0) < 600000 && cache.items;

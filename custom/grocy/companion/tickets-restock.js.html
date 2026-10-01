@@ -53,7 +53,7 @@
 	function restock(receipt, items, products, listId) {
 		var date = receipt.date || GC.today();
 		var res = { a: 0, s: 0, k: 0 };
-		return Promise.all([products(), GC.api("GET", "objects/shopping_list"), GC.api("GET", "objects/shopping_locations")]).then(function (r) {
+		return Promise.all([products(), GC.api("GET", "objects/shopping_list"), GC.api("GET", "objects/shopping_locations"), GC.master()]).then(function (r) {
 			var byId = GC.byId(r[0]), list = r[1] || [];
 			var shop = (r[2] || []).filter(function (x) { return receipt.store && x.name.toLowerCase() === receipt.store.toLowerCase(); })[0];
 			return items.reduce(function (chain, it) {
@@ -66,7 +66,7 @@
 						var price = Math.round(it.total / it.amount * 100) / 100;
 						if (price > 0) body.price = price;
 						if (shop) body.shopping_location_id = shop.id;
-						var days = +p.location_id === GC.IDS.locFreezer ? +p.default_best_before_days_after_freezing : +p.default_best_before_days;
+						var days = GC.IDS.kinds[p.location_id] === "freezer" ? +p.default_best_before_days_after_freezing : +p.default_best_before_days;
 						if (days === -1) body.best_before_date = "2999-12-31";
 						else if (days > 0) body.best_before_date = GC.addDays(date, days);
 						return GC.api("POST", "stock/products/" + it.product_id + "/add", body).then(function () { res.a++; });

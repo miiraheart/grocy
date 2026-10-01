@@ -1,0 +1,75 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "stockoverview") return;
+	GL.add({
+		"ss.ph": ["Search names, brands, places, notes", "Chercher noms, marques, lieux, notes"],
+		"bd.expired": ["Expired", "Périmé"], "bd.urgent": ["Eat now", "À manger vite"], "bd.soon": ["Soon", "Bientôt"],
+		"bd.opened": ["Opened", "Ouvert"], "bd.frozen": ["Frozen", "Congelé"], "bd.diet": ["Diet", "Régime"]
+	});
+	var TONE = { expired: "failed", urgent: "warn", soon: "pending", opened: "manual", frozen: "pending", diet: "warn" };
+	var index = {}, info = {};
+
+	GC.master().then(function (m) {
+		return Promise.all([GC.api("GET", "objects/products"), GC.api("GET", "objects/stock")]).then(function (r) {
+			var L = GC.byId(m.locations), G = GC.byId(m.groups), byP = {};
+			var chips = { fridge: GL.t("chip.fridge"), pantry: GL.t("chip.pantry"), freezer: GL.t("chip.freezer"), counter: GL.t("chip.counter") };
+			(r[1] || []).forEach(function (e) { (byP[e.product_id] = byP[e.product_id] || []).push(e); });
+			(r[0] || []).forEach(function (p) {
+				var es = byP[p.id] || [];
+				index[p.id] = GCR.productFields(p, es, L, G, chips);
+				var dues = es.map(function (e) { return String(e.best_before_date || "").slice(0, 10); }).filter(Boolean).sort();
+				info[p.id] = {
+					name: p.name, due: dues[0] || null, opened: es.some(function (e) { return String(e.open) === "1"; }),
+					frozen: es.some(function (e) { return m.ids.kinds[e.location_id] === "freezer"; })
+				};
+			});
+			wire();
+		});
+	}).catch(function (err) { GC.toast("error", err.message); });
+
+	/// The native box searches visible columns only; this one also folds accents and reads brands, places and batch notes.
+	function wire() {
+		if (!$.fn.dataTable || !$.fn.dataTable.isDataTable("#stock-overview-table")) return;
+		var table = $("#stock-overview-table").DataTable(), $s = $("#search"), timer = null;
+		if ($s.length) {
+			$s.off("keyup").attr("placeholder", GL.t("ss.ph"));
+			$.fn.dataTable.ext.search.push(function (settings, data, i) {
+				if (settings.nTable.id !== "stock-overview-table") return true;
+				var q = $s.val();
+				if (!$.trim(q)) return true;
+				var tr = settings.aoData[i] && settings.aoData[i].nTr, m = /^product-(\d+)-row$/.exec((tr && tr.id) || "");
+				return GCR.matches(q, ((m && index[m[1]]) || []).concat([data.join(" ")]));
+			});
+			$s.on("keyup input", function () { clearTimeout(timer); timer = setTimeout(function () { table.draw(); }, 150); });
+			table.search("");
+		}
+		table.on("draw.dt", badges);
+		table.draw();
+	}
+
+	function dietLevel(name) {
+		if (!GC.shop || !GC.shop.diet) return "ok";
+		var key = GC.shop.catalogKey ? GC.shop.catalogKey(name) : "";
+		return GC.shop.diet.check(name, { household: "household", personal: "personal" }[key] || "food").level;
+	}
+
+	/// The iOS row badges: expired, eat now, soon, opened, frozen, and the diet badge for limit and worse.
+	function badges() {
+		var today = GC.today();
+		$("#stock-overview-table tbody td.productcard-trigger[data-product-id]").each(function () {
+			var $td = $(this), x = info[$td.attr("data-product-id")];
+			$td.find(".gc-badges").remove();
+			if (!x) return;
+			var list = [], st = GCR.dueStatus(x.due, today);
+			if (st === "expired" || st === "urgent" || st === "soon") list.push(st);
+			if (x.opened) list.push("opened");
+			if (x.frozen) list.push("frozen");
+			if (x.diet == null) x.diet = ["limit", "avoid", "danger"].indexOf(dietLevel(x.name)) !== -1;
+			if (x.diet) list.push("diet");
+			if (!list.length) return;
+			var $b = $('<span class="gc-badges"></span>').appendTo($td);
+			list.forEach(function (k) { $('<span class="gc-status"></span>').attr("data-s", TONE[k]).text(GL.t("bd." + k)).appendTo($b); });
+		});
+	}
+})();
+</script>

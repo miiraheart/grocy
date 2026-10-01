@@ -39,7 +39,7 @@
 
 	/// Per list favorites (D-05, D-24): the product's al_memory lists[listId].fav, the same JSON iOS reads.
 	function renderProducts($p, products, lists, items) {
-		var listId = +(localStorage.getItem("gc.shop.list") || (lists[0] || {}).id || 1);
+		var listId = +(localStorage.getItem("gc.shop.list") || (lists[0] || {}).id || GC.IDS.shoppingList);
 		var fav = function (p) { return !!((((GC.shop.json((p.userfields || {}).al_memory) || {}).lists) || {})[listId] || {}).fav; };
 		var favs = products.filter(fav);
 		var $s = section($p, GL.t("fav.products"), GL.t("fav.nProducts", { n: favs.length }));

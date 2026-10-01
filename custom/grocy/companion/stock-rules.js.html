@@ -1,0 +1,208 @@
+<script>
+(function (root) {
+	var NO_DATE = "2999-12-31", DAY = 86400000, TOLERANCE = 0.0001;
+	var FALLBACK_DAYS = 14, FREEZER_DAYS = 90, COUNTER_DAYS = 1, FRIDGE_DAYS = 3, HISTAMINE_AFTER = 1;
+	var DISHES = "Plats cuisinés", PRODUCE = "Fruits et légumes";
+
+	function fold(text) {
+		return String(text == null ? "" : text).replace(/œ/gi, "oe").replace(/æ/gi, "ae").normalize("NFKD")
+			.replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+	}
+
+	function parse(day) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(day || ""));
+		if (!m || m[0] === NO_DATE) return null;
+		return Date.UTC(+m[1], +m[2] - 1, +m[3]);
+	}
+	function fmt(ms) { return new Date(ms).toISOString().slice(0, 10); }
+	function addDays(day, n) { var t = parse(day); return t == null ? null : fmt(t + n * DAY); }
+	function diffDays(from, to) { var a = parse(from), b = parse(to); return a == null || b == null ? null : Math.round((b - a) / DAY); }
+	function laterDay(a, b) { return !a ? b : !b ? a : a > b ? a : b; }
+	function dayOf(value) { return value ? String(value).slice(0, 10) : null; }
+
+	function locationKind(loc) {
+		if (!loc) return "other";
+		if (String(loc.is_freezer) === "1") return "freezer";
+		var n = fold(loc.name);
+		var has = function (words) { return words.some(function (w) { return n.indexOf(w) !== -1; }); };
+		if (has(["plan de travail", "comptoir", "counter"])) return "counter";
+		if (has(["congel", "freezer"])) return "freezer";
+		if (has(["frig", "fridge"])) return "fridge";
+		if (has(["placard", "pantry", "cupboard"])) return "pantry";
+		return "other";
+	}
+	function storageOf(kind) { return kind === "freezer" ? "freezer" : kind === "counter" || kind === "pantry" ? "counter" : "fridge"; }
+
+	function byName(list, name) { var w = fold(name); return (list || []).filter(function (x) { return fold(x.name) === w; })[0] || null; }
+	function lowest(list) { return (list || []).slice().sort(function (a, b) { return a.id - b.id; })[0] || null; }
+
+	/// Every id the companion needs, read from the master data of this Grocy (never fixed numbers).
+	function resolveIds(d) {
+		var ids = { kinds: {} }, locs = d.locations || [];
+		locs.forEach(function (l) { ids.kinds[l.id] = locationKind(l); });
+		["fridge", "pantry", "freezer", "counter"].forEach(function (k) {
+			var first = lowest(locs.filter(function (l) { return ids.kinds[l.id] === k; }));
+			ids["loc" + k.charAt(0).toUpperCase() + k.slice(1)] = first ? +first.id : null;
+		});
+		var id = function (x) { return x ? +x.id : null; };
+		ids.groupDishes = id(byName(d.groups, DISHES));
+		ids.groupProduce = id(byName(d.groups, PRODUCE));
+		ids.entityCuisine = id(byName(d.entities, "cuisine"));
+		ids.entityTickets = id(byName(d.entities, "tickets"));
+		ids.shoppingList = id(lowest(d.lists));
+		return ids;
+	}
+
+	function shelfDays(defaultDays) { var d = +defaultDays || 0; return d > 0 ? d : FALLBACK_DAYS; }
+	/// Bought on another day: the date follows that day plus the product's days (Grocy -1 is "never expires").
+	function bestBeforeFor(purchasedOn, defaultDays) { return +defaultDays === -1 ? NO_DATE : addDays(purchasedOn, shelfDays(defaultDays)); }
+	function isPast(bestBefore, today) { var d = dayOf(bestBefore); return !!d && d !== NO_DATE && d < today; }
+	/// Opened on a past day: the opened days count from that day, never later than the current date.
+	function openedDue(openedOn, daysAfterOpen, current) {
+		var days = +daysAfterOpen;
+		if (!(days > 0) || parse(openedOn) == null) return null;
+		var due = addDays(openedOn, days), cur = dayOf(current);
+		return !cur || cur === NO_DATE || due < cur ? due : cur;
+	}
+
+	var KITCHEN = { g: ["mass", 1], kg: ["mass", 1000], oz: ["mass", 28.35], lb: ["mass", 453.6], ml: ["volume", 1], cl: ["volume", 10],
+		dl: ["volume", 100], l: ["volume", 1000], fl_oz: ["volume", 29.57], tsp: ["volume", 5], tbsp: ["volume", 15], cup: ["volume", 240] };
+	var ALIASES = { "c.à.s.": "tbsp", "c.à.c.": "tsp", "tasse": "cup" };
+	function unitKey(unit) {
+		var n = String((unit && unit.name) || "").toLowerCase();
+		return ALIASES[n] || (KITCHEN[n] ? n : null);
+	}
+	function grocyFactor(conv, fromId, toId, pid) {
+		var find = function (a, b, own) {
+			return (conv || []).filter(function (c) { return +c.from_qu_id === a && +c.to_qu_id === b && (own ? +c.product_id === pid : !c.product_id); })[0];
+		};
+		var row = (pid && find(fromId, toId, true)) || find(fromId, toId, false);
+		if (row) return +row.factor;
+		row = (pid && find(toId, fromId, true)) || find(toId, fromId, false);
+		return row && +row.factor ? 1 / +row.factor : null;
+	}
+	function kitchenFactor(from, to) {
+		var a = KITCHEN[unitKey(from)], b = KITCHEN[unitKey(to)];
+		return a && b && a[0] === b[0] ? a[1] / b[1] : null;
+	}
+	/// `amount` of unit `fromId` in unit `toId`: Grocy conversions first (product rows win), then kitchen factors.
+	function convert(amount, fromId, toId, units, conv, pid) {
+		if (+fromId === +toId) return amount;
+		var f = grocyFactor(conv, +fromId, +toId, +pid || null);
+		if (f == null) {
+			var U = {};
+			(units || []).forEach(function (u) { U[u.id] = u; });
+			f = U[fromId] && U[toId] ? kitchenFactor(U[fromId], U[toId]) : null;
+		}
+		return f == null ? null : amount * f;
+	}
+	function unitOptions(pid, stockId, units, conv) {
+		return (units || []).filter(function (u) { return +u.id === +stockId || convert(1, u.id, stockId, units, conv, pid) != null; });
+	}
+	function parseAmount(text) { var n = parseFloat(String(text == null ? "" : text).replace(",", ".")); return isFinite(n) ? n : null; }
+
+	/// Typed search: case and accents folded, every word must be found in one of the fields.
+	function matches(query, fields) {
+		var words = fold(query).split(/\s+/).filter(Boolean);
+		if (!words.length) return true;
+		var hay = (fields || []).filter(function (x) { return x != null && x !== ""; }).map(fold).join(" ");
+		return words.every(function (w) { return hay.indexOf(w) !== -1; });
+	}
+	function stripHtml(html) { return String(html || "").replace(/<[^>]*>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim(); }
+	/// Name, brand (Grocy keeps it in the description), category, and the places and notes of every batch.
+	function productFields(p, entries, locs, groups, chips) {
+		var g = groups[p.product_group_id], seen = {}, out = [p.name, stripHtml(p.description), g ? g.name : null];
+		(entries || []).forEach(function (e) {
+			var l = locs[e.location_id];
+			if (l && !seen[l.id]) { seen[l.id] = true; out.push(l.name, (chips || {})[locationKind(l)]); }
+			out.push(e.note);
+		});
+		return out;
+	}
+	/// iOS ExpiryStatus: expired below 0, urgent up to 1 day, soon up to 3, fresh after.
+	function dueStatus(bestBefore, today) {
+		var left = diffDays(today, bestBefore);
+		return left == null ? "none" : left < 0 ? "expired" : left <= 1 ? "urgent" : left <= 3 ? "soon" : "fresh";
+	}
+
+	function freezerEatBy(frozenOn, days) { return addDays(frozenOn, days > 0 ? days : FREEZER_DAYS); }
+	function daysBeforeFreezing(cookedOn, frozenOn) { return Math.max(diffDays(cookedOn, frozenOn) || 0, 0); }
+	function histamineDays(cookedOn, frozenOn) { var d = daysBeforeFreezing(cookedOn, frozenOn); return d > HISTAMINE_AFTER ? d : null; }
+	function frozenLater(d) { return d.storage === "freezer" && !!d.frozenOn && d.frozenOn > d.cookedOn; }
+	/// The eat-by before any estimate: her date, the prepared rule, the freezer life from the freezing day,
+	/// or the fridge or counter life from the cooking day.
+	function dishDue(d) {
+		if (d.custom) return d.customDate;
+		if (d.kind === "prepared") return addDays(d.cookedOn, Math.max(d.preparedDays || 0, 1));
+		if (d.storage === "freezer") return freezerEatBy(laterDay(d.frozenOn, d.cookedOn), d.freezerDays);
+		if (d.storage === "counter") return addDays(d.cookedOn, d.counterDays > 0 ? d.counterDays : COUNTER_DAYS);
+		return addDays(d.cookedOn, Math.max(d.fridgeDays || FRIDGE_DAYS, 1));
+	}
+	function linkNote(link, lang) {
+		var lead = lang === "fr" ? "pour" : "for";
+		return link.day ? lead + " " + link.name + " (" + link.day + ")" : lead + " " + link.name;
+	}
+	/// The batch note: when it was frozen and what it is for.
+	function dishNote(d, lang) {
+		var parts = [];
+		if (d.storage === "freezer" && d.kind !== "prepared") parts.push((lang === "fr" ? "congelé " : "frozen ") + laterDay(d.frozenOn, d.cookedOn));
+		if (d.link) parts.push(linkNote(d.link, lang));
+		return parts.length ? parts.join(", ") : null;
+	}
+	function wantsEstimate(d) { return !d.custom && d.kind !== "prepared" && !frozenLater(d); }
+
+	/// How long raw food keeps once prepared, from Grocy data only (iOS PreparedShelfLife order).
+	function preparedRule(p, catalog, fallback) {
+		var pos = function (v) { v = +v; return v > 0 ? v : null; };
+		if (p && pos(p.default_best_before_days_after_open)) return { days: +p.default_best_before_days_after_open, source: "product" };
+		var est = p && pos((p.userfields || {}).shelf_after_open_days);
+		if (est) return { days: est, source: "estimate" };
+		if (p && p.product_group_id) {
+			var sib = (catalog || []).filter(function (x) { return +x.product_group_id === +p.product_group_id && +x.id !== +p.id; })
+				.map(function (x) { return pos(x.default_best_before_days_after_open); }).filter(Boolean);
+			if (sib.length) return { days: Math.min.apply(null, sib), source: "category" };
+		}
+		if (p && pos(p.default_best_before_days)) return { days: +p.default_best_before_days, source: "shelf" };
+		return { days: Math.max(+fallback || FRIDGE_DAYS, 1), source: "setting" };
+	}
+	function preparedName(name, lang) { return lang === "fr" ? name + " en marinade" : name + ", marinating"; }
+	function preparedCandidates(products, dishGroupId) {
+		return (products || []).filter(function (p) { return String(p.active) === "1" && (!p.product_group_id || +p.product_group_id !== +dishGroupId); })
+			.sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }); });
+	}
+	/// Planned recipes from today on, soonest first, then every plain recipe.
+	function dishLinks(recipes, plan, today) {
+		var normal = (recipes || []).filter(function (r) { return (r.type || "normal") === "normal"; }), names = {};
+		normal.forEach(function (r) { names[r.id] = r.name; });
+		var planned = (plan || []).filter(function (r) { return r.type === "recipe" && r.recipe_id && names[r.recipe_id] && dayOf(r.day) >= today; })
+			.sort(function (a, b) { return dayOf(a.day) < dayOf(b.day) ? -1 : 1; })
+			.map(function (r) { return { recipeId: +r.recipe_id, name: names[r.recipe_id], day: dayOf(r.day) }; });
+		var plain = normal.slice().sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { sensitivity: "base" }); })
+			.map(function (r) { return { recipeId: +r.id, name: r.name, day: null }; });
+		return planned.concat(plain);
+	}
+
+	/// The part split off must differ from the rest (date or opened), or Grocy would merge it straight back.
+	function splitParts(entry, amount, bestBefore, open) {
+		var total = +entry.amount;
+		if (!(amount > TOLERANCE) || !(amount < total - TOLERANCE)) return { error: "amount" };
+		var date = dayOf(bestBefore || entry.best_before_date);
+		if (date === dayOf(entry.best_before_date) && !!open === (String(entry.open) === "1")) return { error: "same" };
+		return {
+			keep: Math.round((total - amount) * 10000) / 10000,
+			part: { amount: amount, best_before_date: date, purchased_date: dayOf(entry.purchased_date), price: entry.price,
+				location_id: +entry.location_id, shopping_location_id: entry.shopping_location_id, note: entry.note, open: !!open }
+		};
+	}
+
+	var R = {
+		NO_DATE: NO_DATE, fold: fold, addDays: addDays, diffDays: diffDays, locationKind: locationKind, storageOf: storageOf,
+		resolveIds: resolveIds, bestBeforeFor: bestBeforeFor, isPast: isPast, openedDue: openedDue, convert: convert,
+		unitOptions: unitOptions, parseAmount: parseAmount, matches: matches, productFields: productFields, dueStatus: dueStatus,
+		freezerEatBy: freezerEatBy, histamineDays: histamineDays, frozenLater: frozenLater, dishDue: dishDue, dishNote: dishNote,
+		wantsEstimate: wantsEstimate, preparedRule: preparedRule, preparedName: preparedName, preparedCandidates: preparedCandidates,
+		dishLinks: dishLinks, splitParts: splitParts
+	};
+	if (typeof module !== "undefined" && module.exports) module.exports = R; else root.GCR = R;
+})(this);
+</script>

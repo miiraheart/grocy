@@ -4,22 +4,31 @@
 	var ID = GC.IDS;
 	var polling = {};
 	var STATUS = { pending: GL.t("status.pending"), done: GL.t("status.done"), manual: GL.t("status.manual"), failed: GL.t("status.failed"), none: GL.t("status.none") };
-	var STORAGE = [ID.locFridge, ID.locFreezer, ID.locCounter];
-
-	var ui = GC.page({
-		eyebrow: GL.t("sec.cooking"),
-		title: GL.t("entity.cuisine"),
-		actions: [
-			{ label: GL.t("cu.addDish"), icon: "fa-solid fa-plus", primary: true, onClick: function () { GC.cuisineAddDish({ storage: STORAGE, refresh: refresh, putEntry: putEntry, markManual: markManual, estimate: estimate }); } },
-			{ label: GL.t("cu.export"), icon: "fa-solid fa-file-export", onClick: function () { ui.show("export"); } }
-		],
-		tabs: [{ key: "restes", label: GL.t("cu.tabRestes") }, { key: "favoris", label: GL.t("cu.tabFavoris") }, { key: "export", label: GL.t("cu.tabExport") }],
-		onTab: function (key, $p) {
-			if (key === "restes") renderRestes($p);
-			else if (key === "favoris") GC.favoris($p);
-			else GC.exportTab($p);
-		}
+	var STORAGE = [], ui, query = "";
+	GL.add({
+		"cu.searchPh": ["Search dishes, ingredients, places, notes", "Chercher plats, ingrédients, lieux, notes"],
+		"cu.noPlace": ["No place of that kind in Grocy.", "Aucun emplacement de ce type dans Grocy."]
 	});
+
+	GC.master().then(start, function (err) { GC.toast("error", GL.t("cu.loadFail", { msg: err.message })); });
+
+	function start() {
+		STORAGE = [ID.locFridge, ID.locFreezer, ID.locCounter].filter(Boolean);
+		ui = GC.page({
+			eyebrow: GL.t("sec.cooking"),
+			title: GL.t("entity.cuisine"),
+			actions: [
+				{ label: GL.t("cu.addDish"), icon: "fa-solid fa-plus", primary: true, onClick: function () { GC.cuisineAddDish({ storage: STORAGE, refresh: refresh, putEntry: putEntry, markManual: markManual, estimate: estimate }); } },
+				{ label: GL.t("cu.export"), icon: "fa-solid fa-file-export", onClick: function () { ui.show("export"); } }
+			],
+			tabs: [{ key: "restes", label: GL.t("cu.tabRestes") }, { key: "favoris", label: GL.t("cu.tabFavoris") }, { key: "export", label: GL.t("cu.tabExport") }],
+			onTab: function (key, $p) {
+				if (key === "restes") renderRestes($p);
+				else if (key === "favoris") GC.favoris($p);
+				else GC.exportTab($p);
+			}
+		});
+	}
 
 	function refresh() { ui.refresh("restes"); ui.refresh("export"); }
 	function uf(x) { return (x && x.userfields) || {}; }
@@ -39,9 +48,9 @@
 				var move = log.filter(function (l) { return l.stock_id === e.stock_id && l.transaction_type === "transfer_to" && String(l.undone) !== "1"; })[0];
 				var from = move ? log.filter(function (l) { return l.transaction_id === move.transaction_id && l.transaction_type === "transfer_from"; })[0] : null;
 				var moved = null;
-				if (move && +move.location_id === ID.locFreezer) moved = GL.t("cu.frozenOn", { d: GC.fmtDate(move.row_created_timestamp) });
-				else if (from && +from.location_id === ID.locFreezer) moved = GL.t("cu.thawedOn", { d: GC.fmtDate(move.row_created_timestamp) });
-				return { e: e, p: products[e.product_id], loc: locs[e.location_id], left: GC.daysLeft(e.best_before_date), frozen: +e.location_id === ID.locFreezer, moved: moved };
+				if (move && ID.kinds[move.location_id] === "freezer") moved = GL.t("cu.frozenOn", { d: GC.fmtDate(move.row_created_timestamp) });
+				else if (from && ID.kinds[from.location_id] === "freezer") moved = GL.t("cu.thawedOn", { d: GC.fmtDate(move.row_created_timestamp) });
+				return { e: e, p: products[e.product_id], loc: locs[e.location_id], left: GC.daysLeft(e.best_before_date), frozen: ID.kinds[e.location_id] === "freezer", moved: moved };
 			});
 			rows.sort(function (a, b) { return a.left - b.left; });
 			var waiting = (r[0] || []).filter(function (p) { return String(p.active) === "1" && ["pending", "failed"].indexOf(uf(p).shelf_status) !== -1; });
@@ -68,14 +77,25 @@
 			if (!d.rows.length) {
 				$('<div class="gc-empty"><i class="fa-solid fa-bowl-food"></i><b></b><span></span></div>').appendTo($p).find("b").text(GL.t("cu.empty")).end().find("span").text(GL.t("cu.emptySub"));
 			} else {
+				var $q = $('<input type="search" class="form-control gc-search">').attr({ placeholder: GL.t("cu.searchPh"), "aria-label": GL.t("cu.searchPh") }).val(query).appendTo($p);
 				var $list = $('<div class="gc-list"></div>').appendTo($p);
-				d.rows.forEach(function (r) { $list.append(row(r)); });
+				var paint = function () {
+					$list.empty();
+					d.rows.filter(function (r) { return GCR.matches(query, searchFields(r)); }).forEach(function (r) { $list.append(row(r)); });
+				};
+				$q.on("input", function () { query = $q.val(); paint(); });
+				paint();
 			}
 			pending.forEach(poll);
 			if (GC.ceSoir) GC.ceSoir($p);
 		}, function (err) {
 			$p.html('<div class="gc-note gc-note-err"></div>').find(".gc-note").text(GL.t("cu.loadFail", { msg: err.message }));
 		});
+	}
+
+	function searchFields(r) {
+		var kind = r.loc ? ID.kinds[r.loc.id] : null;
+		return [r.p.name, uf(r.p).ingredients, r.loc ? r.loc.name : null, kind && kind !== "other" ? GL.t("chip." + kind) : null, r.e.note];
 	}
 
 	function row(r) {
@@ -93,6 +113,7 @@
 		var meta = [GL.t("cu.portions", { n: GC.num(e.amount) }), GL.t("cu.cookedOn", { d: GC.fmtDate(e.purchased_date) })];
 		if (r.moved) meta.push(r.moved);
 		if (String(e.open) === "1") meta.push(GL.t("cu.opened"));
+		if (e.note) meta.push(e.note);
 		var $meta = $('<div class="gc-row-meta"></div>').text(meta.join(" · ") + " · ").appendTo($m);
 		$('<span class="gc-left"></span>').attr("data-tone", GC.leftTone(r.left)).text(GC.leftLabel(r.left) + " (" + GC.fmtDate(e.best_before_date) + ")").appendTo($meta);
 		var note = u.shelf_notes && GL.inLang(u.shelf_notes) ? u.shelf_notes : "";
@@ -132,6 +153,7 @@
 
 	function move(r) {
 		var to = r.frozen ? ID.locFridge : ID.locFreezer;
+		if (!to) { GC.toast("warning", GL.t("cu.noPlace")); return; }
 		GC.api("POST", "stock/products/" + r.e.product_id + "/transfer", { amount: GC.num(r.e.amount), location_id_from: +r.e.location_id, location_id_to: to, stock_entry_id: r.e.stock_id })
 			.then(function () { GC.toast("success", GL.t(r.frozen ? "cu.movedOut" : "cu.frozen", { name: r.p.name })); refresh(); }, fail);
 	}

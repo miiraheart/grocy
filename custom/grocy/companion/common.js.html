@@ -12,7 +12,8 @@ $gcPublic = array(
 <script>
 window.GC = (function () {
 	var cfg = <?php echo json_encode($gcPublic, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES); ?>;
-	var IDS = { groupDishes: 1, locFridge: 2, locPantry: 3, locFreezer: 4, locCounter: 5, entityCuisine: 1, entityTickets: 2, shoppingList: 1 };
+	var IDS = { kinds: {} };
+	var masterP = null;
 	var HISTAMINE = GL.t("diet.histamine");
 	var DIET = GL.t("diet.rules");
 
@@ -101,10 +102,20 @@ window.GC = (function () {
 
 	function byId(list) { var m = {}; (list || []).forEach(function (x) { m[x.id] = x; }); return m; }
 
-	function storageFor(locationId) {
-		var id = +locationId;
-		return id === IDS.locFreezer ? "freezer" : id === IDS.locCounter || id === IDS.locPantry ? "counter" : "fridge";
+	/// Places, groups, user entities and lists of this Grocy; fills IDS once so pages never use fixed numbers.
+	function master() {
+		if (!masterP) {
+			masterP = Promise.all(["locations", "product_groups", "userentities", "shopping_lists"].map(function (o) { return api("GET", "objects/" + o); })).then(function (r) {
+				var d = { locations: r[0] || [], groups: r[1] || [], entities: r[2] || [], lists: r[3] || [] };
+				$.extend(IDS, GCR.resolveIds(d));
+				d.ids = IDS;
+				return d;
+			}, function (e) { masterP = null; throw e; });
+		}
+		return masterP;
 	}
+
+	function storageFor(locationId) { return GCR.storageOf(IDS.kinds[+locationId]); }
 
 	function estimateText(r) {
 		if (!r) return "";
@@ -264,7 +275,7 @@ window.GC = (function () {
 	function clearNavCounts() { try { sessionStorage.removeItem("g-nav-counts"); } catch (e) {} }
 
 	return {
-		cfg: cfg, IDS: IDS, HISTAMINE: HISTAMINE, DIET: DIET, api: api, hook: hook, toast: toast, esc: esc, url: url,
+		cfg: cfg, IDS: IDS, master: master, HISTAMINE: HISTAMINE, DIET: DIET, api: api, hook: hook, toast: toast, esc: esc, url: url,
 		today: today, addDays: addDays, daysLeft: daysLeft, fmtDate: fmtDate, leftLabel: leftLabel, leftTone: leftTone,
 		num: num, byId: byId, storageFor: storageFor, estimateText: estimateText, page: page, sheet: sheet, tiles: tiles,
 		confirmClick: confirmClick, entityName: entityName, subview: subview, download: download, copy: copy,
