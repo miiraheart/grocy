@@ -1,0 +1,174 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCT) return;
+	/// Cook mode (19-12, 19-20, Pestle P-05 in grocy colours): ingredient checklist, one large centered step at a time with
+	/// the ingredients it names in bold, timer chips from the step text, Back and Next, Finish on the last step.
+	/// The session (step, checks, timers) survives a reload for 24 h, like the app's CookSession.
+	GL.add({
+		"ck.ingredients": ["Ingredients", "Ingrédients"], "ck.back": ["Back", "Retour"], "ck.next": ["Next", "Suivant"], "ck.close": ["Close cook mode", "Fermer le mode cuisine"],
+		"ck.finish": ["Finish cooking", "Terminer la cuisine"], "ck.swaps": ["With swaps", "Avec substitutions"], "ck.noSteps": ["No steps in this recipe.", "Aucune étape dans cette recette."],
+		"ck.timerDone": ["Timer done: {label}", "Minuteur terminé : {label}"], "ck.stop": ["Stop", "Arrêter"], "ck.step": ["Step {n}", "Étape {n}"],
+		"ck.resume": ["Resume cooking {name}?", "Reprendre la cuisine de {name} ?"]
+	});
+	var KEY = "gc-cook-session", MAX_AGE = 86400000, session = null, tick = null, $ov = null, lock = null;
+
+	function save() {
+		var copy = $.extend({}, session);
+		delete copy.model;
+		try { localStorage.setItem(KEY, JSON.stringify(copy)); } catch (e) {}
+	}
+	function stored() { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } }
+	function clear() { try { localStorage.removeItem(KEY); } catch (e) {} }
+	function mmss(s) { s = Math.max(0, Math.round(s)); var h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60; return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); }
+	function dur(s) { return s >= 3600 ? Math.floor(s / 3600) + " h" + (s % 3600 ? " " + Math.round((s % 3600) / 60) : "") : s >= 60 ? Math.round(s / 60) + " min" : s + " s"; }
+
+	function names(m) {
+		return m.lines.map(function (l) { return l.product || GCT.parseLine(l.text).name; }).filter(function (n) { return n && n.length > 2; })
+			.sort(function (a, b) { return b.length - a.length; });
+	}
+	/// The step as text nodes with the named ingredients in bold (accent).
+	function stepHtml(text, words) {
+		var marked = String(text), slots = [];
+		words.forEach(function (w) {
+			var hit = GCT.replacing(marked, w, "\u0001" + slots.length + "\u0002");
+			if (hit !== marked) { slots.push(w); marked = hit; }
+		});
+		var $p = $('<p class="gc-cook-text"></p>');
+		marked.split(/(\u0001\d+\u0002)/).forEach(function (part) {
+			var m = /^\u0001(\d+)\u0002$/.exec(part);
+			$p.append(m ? $('<b class="gc-cook-ing"></b>').text(slots[+m[1]]) : document.createTextNode(part));
+		});
+		return $p;
+	}
+
+	function notify(label) {
+		GC.toast("success", GL.t("ck.timerDone", { label: label }));
+		try { if (window.Notification && Notification.permission === "granted") new Notification(GL.t("ck.timerDone", { label: label })); } catch (e) {}
+		try {
+			var a = new (window.AudioContext || window.webkitAudioContext)(), o = a.createOscillator(), g = a.createGain();
+			o.connect(g); g.connect(a.destination); o.frequency.value = 880; g.gain.value = 0.15; o.start(); o.stop(a.currentTime + 0.8);
+		} catch (e) {}
+	}
+	function startTimer(label, seconds) {
+		try { if (window.Notification && Notification.permission === "default") Notification.requestPermission(); } catch (e) {}
+		session.timers.push({ id: Date.now(), label: label, fire: Date.now() + seconds * 1000 });
+		save();
+		paint();
+	}
+	function poll() {
+		if (!session) return;
+		var now = Date.now(), rung = session.timers.filter(function (t) { return t.fire <= now; });
+		if (rung.length) { session.timers = session.timers.filter(function (t) { return t.fire > now; }); save(); rung.forEach(function (t) { notify(t.label); }); }
+		if ($ov) $ov.find(".gc-cook-timer").each(function () { var t = +$(this).attr("data-fire"); $(this).find("b").text(mmss((t - now) / 1000)); });
+		if (rung.length) paint();
+	}
+
+	function view() {
+		var m = session.model, lines = m.lines.map(function (l) { return { key: l.key, text: m.label(l) }; }), steps = m.steps;
+		if (session.swaps) {
+			var sv = GCRD.swapView(m, m.report, GL.lang === "fr" ? "fr" : "en");
+			lines = sv.lines.map(function (l) { return { key: l.key, text: l.action === "remove" ? l.original + " (" + GL.t("rk.remove") + ")" : l.text }; });
+			steps = sv.steps;
+		}
+		return { lines: lines, steps: steps };
+	}
+
+	function paint() {
+		if (!$ov || !session) return;
+		var v = view(), n = v.steps.length, i = Math.min(session.step, Math.max(n - 1, 0));
+		$ov.find(".gc-cook-count").text(n ? (i + 1) + "/" + n : "");
+		var $ing = $ov.find(".gc-cook-ings").empty();
+		v.lines.forEach(function (l) {
+			var on = session.checked.indexOf(l.key) >= 0;
+			$('<button type="button" class="gc-cook-check"></button>').toggleClass("is-on", on).attr("aria-pressed", on ? "true" : "false")
+				.append($('<span class="gc-cook-circle"></span>').html(on ? '<i class="fa-solid fa-check"></i>' : "")).append($("<span></span>").text(l.text))
+				.on("click", function () { var k = session.checked.indexOf(l.key); if (k >= 0) session.checked.splice(k, 1); else session.checked.push(l.key); save(); paint(); })
+				.appendTo($ing);
+		});
+		var $stage = $ov.find(".gc-cook-stage").empty();
+		if (!n) $stage.append($('<p class="gc-cook-text"></p>').text(GL.t("ck.noSteps")));
+		else {
+			$('<div class="gc-cook-stepno"></div>').text(GL.t("ck.step", { n: i + 1 })).appendTo($stage);
+			$stage.append(stepHtml(v.steps[i], names(session.model)));
+			var $chips = $('<div class="gc-cook-chips"></div>').appendTo($stage);
+			GCT.timers(v.steps[i]).forEach(function (t) {
+				var label = session.model.recipe.name + " · " + GL.t("ck.step", { n: i + 1 }) + " · " + dur(t.seconds);
+				$('<button type="button" class="gc-cook-chip"></button>').append('<i class="fa-solid fa-stopwatch"></i> ')
+					.append($("<span></span>").text(t.maxSeconds ? dur(t.seconds) + " → " + dur(t.maxSeconds) : dur(t.seconds)))
+					.on("click", function () { startTimer(label, t.seconds); }).appendTo($chips);
+			});
+		}
+		var $tray = $ov.find(".gc-cook-tray").empty();
+		session.timers.forEach(function (t) {
+			$('<span class="gc-cook-timer"></span>').attr("data-fire", t.fire).append($("<span></span>").text(t.label)).append(" ").append($("<b></b>").text(mmss((t.fire - Date.now()) / 1000)))
+				.append($('<button type="button" class="gc-x"><i class="fa-solid fa-xmark"></i></button>').attr("aria-label", GL.t("ck.stop"))
+					.on("click", function () { session.timers = session.timers.filter(function (x) { return x.id !== t.id; }); save(); paint(); }))
+				.appendTo($tray);
+		});
+		$ov.find(".gc-cook-back").prop("disabled", i <= 0);
+		$ov.find(".gc-cook-next span").text(i >= n - 1 ? GL.t("ck.finish") : GL.t("ck.next"));
+	}
+
+	function move(d) {
+		var n = view().steps.length;
+		if (d > 0 && session.step >= n - 1) { var m = session.model; close(false); GC.finishCooking(m); return; }
+		session.step = Math.max(0, Math.min(n - 1, session.step + d));
+		save();
+		paint();
+	}
+
+	function close(forget) {
+		if (forget) clear();
+		if ($ov) $ov.remove();
+		$ov = null;
+		$("body").removeClass("gc-cook-on");
+		$(document).off("keydown.gccook");
+		clearInterval(tick);
+		if (lock) { try { lock.release(); } catch (e) {} lock = null; }
+		if (forget) session = null;
+	}
+
+	function open() {
+		close(false);
+		var m = session.model;
+		$ov = $('<div class="gc-cook" role="dialog" aria-modal="true"></div>');
+		var $top = $('<div class="gc-cook-top"></div>').appendTo($ov);
+		$('<button type="button" class="gc-x gc-cook-close"><i class="fa-solid fa-xmark"></i></button>').attr("aria-label", GL.t("ck.close")).on("click", function () { close(true); }).appendTo($top);
+		$('<b class="gc-cook-title"></b>').text(m.recipe.name + (session.swaps ? " (" + GL.t("ck.swaps") + ")" : "")).appendTo($top);
+		$('<span class="gc-cook-count"></span>').appendTo($top);
+		var $main = $('<div class="gc-cook-main"></div>').appendTo($ov);
+		$('<aside class="gc-cook-side"></aside>').append($("<h3></h3>").text(GL.t("ck.ingredients"))).append('<div class="gc-cook-ings"></div>').appendTo($main);
+		$('<div class="gc-cook-stage" aria-live="polite"></div>').appendTo($main);
+		$('<div class="gc-cook-tray"></div>').appendTo($ov);
+		var $bar = $('<div class="gc-cook-bar"></div>').appendTo($ov);
+		$('<button type="button" class="gc-cook-back"></button>').text(GL.t("ck.back")).on("click", function () { move(-1); }).appendTo($bar);
+		$('<button type="button" class="btn btn-primary gc-cook-next"><span></span></button>').on("click", function () { move(1); }).appendTo($bar);
+		$("body").addClass("gc-cook-on").append($ov);
+		$(document).on("keydown.gccook", function (e) {
+			if (e.key === "ArrowRight") move(1); else if (e.key === "ArrowLeft") move(-1); else if (e.key === "Escape") close(true);
+		});
+		tick = setInterval(poll, 1000);
+		try { if (navigator.wakeLock) navigator.wakeLock.request("screen").then(function (l) { lock = l; }, function () {}); } catch (e) {}
+		paint();
+	}
+
+	GC.cookMode = function (m, swaps) {
+		session = { recipeId: +m.recipe.id, startedAt: Date.now(), step: 0, checked: [], timers: [], swaps: !!swaps };
+		save();
+		session.model = m;
+		open();
+	};
+
+	/// A session of this recipe younger than 24 h offers to pick up where it stopped.
+	GC.cookResume = function (m) {
+		var s = stored();
+		if (!s || +s.recipeId !== +m.recipe.id || Date.now() - s.startedAt > MAX_AGE || (session && $ov)) return;
+		bootbox.confirm({ message: GL.t("ck.resume", { name: m.recipe.name }), callback: function (ok) {
+			if (!ok) { clear(); return; }
+			session = s;
+			session.model = m;
+			open();
+		} });
+	};
+})();
+</script>

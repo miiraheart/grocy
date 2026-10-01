@@ -1,0 +1,187 @@
+<script>
+(function () {
+	if (!window.GC) return;
+	/// One stock write by product, returning the Undo of every booking it made.
+	GC.stockOne = function (kind, productId, amount) {
+		var path = kind === "open" ? "open" : "consume", body = { amount: amount };
+		if (kind !== "open") body.spoiled = kind === "throw";
+		return GC.api("POST", "stock/products/" + productId + "/" + path, body).then(function (rows) {
+			var txs = (rows || []).map(function (r) { return r.transaction_id; }).filter(function (t, i, a) { return t && a.indexOf(t) === i; });
+			return function () { return txs.reduce(function (p, t) { return p.then(function () { return GC.api("POST", "stock/transactions/" + t + "/undo"); }); }, Promise.resolve()); };
+		});
+	};
+})();
+</script>
+<script>
+(function () {
+	if (!window.GC || !window.GCD || Grocy.View !== "userobjects" || GC.entityName() !== "dashboard") return;
+	/// The app's Dashboard on the web: "Use soon" (Use, Open, Throw away, one Undo) and "Today" (tasks and chores of the
+	/// Tasks page's Today list, today's meals and what to thaw).
+	GL.add({
+		"db.title": ["Dashboard", "Tableau de bord"], "db.useSoon": ["Use soon", "À utiliser vite"], "db.today": ["Today", "Aujourd'hui"],
+		"db.useSoonEmpty": ["Nothing is close to its date and nothing is open.", "Rien n'arrive à sa date et rien n'est entamé."],
+		"db.tasksEmpty": ["No task or chore left for today.", "Plus aucune tâche ni corvée pour aujourd'hui."],
+		"db.mealsEmpty": ["No meal planned for today.", "Aucun repas prévu aujourd'hui."], "db.meals": ["Meals", "Repas"],
+		"db.use": ["Use", "Utiliser"], "db.open": ["Open", "Ouvrir"], "db.throw": ["Throw away", "Jeter"], "db.opened": ["Opened", "Entamé"],
+		"db.used": ["Used 1 {name}", "1 {name} utilisé"], "db.didOpen": ["Opened 1 {name}", "1 {name} ouvert"], "db.threw": ["Threw away 1 {name}", "1 {name} jeté"],
+		"db.more": ["Show {n} more", "Afficher {n} de plus"], "db.less": ["Show less", "Afficher moins"], "db.allTasks": ["Show all {n} in Tasks", "Voir les {n} dans Tâches"],
+		"db.thaw": ["Thaw {name}", "Décongeler {name}"], "db.thawNow": ["Now, for {meal}", "Maintenant, pour {meal}"],
+		"db.thawTonight": ["Tonight, for {meal} tomorrow", "Ce soir, pour {meal} demain"], "db.expiredToList": ["Expired to list", "Périmés vers la liste"],
+		"db.addedToList": ["{n} added to the shopping list", "{n} ajoutés à la liste de courses"],
+		"due.expired": ["Expired {n} d ago", "Périmé depuis {n} j"], "due.bestBeforePassed": ["Best before passed", "DLUO dépassée"],
+		"due.today": ["Today", "Aujourd'hui"], "due.tomorrow": ["Tomorrow", "Demain"], "due.soon": ["In {n} days", "Dans {n} jours"],
+		"due.fresh": ["In {n} days", "Dans {n} jours"], "due.noDate": ["No date", "Sans date"]
+	});
+	var SHOWN = 5, SHOWN_TASKS = 6, UI = GC.agendaUI, ctx = { data: null }, expanded = false, working = {};
+
+	function dayText(offset) { return moment().add(offset || 0, "days").format("YYYY-MM-DD"); }
+	function dueLabel(s) { return GL.t("due." + s.kind, { n: s.kind === "expired" ? s.late : s.days }); }
+
+	function card(icon, title, count, href, tone) {
+		var $c = $('<section class="gc-card gc-db-card"></section>').attr("data-tone", tone || "");
+		var $hd = $('<a class="gc-db-hd"></a>').attr("href", href);
+		$hd.append($('<span class="gc-db-icon"></span>').append($("<i></i>").attr("class", "fa-solid " + icon)));
+		$hd.append($("<b></b>").text(title));
+		if (count) $hd.append($('<span class="gc-db-count"></span>').text(count));
+		$hd.append('<i class="fa-solid fa-chevron-right gc-db-chev" aria-hidden="true"></i>');
+		return $c.append($hd);
+	}
+	function emptyLine(icon, text) { return $('<div class="gc-db-empty"></div>').append($("<i></i>").attr("class", "fa-solid " + icon)).append($("<span></span>").text(text)); }
+
+	function act(item, kind, message) {
+		if (working[item.productId]) return;
+		working[item.productId] = true;
+		render();
+		GC.stockOne(kind, item.productId, Math.min(1, GC.num(item.item.amount) || 1)).then(function (undo) {
+			delete working[item.productId];
+			UI.undoBar(message, undo, refresh);
+			refresh();
+		}, function (err) {
+			delete working[item.productId];
+			GC.toast("error", err.message);
+			render();
+		});
+	}
+
+	function useRow(item) {
+		var $r = $('<div class="gc-db-row"></div>').toggleClass("is-working", !!working[item.productId]);
+		var $top = $('<a class="gc-db-top"></a>').attr("href", GC.url("/stockentries?product=" + item.productId));
+		$top.append($('<span class="gc-db-dot"></span>').attr("data-tint", item.tint));
+		var $main = $('<span class="gc-db-main"></span>').appendTo($top);
+		$("<b></b>").text(item.name).appendTo($main);
+		var $chips = $('<span class="gc-db-chips"></span>').appendTo($main);
+		$('<span class="gc-db-chip"></span>').attr("data-tint", item.tint).text(dueLabel(item.status)).appendTo($chips);
+		if (item.opened) $('<span class="gc-db-chip"></span>').append('<i class="fa-solid fa-lock-open"></i> ').append($("<span></span>").text(GL.t("db.opened"))).appendTo($chips);
+		$r.append($top);
+		var $acts = $('<div class="gc-db-acts"></div>').appendTo($r), n = item.name;
+		function btn(icon, label, kind, msg, danger) {
+			$('<button type="button" class="gc-db-act"></button>').toggleClass("is-danger", !!danger).prop("disabled", !!working[item.productId])
+				.append($("<i></i>").attr("class", "fa-solid " + icon)).append($("<span></span>").text(label))
+				.on("click", function () { act(item, kind, msg); }).appendTo($acts);
+		}
+		btn("fa-utensils", GL.t("db.use"), "use", GL.t("db.used", { name: n }));
+		if (item.canOpen) btn("fa-lock-open", GL.t("db.open"), "open", GL.t("db.didOpen", { name: n }));
+		btn("fa-trash", GL.t("db.throw"), "throw", GL.t("db.threw", { name: n }), true);
+		return $r;
+	}
+
+	function useSoonCard(d) {
+		var items = GCD.useSoon(d.volatile, d.stock, dayText(0)), $c = card("fa-hourglass-half", GL.t("db.useSoon"), items.length, GC.url("/stockoverview"), "warn");
+		if (!items.length) return $c.append(emptyLine("fa-circle-check", GL.t("db.useSoonEmpty")));
+		var $list = $('<div class="gc-db-list"></div>').appendTo($c);
+		(expanded ? items : items.slice(0, SHOWN)).forEach(function (i) { $list.append(useRow(i)); });
+		if (items.length > SHOWN) {
+			$('<button type="button" class="gc-db-link"></button>').text(expanded ? GL.t("db.less") : GL.t("db.more", { n: items.length - SHOWN }))
+				.on("click", function () { expanded = !expanded; render(); }).appendTo($c);
+		}
+		var past = items.filter(function (i) { return i.days != null && i.days < 0; });
+		if (past.length && GC.shop && GC.shop.addItem) {
+			$('<button type="button" class="btn btn-sm btn-outline-secondary gc-db-tolist"></button>').append('<i class="fa-solid fa-cart-plus"></i> ')
+				.append($("<span></span>").text(GL.t("db.expiredToList"))).on("click", function () { toList(past); }).appendTo($c);
+		}
+		return $c;
+	}
+
+	/// Past date products go to the web's current list through the no duplicate add, like the stock page's low stock button.
+	function toList(items) {
+		var listId = GC.IDS.shoppingList;
+		try { listId = +(localStorage.getItem("gc.shop.list") || listId); } catch (e) {}
+		Promise.all([GC.api("GET", "objects/shopping_lists/" + listId), GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + listId)]).then(function (r) {
+			var c = { config: GC.shop.config(r[0]), rows: r[1] || [], products: last.products, groups: {}, filter: null }, added = 0;
+			return items.reduce(function (chain, i) {
+				return chain.then(function () {
+					return GC.shop.addItem(c, { name: i.name, product_id: i.productId, amount: 1 }).then(function (res) {
+						if (res.kind === "created") { added++; c.rows.push({ id: res.id, product_id: i.productId, done: 0, userfields: {} }); }
+					});
+				});
+			}, Promise.resolve()).then(function () { GC.clearNavCounts(); GC.toast("success", GL.t("db.addedToList", { n: added })); });
+		}).catch(function (err) { GC.toast("error", err.message); });
+	}
+
+	function mealRow(icon, title, sub, tone, done) {
+		var $r = $('<div class="gc-db-meal"></div>').toggleClass("is-done", !!done);
+		$r.append($('<span class="gc-db-glyph"></span>').attr("data-tone", tone).append($("<i></i>").attr("class", "fa-solid " + icon)));
+		var $t = $('<span class="gc-db-main"></span>').appendTo($r).append($("<b></b>").text(title));
+		if (sub) $('<span class="gc-sub"></span>').text(sub).appendTo($t);
+		return $r;
+	}
+
+	function todayCard(d) {
+		var a = d.agenda, lists = a ? GCA.today(a.entries, a.now) : { now: [], evening: [] }, entries = lists.now.concat(lists.evening);
+		var $c = card("fa-star", GL.t("db.today"), entries.length, GC.url("/userobjects/agenda#today"), "accent");
+		if (!entries.length) $c.append(emptyLine("fa-circle-check", GL.t("db.tasksEmpty")));
+		else {
+			$c.append(UI.list(entries.slice(0, SHOWN_TASKS), ctx).addClass("gc-db-tasks"));
+			if (entries.length > SHOWN_TASKS) $('<a class="gc-db-link"></a>').attr("href", GC.url("/userobjects/agenda#today")).text(GL.t("db.allTasks", { n: entries.length })).appendTo($c);
+		}
+		var $mh = $('<a class="gc-db-sub-hd"></a>').attr("href", GC.url("/mealplan")).appendTo($c);
+		$mh.append('<i class="fa-solid fa-utensils"></i>').append($("<b></b>").text(GL.t("db.meals"))).append('<i class="fa-solid fa-chevron-right gc-db-chev" aria-hidden="true"></i>');
+		if (!d.meals.length && !d.thaw.length) $c.append(emptyLine("fa-utensils", GL.t("db.mealsEmpty")));
+		d.meals.forEach(function (m) { $c.append(mealRow(m.isRecipe ? "fa-fire-burner" : "fa-align-left", m.name, m.section, "accent", m.done)); });
+		d.thaw.forEach(function (t) {
+			$c.append(mealRow("fa-snowflake", GL.t("db.thaw", { name: t.name }), GL.t(t.tomorrow ? "db.thawTonight" : "db.thawNow", { meal: t.meal }), "info"));
+		});
+		return $c;
+	}
+
+	var page = null, last = null;
+	function render() {
+		if (!page || !last) return;
+		var $p = page.panes.home.empty();
+		$('<div class="gc-db-grid"></div>').append(useSoonCard(last)).append(todayCard(last)).appendTo($p);
+	}
+
+	function load() {
+		var today = dayText(0), tomorrow = dayText(1);
+		return Promise.all([
+			GC.api("GET", "stock/volatile?due_soon_days=30"), GC.api("GET", "stock"), GC.api("GET", "objects/stock"), GC.master(),
+			GC.api("GET", "objects/meal_plan?query[]=day>=" + today + "&query[]=day<=" + tomorrow), GC.api("GET", "objects/meal_plan_sections"),
+			GC.api("GET", "objects/recipes?query[]=type=normal"), GC.api("GET", "objects/products"), GC.api("GET", "objects/recipes_pos"),
+			GC.agenda.load().catch(function () { return null; })
+		]).then(function (r) {
+			var names = {}, positions = {}, rows = r[4] || [];
+			(r[7] || []).forEach(function (p) { names[p.id] = p.name; });
+			(r[8] || []).forEach(function (p) { (positions[p.recipe_id] = positions[p.recipe_id] || []).push(p); });
+			var freezers = r[3].locations.filter(function (l) { return String(l.is_freezer) === "1"; }).map(function (l) { return +l.id; });
+			var on = function (day) { return rows.filter(function (x) { return String(x.day).slice(0, 10) === day; }); };
+			ctx.data = r[9];
+			last = { volatile: r[0], stock: r[1], agenda: r[9], products: GC.byId(r[7]), meals: GCD.meals(rows, today, r[5], r[6], names),
+				thaw: GCD.thaw(on(today), on(tomorrow), positions, r[2], freezers, r[6], names) };
+			render();
+		});
+	}
+	function refresh() { return load().catch(function (err) { GC.toast("error", err.message); }); }
+
+	ctx.run = function (promise, message, onFail) {
+		return promise.then(function (undo) { UI.undoBar(message, undo, refresh); return refresh(); },
+			function (err) { if (onFail) onFail(); GC.toast("error", GL.t("ag.failed", { msg: err.message })); });
+	};
+	ctx.detail = ctx.actions = function () { location.href = GC.url("/userobjects/agenda#today"); };
+
+	$(function () {
+		page = GC.page({ eyebrow: GL.t("sec.pantry"), title: GL.t("db.title"), tabs: [{ key: "home", label: GL.t("db.title") }], onTab: function () {} });
+		page.$root.addClass("gc-db").find(".gc-tabs").remove();
+		refresh();
+	});
+})();
+</script>

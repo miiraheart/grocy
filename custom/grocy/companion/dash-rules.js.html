@@ -1,0 +1,108 @@
+<script>
+(function (root) {
+	/// Port of the app's DueStatus, UseSoon and TodayMeals (dashboard "Use soon" and "Today" cards).
+	/// tests/dashboard-cases.json is shared with the app (DashboardCasesFixtureTests.swift).
+	var TOL = 0.0001, WINDOW = 5, SOON_DAYS = 7, BEST_BEFORE = 1, NO_DATE = "2999-12-31";
+
+	function dayMs(text) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(text || ""));
+		return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+	}
+	function num(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+
+	/// DueStatus from the earliest date and the due type: expired, bestBeforePassed, today, tomorrow, soon, fresh or noDate.
+	function dueStatus(dates, dueType, today) {
+		var t = dayMs(today), earliest = null;
+		(Array.isArray(dates) ? dates : [dates]).forEach(function (d) {
+			var day = d ? String(d).slice(0, 10) : null, ms = day && day !== NO_DATE ? dayMs(day) : null;
+			if (ms != null && (earliest == null || ms < earliest)) earliest = ms;
+		});
+		if (earliest == null) return { kind: "noDate", days: null };
+		var days = Math.round((earliest - t) / 86400000);
+		if (days < 0) return { kind: +dueType === BEST_BEFORE ? "bestBeforePassed" : "expired", days: null, late: -days };
+		if (days === 0) return { kind: "today", days: 0 };
+		if (days === 1) return { kind: "tomorrow", days: 1 };
+		return { kind: days <= SOON_DAYS ? "soon" : "fresh", days: days };
+	}
+	/// Red: expired or 0 to 3 days; orange: best before passed or 4 to 7 days; green: later; gray: no date.
+	function tint(s) {
+		if (s.kind === "expired") return "red";
+		if (s.kind === "bestBeforePassed") return "orange";
+		if (s.kind === "noDate") return "gray";
+		return s.days <= 3 ? "red" : s.days <= SOON_DAYS ? "orange" : "green";
+	}
+	function isOpened(item) {
+		var o = item.amount_opened != null ? item.amount_opened : item.amount_opened_aggregated;
+		return num(o) > TOL;
+	}
+	function dueTypeOf(item) { return item.product && item.product.due_type != null ? item.product.due_type : item.due_type; }
+	function itemDays(s) { return s.kind === "expired" || s.kind === "bestBeforePassed" ? -1 : s.days; }
+
+	/// UseSoon.items: past dates first (expired before best before passed), then within 5 days, then opened, by days left.
+	function useSoon(volatile, stock, today) {
+		var v = volatile || {}, openedIds = {}, seen = {}, out = [];
+		(stock || []).forEach(function (i) { if (isOpened(i)) openedIds[i.product_id] = true; });
+		function add(item) {
+			if (seen[item.product_id]) return;
+			seen[item.product_id] = true;
+			var s = dueStatus([item.best_before_date], dueTypeOf(item), today);
+			out.push({ productId: +item.product_id, name: item.product ? item.product.name : "", status: s, days: itemDays(s), tint: tint(s),
+				opened: isOpened(item) || !!openedIds[item.product_id], canOpen: num(item.amount) - num(item.amount_opened) > TOL, item: item });
+		}
+		(v.expired_products || []).concat(v.overdue_products || []).forEach(add);
+		(v.due_products || []).forEach(function (item) {
+			var d = itemDays(dueStatus([item.best_before_date], dueTypeOf(item), today));
+			if (d != null && d <= WINDOW) add(item);
+		});
+		(stock || []).forEach(function (i) { if (isOpened(i)) add(i); });
+		function order(x) { return x.status.kind === "expired" ? -2 : x.status.kind === "bestBeforePassed" ? -1 : x.days == null ? Infinity : x.days; }
+		return out.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
+			var l = order(a.x), r = order(b.x);
+			return l !== r ? (l < r ? -1 : 1) : a.i - b.i;
+		}).map(function (o) { return o.x; });
+	}
+
+	function mealName(row, recipes, names) {
+		if (row.type === "recipe") { var r = recipes[row.recipe_id]; return r ? r.name : row.note; }
+		if (row.type === "product") return names[row.product_id];
+		return row.note;
+	}
+	/// TodayMeals.meals: the plan rows of the day in section order, with their section name.
+	function meals(rows, day, sections, recipes, names) {
+		var sec = {}, rec = {};
+		(sections || []).forEach(function (s) { sec[s.id] = s; });
+		(recipes || []).forEach(function (r) { rec[r.id] = r; });
+		var sort = function (r) { var s = sec[r.section_id == null ? -1 : r.section_id]; return s ? num(s.sort_number) : 0; };
+		return (rows || []).filter(function (r) { return String(r.day).slice(0, 10) === day; }).map(function (r, i) { return { r: r, i: i }; })
+			.sort(function (a, b) { return sort(a.r) - sort(b.r) || a.i - b.i; }).map(function (o) {
+				var r = o.r, name = mealName(r, rec, names || {}), s = sec[r.section_id == null ? -1 : r.section_id];
+				return name ? { id: +r.id, name: name, section: s && s.name ? s.name : null, isRecipe: r.type === "recipe", done: String(r.done) === "1", row: r } : null;
+			}).filter(Boolean);
+	}
+	function onlyFrozen(pid, entries, freezers) {
+		var stocked = (entries || []).filter(function (e) { return +e.product_id === +pid && num(e.amount) > TOL; });
+		return stocked.length > 0 && stocked.every(function (e) { return !!freezers[e.location_id]; });
+	}
+	/// TodayMeals.thaw: products of today's and tomorrow's open meals stocked only in a freezer; tomorrow's thaw tonight.
+	function thaw(today, tomorrow, positions, entries, freezerIds, recipes, names) {
+		var rec = {}, fz = {}, seen = {}, out = [];
+		(recipes || []).forEach(function (r) { rec[r.id] = r; });
+		(freezerIds || []).forEach(function (id) { fz[id] = true; });
+		[[today, false], [tomorrow, true]].forEach(function (pair) {
+			(pair[0] || []).filter(function (r) { return String(r.done) !== "1"; }).forEach(function (r) {
+				var meal = mealName(r, rec, names || {}) || "";
+				var need = r.type === "recipe" ? ((positions || {})[r.recipe_id] || []).map(function (p) { return p.product_id; }) : r.product_id ? [r.product_id] : [];
+				need.forEach(function (pid) {
+					if (!onlyFrozen(pid, entries, fz) || seen[pid]) return;
+					seen[pid] = true;
+					out.push({ productId: +pid, name: (names || {})[pid] || "", meal: meal, tomorrow: pair[1] });
+				});
+			});
+		});
+		return out.filter(function (t) { return t.name; });
+	}
+
+	var G = { dueStatus: dueStatus, tint: tint, useSoon: useSoon, meals: meals, thaw: thaw, isOpened: isOpened, WINDOW: WINDOW };
+	if (typeof module !== "undefined" && module.exports) module.exports = G; else root.GCD = G;
+})(this);
+</script>

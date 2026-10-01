@@ -1,0 +1,96 @@
+{
+  "about": "Dashboard rules shared by the web (companion/dash-rules.js.html) and the app (UseSoon, DueStatus, TodayMeals). Grocy JSON in, ordered results out.",
+  "today": "2026-10-01",
+  "useSoon": [
+    {
+      "name": "past dates first, expired before best before passed, then days left, no duplicates",
+      "volatile": {
+        "expired_products": [{ "product_id": 1, "amount": 2, "amount_opened": 0, "best_before_date": "2026-09-28", "product": { "id": 1, "name": "Milk", "active": 1, "due_type": 2 } }],
+        "overdue_products": [{ "product_id": 2, "amount": 2, "amount_opened": 0, "best_before_date": "2026-09-30", "product": { "id": 2, "name": "Rice cakes", "active": 1, "due_type": 1 } }],
+        "due_products": [
+          { "product_id": 3, "amount": 2, "amount_opened": 0, "best_before_date": "2026-10-05", "product": { "id": 3, "name": "Carrots", "active": 1, "due_type": 1 } },
+          { "product_id": 4, "amount": 2, "amount_opened": 0, "best_before_date": "2026-10-03", "product": { "id": 4, "name": "Chicken", "active": 1, "due_type": 2 } },
+          { "product_id": 5, "amount": 2, "amount_opened": 0, "best_before_date": "2026-10-13", "product": { "id": 5, "name": "Yogurt", "active": 1, "due_type": 2 } }
+        ]
+      },
+      "stock": [
+        { "product_id": 6, "amount": 2, "amount_opened": 1, "best_before_date": "2026-10-10", "product": { "id": 6, "name": "Coconut milk", "active": 1, "due_type": 2 } },
+        { "product_id": 4, "amount": 2, "amount_opened": 1, "best_before_date": "2026-10-03", "product": { "id": 4, "name": "Chicken", "active": 1, "due_type": 2 } }
+      ],
+      "expect": [
+        { "productId": 1, "status": "expired", "days": -1, "opened": false, "canOpen": true },
+        { "productId": 2, "status": "bestBeforePassed", "days": -1, "opened": false, "canOpen": true },
+        { "productId": 4, "status": "soon", "days": 2, "opened": true, "canOpen": true },
+        { "productId": 3, "status": "soon", "days": 4, "opened": false, "canOpen": true },
+        { "productId": 6, "status": "fresh", "days": 9, "opened": true, "canOpen": true }
+      ]
+    },
+    {
+      "name": "today, tomorrow and the five day window; a fully opened item offers no Open",
+      "volatile": {
+        "expired_products": [],
+        "overdue_products": [],
+        "due_products": [
+          { "product_id": 10, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-02", "product": { "id": 10, "name": "Salad", "active": 1, "due_type": 2 } },
+          { "product_id": 11, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-01", "product": { "id": 11, "name": "Fish", "active": 1, "due_type": 2 } },
+          { "product_id": 12, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-06", "product": { "id": 12, "name": "Leeks", "active": 1, "due_type": 1 } },
+          { "product_id": 13, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-07", "product": { "id": 13, "name": "Apples", "active": 1, "due_type": 1 } }
+        ]
+      },
+      "stock": [
+        { "product_id": 14, "amount": 1, "amount_opened": 1, "best_before_date": "2999-12-31", "product": { "id": 14, "name": "Olive oil", "active": 1, "due_type": 1 } }
+      ],
+      "expect": [
+        { "productId": 11, "status": "today", "days": 0, "opened": false, "canOpen": true },
+        { "productId": 10, "status": "tomorrow", "days": 1, "opened": false, "canOpen": true },
+        { "productId": 12, "status": "soon", "days": 5, "opened": false, "canOpen": true },
+        { "productId": 14, "status": "noDate", "days": null, "opened": true, "canOpen": false }
+      ]
+    }
+  ],
+  "meals": [
+    {
+      "name": "the day's rows in section order with their section names",
+      "day": "2026-10-01",
+      "rows": [
+        { "id": 1, "day": "2026-10-01", "type": "recipe", "recipe_id": 9, "section_id": 2, "done": 0 },
+        { "id": 2, "day": "2026-10-01", "type": "note", "note": "Fruit", "section_id": 1, "done": 1 },
+        { "id": 3, "day": "2026-10-02", "type": "note", "note": "Tomorrow", "section_id": 1, "done": 0 },
+        { "id": 4, "day": "2026-10-01", "type": "product", "product_id": 5, "section_id": 3, "done": 0 }
+      ],
+      "sections": [{ "id": 1, "name": "Breakfast", "sort_number": 1 }, { "id": 2, "name": "Dinner", "sort_number": 3 }, { "id": 3, "name": "", "sort_number": 2 }],
+      "recipes": [{ "id": 9, "name": "Soup" }],
+      "names": { "5": "Peas" },
+      "expect": [
+        { "name": "Fruit", "section": "Breakfast", "isRecipe": false, "done": true },
+        { "name": "Peas", "section": null, "isRecipe": false, "done": false },
+        { "name": "Soup", "section": "Dinner", "isRecipe": true, "done": false }
+      ]
+    }
+  ],
+  "thaw": [
+    {
+      "name": "only what sits in a freezer alone; tomorrow's meal thaws tonight; done rows skipped",
+      "today": [
+        { "id": 1, "day": "2026-10-01", "type": "product", "product_id": 5, "done": 0 },
+        { "id": 3, "day": "2026-10-01", "type": "product", "product_id": 8, "done": 1 }
+      ],
+      "tomorrow": [{ "id": 2, "day": "2026-10-02", "type": "recipe", "recipe_id": 9, "done": 0 }],
+      "positions": { "9": [{ "id": 1, "recipe_id": 9, "product_id": 6, "amount": 1 }, { "id": 2, "recipe_id": 9, "product_id": 7, "amount": 1 }] },
+      "entries": [
+        { "id": 1, "product_id": 5, "amount": 1, "location_id": 3 },
+        { "id": 2, "product_id": 6, "amount": 1, "location_id": 3 },
+        { "id": 3, "product_id": 7, "amount": 1, "location_id": 3 },
+        { "id": 4, "product_id": 7, "amount": 1, "location_id": 1 },
+        { "id": 5, "product_id": 8, "amount": 1, "location_id": 3 }
+      ],
+      "freezers": [3],
+      "recipes": [{ "id": 9, "name": "Salmon" }],
+      "names": { "5": "Peas", "6": "Fish", "7": "Rice", "8": "Bread" },
+      "expect": [
+        { "name": "Peas", "meal": "Peas", "tomorrow": false },
+        { "name": "Fish", "meal": "Salmon", "tomorrow": true }
+      ]
+    }
+  ]
+}

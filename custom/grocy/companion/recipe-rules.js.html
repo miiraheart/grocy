@@ -1,0 +1,172 @@
+<script>
+(function (root) {
+	/// Port of the app's RecipeDiet, DietSwaps, RecipeSwapView and BatchSpread (19-11, 19-13). Pure: the diet core
+	/// (GCDiet, from shopping-diet) and the text helpers (GCT) come in through make(), so node runs the same code.
+	var HALF_CUP_ML = 120, HALF_CUP_G = 100, FREEZER_FROM_DAY = 4, HORIZON = 30;
+	var UNITS = { g: ["mass", 1], kg: ["mass", 1000], oz: ["mass", 28.35], lb: ["mass", 453.6], ml: ["volume", 1], cl: ["volume", 10],
+		dl: ["volume", 100], l: ["volume", 1000], fl_oz: ["volume", 29.57], tsp: ["spoon", 5], tbsp: ["spoon", 15], cup: ["cup", 240] };
+	var GROCY_UNITS = { "c.à.s.": "tbsp", "c.à.c.": "tsp", "pincée": "pinch", "tasse": "cup" };
+
+	function make(D, T) {
+		var LEVELS = D.LEVELS, X = D.rules.recipe, rank = function (l) { return LEVELS.indexOf(l); };
+		var RULE = {};
+		D.rules.rules.forEach(function (r) { RULE[r.id] = r; });
+
+		function contains(phrase, toks) {
+			var keys = D.tokens(phrase).map(function (t) { return t.key; }), line = toks.map(function (t) { return t.key; });
+			if (!keys.length || keys.length > line.length) return false;
+			for (var i = 0; i + keys.length <= line.length; i++) if (keys.every(function (k, j) { return line[i + j] === k; })) return true;
+			return false;
+		}
+		function any(list, text) { var toks = D.tokens(text); return (list || []).some(function (p) { return contains(p, toks); }); }
+		function all(pair) { return (pair.fr || []).concat(pair.en || []); }
+		function verdict(name, ingredients) {
+			var m = D.check(name).matches.concat(ingredients ? D.check(ingredients).matches : []), seen = {};
+			m = m.filter(function (x) { var k = x.rule.id + "|" + x.word; return seen[k] ? false : (seen[k] = true); })
+				.map(function (x, i) { return { x: x, i: i }; })
+				.sort(function (a, b) { return rank(b.x.rule.level) - rank(a.x.rule.level) || a.i - b.i; }).map(function (o) { return o.x; });
+			return { level: m.length ? m[0].rule.level : "ok", matches: m, ruleIds: m.map(function (x) { return x.rule.id; }) };
+		}
+		function category(ruleId, level) { return level !== "info" ? null : ruleId === "cruciferous" ? "thyroid" : ruleId === "redMeat" ? "red_meat" : ruleId; }
+		function rawCruciferous(text) {
+			if (D.check(text).matches.every(function (m) { return m.rule.id !== "cruciferous"; })) return false;
+			return any(all(X.context.raw_markers), text) && !any(all(X.context.cooking_verbs), text);
+		}
+		function boosts(text) { return Object.keys(X.boosts).filter(function (k) { return any(X.boosts[k], text); }).sort(); }
+		function isStarch(text) { return any(X.portion_hints.starch_half_cup, text); }
+		function exceedsHalfCup(amount, unit) {
+			var low = String(unit || "").toLowerCase(), key = UNITS[low] ? low : GROCY_UNITS[low] || "", u = UNITS[key];
+			if (!u) return false;
+			return u[0] === "mass" ? amount * u[1] > HALF_CUP_G : amount * u[1] > HALF_CUP_ML;
+		}
+		function flag(key, level, ruleId, word, context) {
+			return { key: key, level: level, ruleId: ruleId, word: word || "", category: context === "starch" ? "starch" : context === "raw" ? "thyroid" : category(ruleId, level), context: context || null };
+		}
+		function contextFlags(key, text, matcherText) {
+			var out = [];
+			if (rawCruciferous(text)) {
+				var hit = D.check(text).matches.filter(function (m) { return m.rule.id === "cruciferous"; })[0];
+				out.push(flag(key, "info", "cruciferous", hit ? hit.word : "", "raw"));
+			}
+			boosts(matcherText).forEach(function (b) { out.push(flag(key, "ok", b, "", "boost")); });
+			return out;
+		}
+
+		/// recipe: { servings, factor, override, lines: [{ key, text, product?, ingredients?, rawLine?, amount?, unit? }], steps: [text] }
+		function report(recipe) {
+			var flags = [], servings = Math.max(+recipe.servings || 1, 1), factor = recipe.factor || 1;
+			(recipe.lines || []).forEach(function (l) {
+				var text = l.product || l.rawLine || l.text || "";
+				verdict(text, l.product ? l.ingredients : null).matches.forEach(function (m) { flags.push(flag(l.key, m.rule.level, m.rule.id, m.word)); });
+				var ctx = l.product ? [l.rawLine, l.product].filter(Boolean).join(" ") : text;
+				flags = flags.concat(contextFlags(l.key, ctx || text, text));
+				if (!isStarch(text)) return;
+				var amount = l.product ? l.amount : null, unit = l.product ? l.unit : null;
+				if (!l.product) { var p = T.parseLine(text); amount = p.quantity; unit = p.unit; }
+				if (amount != null && unit && exceedsHalfCup(amount * factor / servings, unit)) flags.push(flag(l.key, "info", "starch", "", "starch"));
+			});
+			(recipe.steps || []).forEach(function (s, i) { if (rawCruciferous(s)) flags = flags.concat(contextFlags("step:" + i, s, "").slice(0, 1)); });
+			var warn = flags.filter(function (f) { return f.context !== "boost"; });
+			var worst = warn.reduce(function (w, f) { return rank(f.level) > rank(w) ? f.level : w; }, "ok");
+			return { flags: flags, verdict: worst, override: !!recipe.override, hardBlocked: worst === "danger" && !recipe.override,
+				boosts: Object.keys(flags.filter(function (f) { return f.context === "boost"; }).reduce(function (o, f) { o[f.ruleId] = 1; return o; }, {})).sort(),
+				summary: summary(warn), forKey: function (k) { return warn.filter(function (f) { return f.key === k; }); } };
+		}
+		function summary(warn) {
+			var seen = {};
+			return warn.filter(function (f) { return rank(f.level) >= rank("info"); }).map(function (f, i) { return { f: f, i: i }; })
+				.sort(function (a, b) { return rank(b.f.level) - rank(a.f.level) || a.i - b.i; }).map(function (o) {
+					var k = o.f.level === "info" ? (o.f.category || o.f.ruleId) : o.f.level, t = o.f.word ? k + ":" + o.f.word : k;
+					return seen[t] ? null : (seen[t] = t);
+				}).filter(Boolean).join("; ");
+		}
+
+		function safe(s, never) {
+			return [s.en, s.fr].every(function (n) { return !any(never, n) && rank(D.check(n).level) < rank("limit"); });
+		}
+		function swapsForRule(ruleId, line, lang) {
+			var r = RULE[ruleId];
+			if (!r || r.level === "danger" || D.check(line).level === "danger") return [];
+			var toks = D.tokens(line), out = [];
+			X.swaps.forEach(function (row) {
+				if (row.rule !== ruleId || !(!row.match.length || row.match.some(function (p) { return contains(p, toks); }))) return;
+				var note = row.note ? row.note[lang] : null;
+				if (row.mode === "omit_or_reduce") { out.push({ swapId: row.id, name: note || "", ratio: 0, mode: "omit", check: false, note: null }); return; }
+				row.suggest.forEach(function (s) {
+					if (safe(s, row.never || [])) out.push({ swapId: row.id, name: s[lang], ratio: s.ratio == null ? 1 : s.ratio, mode: "replace", check: !!s.check, note: note });
+				});
+			});
+			return out;
+		}
+		/// Every flagged rule of the line, worst first, no repeats; a danger line gets nothing (DietSwaps.swaps).
+		function swaps(line, lang) {
+			var v = verdict(line), seen = {}, out = [];
+			if (v.level === "danger") return [];
+			v.ruleIds.forEach(function (id) {
+				if (seen[id]) return;
+				seen[id] = true;
+				swapsForRule(id, line, lang).forEach(function (s) { if (!out.some(function (o) { return o.swapId === s.swapId && o.name === s.name; })) out.push(s); });
+			});
+			return out;
+		}
+
+		/// "Cook with swaps": lines and steps rewritten, nothing saved; danger lines stay with "remove this line".
+		function swapView(recipe, rep, lang) {
+			var fr = lang === "fr", lines = (recipe.lines || []).map(function (l) {
+				var matcher = l.product || l.rawLine || l.text || "", src = l.product ? l.rawLine : l.text, parsed = src ? T.parseLine(src) : null;
+				var q = parsed && parsed.quantity != null ? parsed.quantity : l.product ? l.amount : null, u = parsed && parsed.unit ? parsed.unit : l.product ? l.unit : null;
+				var original = l.product ? (l.rawLine || T.compose(q, u, l.product)) : l.text, flags = rep.forKey(l.key);
+				if (flags.some(function (f) { return f.level === "danger"; })) return { key: l.key, original: original, text: original, action: "remove", swap: null, words: [] };
+				var v = verdict(matcher), sw = swaps(matcher, lang)[0];
+				if (!sw) return { key: l.key, original: original, text: original, action: "none", swap: null, words: [] };
+				var words = flags.filter(function (f) { return f.ruleId === sw.swapId || v.ruleIds.indexOf(f.ruleId) >= 0; }).map(function (f) { return f.word; }).filter(Boolean);
+				if (sw.mode === "omit") return { key: l.key, original: original, text: original + (fr ? " (à omettre ou réduire)" : " (omit or reduce)"), action: "omit", swap: sw, words: words };
+				return { key: l.key, original: original, text: T.compose(q == null ? null : q * sw.ratio, u, sw.name) + (fr ? " (substitution)" : " (swap)"), action: "swapped", swap: sw, words: words };
+			});
+			var steps = (recipe.steps || []).map(function (s) {
+				return lines.filter(function (l) { return l.action === "swapped"; }).reduce(function (t, l) {
+					return l.words.reduce(function (x, w) { return T.replacing(x, w, l.swap.name); }, t);
+				}, s);
+			});
+			return { lines: lines, steps: steps, swapped: lines.filter(function (l) { return l.action === "swapped" || l.action === "omit"; }).length };
+		}
+
+		function hasProtein(text) { return any(all(X.context.protein), text); }
+		function shift(day, n) { var d = new Date(day.slice(0, 10) + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
+		function fold(t) { return T.fold(t).replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""); }
+
+		/// BatchSpread.propose: fridge portions on the next free lunch and dinner within the fridge window (one day for a
+		/// protein dish, the rest suggested for the freezer), freezer portions from day 4 with a thaw note the evening before.
+		function spread(dish, batches, cookedOn, sections, rows, names) {
+			var wanted = [names.lunch, names.dinner].map(fold), slots = wanted.map(function (n) { return (sections || []).filter(function (s) { return fold(s.name) === n; })[0]; }).filter(Boolean);
+			var out = { slots: [], suggestedForFreezer: 0 };
+			if (!slots.length) return out;
+			var used = {};
+			(rows || []).forEach(function (r) { if (r.day && r.section_id != null) used[String(r.day).slice(0, 10) + "#" + r.section_id] = true; });
+			var window = hasProtein(dish) ? 1 : Math.max(D.rules.recipe.leftovers.fridge_days - 1, 0), free = [];
+			for (var off = 0; off <= HORIZON; off++) {
+				var day = shift(cookedOn, off);
+				slots.forEach(function (s) { if (!used[day + "#" + s.id]) free.push({ day: day, offset: off, section: s }); });
+			}
+			batches.forEach(function (b) {
+				for (var left = b.portions; left > 0; left--) {
+					var i = -1;
+					for (var j = 0; j < free.length; j++) if (b.inFreezer ? free[j].offset >= FREEZER_FROM_DAY : free[j].offset <= window) { i = j; break; }
+					if (i < 0) { if (!b.inFreezer) out.suggestedForFreezer += left; break; }
+					var s = free.splice(i, 1)[0];
+					out.slots.push({ day: s.day, sectionId: s.section.id, sectionName: s.section.name || "", batchRef: "stock:" + b.stockId,
+						storage: b.inFreezer ? "freezer" : "fridge", daysAfterCooking: s.offset, histamine: !b.inFreezer && s.offset > D.rules.recipe.leftovers.histamine_after_days,
+						thawOn: b.inFreezer ? shift(s.day, -1) : null });
+				}
+			});
+			return out;
+		}
+
+		return { verdict: verdict, report: report, swaps: swaps, swapView: swapView, spread: spread, hasProtein: hasProtein, exceedsHalfCup: exceedsHalfCup, shift: shift, rank: rank };
+	}
+
+	var R = { make: make };
+	if (typeof module !== "undefined" && module.exports) module.exports = R;
+	else if (root.GCDiet && root.GCT) root.GCRD = make(root.GCDiet, root.GCT);
+})(this);
+</script>

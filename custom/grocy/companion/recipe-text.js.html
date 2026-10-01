@@ -1,0 +1,246 @@
+<script>
+(function (root) {
+	/// Port of the app's IngredientLineParser, TimerDetector and RecipeDocument reader (19-SPEC 3.6, 6.4, 7.9).
+	/// Shares GrocyV2Tests/Fixtures/recipes-p19/ingredient-lines.json with the app (tests/ingredient-lines.json).
+	var ALIASES = {
+		g: ["g", "gr", "gramme", "grammes", "gram", "grams"],
+		kg: ["kg", "kilo", "kilos", "kilogramme", "kilogrammes", "kilogram", "kilograms"],
+		ml: ["ml", "millilitre", "millilitres", "milliliter", "milliliters"],
+		cl: ["cl", "centilitre", "centilitres"], dl: ["dl", "decilitre", "decilitres"],
+		l: ["l", "litre", "litres", "liter", "liters"],
+		tsp: ["tsp", "tsps", "teaspoon", "teaspoons", "cac", "c.a.c.", "c.a.c", "c. a c.", "c. a c", "c a c", "cc", "c.c.", "cuillere a cafe", "cuilleres a cafe", "cuil. a cafe", "c. a cafe"],
+		tbsp: ["tbsp", "tbsps", "tbs", "tablespoon", "tablespoons", "cas", "c.a.s.", "c.a.s", "c. a s.", "c. a s", "c a s", "cs", "c.s.", "cuillere a soupe", "cuilleres a soupe", "cuil. a soupe", "c. a soupe"],
+		cup: ["cup", "cups", "tasse", "tasses"], oz: ["oz", "ounce", "ounces", "once", "onces"], lb: ["lb", "lbs", "pound", "pounds"],
+		fl_oz: ["fl oz", "fl. oz", "fl.oz", "fl. oz.", "fluid ounce", "fluid ounces"], pinch: ["pincee", "pincees", "pinch", "pinches"],
+		clove: ["gousse", "gousses", "clove", "cloves"], bunch: ["botte", "bottes", "bouquet", "bouquets", "bunch", "bunches"],
+		can: ["boite", "boites", "can", "cans", "conserve", "conserves", "tin", "tins"], sachet: ["sachet", "sachets", "packet", "packets"],
+		slice: ["tranche", "tranches", "slice", "slices"], piece: ["piece", "pieces", "pc", "pcs"]
+	};
+	var SORTED = [];
+	Object.keys(ALIASES).forEach(function (k) { ALIASES[k].forEach(function (a) { SORTED.push({ a: Array.from(a), s: a, k: k }); }); });
+	SORTED.sort(function (x, y) { return x.a.length !== y.a.length ? y.a.length - x.a.length : (x.s < y.s ? -1 : x.s > y.s ? 1 : 0); });
+
+	var VULGAR = { "½": 0.5, "⅓": 1 / 3, "⅔": 2 / 3, "¼": 0.25, "¾": 0.75, "⅕": 0.2, "⅖": 0.4, "⅗": 0.6,
+		"⅘": 0.8, "⅙": 1 / 6, "⅚": 5 / 6, "⅛": 0.125, "⅜": 0.375, "⅝": 0.625, "⅞": 0.875 };
+	var WORDS = { un: [1, false], une: [1, false], one: [1, false], a: [1, true], an: [1, true], deux: [2, false], two: [2, false],
+		trois: [3, false], three: [3, false], quatre: [4, false], four: [4, false] };
+	var INVISIBLE = /[⁣⁢​‌‍﻿]/g, SPACES = /[   \t]/g;
+	var BULLETS = ["-", "*", "•", "·", "\u2013", "\u2014"];
+	var LETTER = /[\p{L}]/u, LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
+
+	function clean(raw) {
+		var t = String(raw || "").replace(INVISIBLE, "").replace(SPACES, " ").split(" ").filter(Boolean).join(" ");
+		return BULLETS.indexOf(t.charAt(0)) >= 0 && t.charAt(1) === " " ? t.slice(2) : t;
+	}
+	function tidy(t) { return String(t).split(/\s+/).filter(Boolean).join(" ").replace(/^[ ,;:]+|[ ,;:]+$/g, ""); }
+	function removingOptional(t) {
+		var re = /,?\s*\b(facultatif|facultative|optionnel|optionnelle|optional)\b/gi;
+		return re.test(t) ? [tidy(t.replace(re, " ")), true] : [t, false];
+	}
+	function foldChar(c) { return c.toLowerCase().normalize("NFD").charAt(0) || c; }
+	function dropSpaces(t) { return t.replace(/^ +/, ""); }
+	function digits(t) { var m = /^[0-9]*/.exec(t); return m[0]; }
+
+	function slashFraction(t) {
+		var top = digits(t), rest = t.slice(top.length);
+		if (!top || (rest.charAt(0) !== "/" && rest.charAt(0) !== "⁄")) return null;
+		rest = rest.slice(1);
+		var bottom = digits(rest);
+		if (!bottom) return null;
+		return [+top, +bottom, rest.slice(bottom.length)];
+	}
+	function number(t) {
+		t = dropSpaces(t);
+		if (VULGAR[t.charAt(0)] != null) return [VULGAR[t.charAt(0)], t.slice(1)];
+		var whole = digits(t), rest = t.slice(whole.length);
+		if ((rest.charAt(0) === "." || rest.charAt(0) === ",") && digits(rest.slice(1))) {
+			var frac = digits(rest.slice(1));
+			return [parseFloat((whole || "0") + "." + frac), rest.slice(1 + frac.length)];
+		}
+		if (!whole) return null;
+		var integer = +whole, f = slashFraction(t);
+		if (f && f[1] > 0) return [f[0] / f[1], f[2]];
+		var spaced = dropSpaces(rest);
+		if (VULGAR[spaced.charAt(0)] != null) return [integer + VULGAR[spaced.charAt(0)], spaced.slice(1)];
+		if (spaced.length < rest.length) { var g = slashFraction(spaced); if (g && g[1] > 0) return [integer + g[0] / g[1], g[2]]; }
+		return [integer, rest];
+	}
+	function rangeEnd(t) {
+		var tr = dropSpaces(t), low = tr.toLowerCase(), cs = ["-", "\u2013", "à ", "a ", "to ", "ou ", "or "];
+		for (var i = 0; i < cs.length; i++) if (low.indexOf(cs[i]) === 0) { var n = number(tr.slice(cs[i].length)); if (n) return n; }
+		return null;
+	}
+	function numberWord(t) {
+		var word = (/^[\p{L}]*/u.exec(t) || [""])[0], w = WORDS[word.toLowerCase()];
+		return w && t.charAt(word.length) === " " ? [w[0], t.slice(word.length), w[1]] : null;
+	}
+	function unit(t) {
+		var tr = dropSpaces(t), chars = Array.from(tr), folded = chars.slice(0, 24).map(foldChar);
+		for (var i = 0; i < SORTED.length; i++) {
+			var a = SORTED[i].a, ok = a.length <= folded.length;
+			for (var j = 0; ok && j < a.length; j++) ok = folded[j] === a[j];
+			if (!ok) continue;
+			var next = a.length < folded.length ? folded[a.length] : null;
+			if (next && LETTER_OR_NUMBER.test(next) && a[a.length - 1] !== ".") continue;
+			if (next === "'" || next === "’") continue;
+			return [SORTED[i].k, chars.slice(a.length).join("")];
+		}
+		return null;
+	}
+	function amount(t) { var n = number(t), u = n && unit(n[1]); return u ? [{ quantity: n[0], unit: u[0] }, u[1]] : null; }
+	function wholeAmount(t) { var a = amount(t); return a && !a[1].trim() ? a[0] : null; }
+	function slashAmount(t) { var tr = dropSpaces(t); return tr.charAt(0) === "/" ? amount(tr.slice(1)) : null; }
+	function sizeAmount(t) {
+		var tr = dropSpaces(t), low = tr.toLowerCase();
+		for (var i = 0, ws = ["de ", "of "]; i < ws.length; i++) if (low.indexOf(ws[i]) === 0) { var a = amount(tr.slice(ws[i].length)); if (a) return a; }
+		return null;
+	}
+	function stripElision(t) {
+		var tr = dropSpaces(t), low = tr.toLowerCase(), ws = ["de ", "d'", "d’", "of "];
+		for (var i = 0; i < ws.length; i++) if (low.indexOf(ws[i]) === 0) return tr.slice(ws[i].length);
+		return tr;
+	}
+
+	function parseLine(raw) {
+		var line = { raw: raw, quantity: null, quantity_max: null, unit: null, name: "", note: null, optional: false, size: null, alt: [] };
+		var text = clean(raw), notes = [], late = [], m, opt;
+		while ((m = /\(([^()]*)\)/.exec(text))) {
+			var content = m[1].trim();
+			text = text.slice(0, m.index) + " " + text.slice(m.index + m[0].length);
+			var whole = wholeAmount(content);
+			if (whole) { line.alt.push(whole); continue; }
+			opt = removingOptional(content);
+			line.optional = line.optional || opt[1];
+			if (opt[0]) notes.push(opt[0]);
+		}
+		var taste = /(?<![\p{L}\p{N}_])(au go[uû]t|selon (?:le )?go[uû]t|[àa] volont[ée]|to taste|as needed)(?![\p{L}\p{N}_])/iu;
+		while ((m = taste.exec(text))) { late.push(m[0]); text = text.slice(0, m.index) + " " + text.slice(m.index + m[0].length); }
+		opt = removingOptional(text);
+		line.optional = line.optional || opt[1];
+		var rest = opt[0], fromWord = false, n = number(rest), w;
+		if (n) {
+			line.quantity = n[0];
+			rest = n[1];
+			var r = rangeEnd(rest);
+			if (r) { line.quantity_max = r[0]; rest = r[1]; }
+		} else if ((w = numberWord(rest)) && (!w[2] || unit(w[1]))) {
+			line.quantity = w[0];
+			fromWord = true;
+			rest = w[1];
+		}
+		var u = line.quantity != null ? unit(rest) : null;
+		if (u) {
+			line.unit = u[0];
+			rest = u[1];
+			if (fromWord && u[0] === "pinch") line.quantity = null;
+			var alt = slashAmount(rest);
+			if (alt) { line.alt.push(alt[0]); rest = alt[1]; }
+			var size = sizeAmount(rest);
+			if (size) { line.size = size[0]; rest = size[1]; }
+			rest = stripElision(rest);
+		}
+		var name = rest, comma = name.indexOf(",");
+		if ((line.quantity != null || line.unit != null) && comma >= 0) {
+			var note = tidy(name.slice(comma + 1));
+			if (note) notes.push(note);
+			name = name.slice(0, comma);
+		}
+		line.name = tidy(name);
+		var all = notes.concat(late).map(tidy).filter(Boolean);
+		line.note = all.length ? all.join(", ") : null;
+		return line;
+	}
+
+	function quantityText(v) { var r = Math.round(v * 100) / 100; return r === Math.round(r) ? String(Math.round(r)) : String(r); }
+	function compose(q, u, name) { return [q == null ? null : quantityText(q), u, name].filter(function (x) { return x != null && x !== ""; }).join(" "); }
+	function foldText(t) { return String(t || "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); }
+
+	/// Whole word, case and accent insensitive, every occurrence (RecipeSwapView.replacing).
+	function replacing(text, word, by) {
+		if (!word) return text;
+		var out = "", i = 0, src = String(text), f = foldText(src), fw = foldText(word);
+		if (f.length !== src.length) return src;
+		while (i <= src.length) {
+			var at = f.indexOf(fw, i);
+			if (at < 0) break;
+			var before = at > 0 ? src.charAt(at - 1) : "", after = src.charAt(at + fw.length);
+			if (!LETTER.test(before) && !LETTER.test(after)) { out += src.slice(i, at) + by; i = at + fw.length; }
+			else { out += src.slice(i, at + fw.length); i = at + fw.length; }
+		}
+		return out + src.slice(i);
+	}
+
+	/// TimerDetector: "20 min", "1 h 30", "15 a 20 minutes" (low bound runs, high shows); long waits next to a make-ahead verb are lead times.
+	var UNIT_ALT = "heures?|hours?|h\\b|minutes?|mins?|min\\b|secondes?|seconds?|sec\\b";
+	var NUMW = { un: 1, une: 1, one: 1, deux: 2, two: 2, trois: 3, three: 3, quatre: 4, four: 4, cinq: 5, five: 5 };
+	var AHEAD = ["marine", "mariner", "marinat", "tremper", "soak", "lever", "pousser", "proof", "au frais", "refrigerat", "refriger", "chill", "decongel", "thaw", "repos", "rest", "overnight", "une nuit", "toute la nuit"];
+	function factor(u) { u = u.toLowerCase(); return u.charAt(0) === "h" ? 3600 : u.indexOf("min") === 0 ? 60 : 1; }
+	function timers(text) {
+		var t = String(text || "").slice(0, 4000), claimed = [], out = [], m;
+		var ahead = AHEAD.some(function (v) { return foldText(t).indexOf(v) >= 0; });
+		function free(a, b) { return !claimed.some(function (c) { return a < c[1] && c[0] < b; }); }
+		function add(a, b, s, max) {
+			claimed.push([a, b]);
+			if (!(s > 0) || (max != null && s > max) || s > 172800 || (max || 0) > 172800 || (ahead && s >= 14400)) return;
+			out.push({ start: a, end: b, seconds: s, maxSeconds: max == null ? null : max });
+		}
+		var hm = /\b(\d{1,2})\s*[hH]\s*(\d{1,2})\b/g;
+		while ((m = hm.exec(t))) if (free(m.index, m.index + m[0].length)) add(m.index, m.index + m[0].length, +m[1] * 3600 + +m[2] * 60, null);
+		var rg = new RegExp("\\b(\\d{1,3})\\s*(?:à|to|-)\\s*(\\d{1,3})\\s*(" + UNIT_ALT + ")", "gi");
+		while ((m = rg.exec(t))) if (free(m.index, m.index + m[0].length)) add(m.index, m.index + m[0].length, +m[1] * factor(m[3]), +m[2] * factor(m[3]));
+		var sp = new RegExp("\\b(\\d{1,4}|un|une|one|deux|two|trois|three|quatre|four|cinq|five)\\s*(" + UNIT_ALT + ")", "gi");
+		while ((m = sp.exec(t))) {
+			if (!free(m.index, m.index + m[0].length)) continue;
+			var v = /^\d+$/.test(m[1]) ? +m[1] : NUMW[m[1].toLowerCase()] || 0;
+			if (v > 0) add(m.index, m.index + m[0].length, v * factor(m[2]), null);
+		}
+		return out.sort(function (a, b) { return a.start - b.start; });
+	}
+
+	var ING = ["ingredients", "ingredient"];
+	var METHOD = ["preparation", "preparations", "etapes", "etape", "instructions", "steps", "directions", "method", "methode", "recette", "recipe"];
+	function headingKind(text) {
+		var f = foldText(text).trim().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""), first = (f.split(/[^\p{L}]+/u)[0] || "");
+		if (ING.indexOf(first) >= 0) return "ingredients";
+		if (METHOD.indexOf(first) >= 0 && f.split(" ").length <= 4) return "method";
+		return null;
+	}
+	function numberedStep(line) {
+		var m = /^(?:(?:[Ss]tep|[ÉéEe]tape)\s*\d{1,2}\s*[:.)\-]?|\d{1,2}\s*[.)])\s+/.exec(line);
+		var t = m ? line.slice(m[0].length).trim() : "";
+		return t || null;
+	}
+	function nodeText(el) { return tidy(String(el.textContent || "").replace(/\s+/g, " ")); }
+
+	/// The recipe description as free lines and steps, from a parsed document body (DOMParser in the page, jsdom in tests).
+	function readDocument(body) {
+		var doc = { lines: [], steps: [], lineEls: [], stepEls: [], lists: {} }, mode = null;
+		if (!body) return doc;
+		if (!body.querySelector("*")) {
+			String(body.textContent || "").split(/\r?\n/).forEach(function (l) { var s = numberedStep(l.trim()); if (s) doc.steps.push(s); });
+			return doc;
+		}
+		Array.prototype.forEach.call(body.children, function (el) {
+			var tag = el.tagName.toLowerCase(), text = nodeText(el);
+			if (/^h\d$/.test(tag)) { var k = headingKind(text); mode = k || (+tag.charAt(1) >= 4 ? mode : null); return; }
+			if (tag !== "ul" && tag !== "ol") return;
+			if (mode && !doc.lists[mode]) doc.lists[mode] = el;
+			Array.prototype.forEach.call(el.querySelectorAll("li"), function (li) {
+				var t = nodeText(li);
+				if (!t) return;
+				if (mode === "ingredients") {
+					var bold = li.querySelector("strong, b");
+					if (/:$/.test(t) || (bold && nodeText(bold) === t)) return;
+					doc.lines.push(t);
+					doc.lineEls.push(li);
+				} else if (mode === "method") { doc.steps.push(t); doc.stepEls.push(li); }
+			});
+		});
+		return doc;
+	}
+
+	var T = { domBody: function (html) { return new DOMParser().parseFromString(String(html || ""), "text/html").body; }, parseLine: parseLine, quantityText: quantityText, compose: compose, replacing: replacing, timers: timers, readDocument: readDocument,
+		headingKind: headingKind, fold: foldText };
+	if (typeof module !== "undefined" && module.exports) module.exports = T; else root.GCT = T;
+})(this);
+</script>

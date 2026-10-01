@@ -1,0 +1,180 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCRD) return;
+	/// FinishCookingOps on the web (19-SPEC 6.10): dish product, consume, the produced batch dated, freezer portions moved,
+	/// eaten portions consumed, cooked_on, plan entries done, rating and note. One undo plan, run backwards: never a
+	/// transaction undo on the self-production add (the produced portions are consumed by stock entry instead).
+	var api = GC.api;
+
+	function fold(t) { return GCT.fold(t).trim(); }
+	function uniqueName(name, day, existing) {
+		var taken = {}, base = $.trim(name);
+		existing.forEach(function (n) { taken[fold(n)] = true; });
+		if (!taken[fold(base)]) return base;
+		var dated = base + " (" + day.slice(8, 10) + "/" + day.slice(5, 7) + ")", c = dated, n = 2;
+		while (taken[fold(c)]) c = dated + " " + n++;
+		return c;
+	}
+	function portionUnit(units) {
+		var f = function (u) { return GCT.fold(u.name); };
+		return units.filter(function (u) { return f(u).indexOf("portion") >= 0; })[0] || units.filter(function (u) { return f(u).indexOf("piece") >= 0; })[0] || units[0];
+	}
+	function entries(pid) { return pid ? api("GET", "objects/stock?query[]=product_id=" + pid) : Promise.resolve([]); }
+	function anchor() { return api("GET", "objects/stock_log?order=id:desc&limit=1").then(function (r) { return r && r[0] ? +r[0].id : 0; }); }
+
+	/// The dish product of the recipe: linked, or created like the Kitchen page's "add a dish" and linked through product_id.
+	function ensureDish(m, ids, today, steps) {
+		var r = m.recipe;
+		if (r.product_id) {
+			return api("GET", "objects/products/" + r.product_id).then(function (p) {
+				return String(p.active) === "1" ? +p.id : api("PUT", "objects/products/" + p.id, { active: 1 }).then(function () { return +p.id; });
+			});
+		}
+		if (!ids.groupDishes || !ids.locFridge) return Promise.reject(new Error(GL.t("fc.noGroup")));
+		return Promise.all([api("GET", "objects/products"), api("GET", "objects/quantity_units")]).then(function (x) {
+			var qu = portionUnit(x[1] || []), name = uniqueName(r.name, today, (x[0] || []).map(function (p) { return p.name; }));
+			return api("POST", "objects/products", { name: name, product_group_id: ids.groupDishes, location_id: ids.locFridge, qu_id_purchase: qu.id, qu_id_stock: qu.id,
+				due_type: 2, default_best_before_days: GCDiet.rules.recipe.leftovers.fridge_days, active: 1 });
+		}).then(function (c) {
+			var pid = +c.created_object_id, ing = m.lines.map(function (l) { return l.product || GCT.parseLine(l.text).name; }).filter(Boolean).join(", ");
+			steps.push({ kind: "dish", productId: pid, recipeId: +r.id });
+			return (ing ? api("PUT", "userfields/products/" + pid, { ingredients: ing }) : Promise.resolve())
+				.then(function () { return api("PUT", "objects/recipes/" + r.id, { product_id: pid }); }).then(function () { return pid; });
+		});
+	}
+
+	/// Lines whose stock is under what the servings need: Grocy consumes what exists, the result says which were short.
+	function shortLines(m, servings) {
+		var factor = servings / Math.max(m.servings, 1), pos = m.lines.filter(function (l) { return l.productId; });
+		return Promise.all(pos.map(function (l) { return entries(l.productId); })).then(function (all) {
+			return pos.filter(function (l, i) { return all[i].reduce(function (s, e) { return s + GC.num(e.amount); }, 0) + 0.0001 < l.amount * factor; })
+				.map(function (l) { return l.product; });
+		});
+	}
+
+	function place(e, pid, req, ids, today, isFirst) {
+		var eaten = isFirst ? Math.min(req.eatenNow, GC.num(e.amount)) : 0, amount = GC.num(e.amount);
+		if (eaten >= amount - 0.0001) return api("POST", "stock/products/" + pid + "/consume", { amount: amount, stock_entry_id: e.stock_id, spoiled: false });
+		var due = GCRD.shift(today, GCDiet.rules.recipe.leftovers.fridge_days), from = +e.location_id || ids.locFridge;
+		return api("PUT", "stock/entry/" + e.id, { amount: amount, best_before_date: due, location_id: from, shopping_location_id: e.shopping_location_id, open: false,
+			price: e.price, purchased_date: today, note: e.note }).then(function () {
+			var freezer = isFirst ? Math.min(req.freezer, amount - eaten) : 0;
+			if (freezer > 0 && ids.locFreezer && ids.locFreezer !== from) {
+				return api("POST", "stock/products/" + pid + "/transfer", { amount: freezer, location_id_from: from, location_id_to: ids.locFreezer, stock_entry_id: e.stock_id });
+			}
+		}).then(function () {
+			if (eaten > 0) return api("POST", "stock/products/" + pid + "/consume", { amount: eaten, stock_entry_id: e.stock_id, spoiled: false });
+		});
+	}
+
+	/// req: { servings, consume, cuisine, fridge, freezer, eatenNow, rating, again, note, planIds }. Resolves { undo, dishId, short, produced }.
+	GC.finishOps = function (m, req) {
+		var r = m.recipe, today = GC.today(), steps = [], result = { short: [], dishId: null, produced: [] }, ids, before = [], mark = 0, detached = null;
+		var restoreServings = Math.abs(GC.num(r.desired_servings) - req.servings) > 0.0001 ? GC.num(r.desired_servings) : null;
+		return GC.master().then(function (d) {
+			ids = d.ids;
+			if (req.cuisine) return ensureDish(m, ids, today, steps);
+			if (r.product_id) { detached = +r.product_id; return api("PUT", "objects/recipes/" + r.id, { product_id: null }).then(function () { return null; }); }
+			return null;
+		}).then(function (pid) {
+			result.dishId = pid;
+			return Promise.all([entries(pid), anchor(), req.consume ? shortLines(m, req.servings) : []]);
+		}).then(function (x) {
+			before = x[0].map(function (e) { return e.stock_id; });
+			mark = x[1];
+			result.short = x[2];
+			if (!req.consume) return null;
+			return (restoreServings != null ? api("PUT", "objects/recipes/" + r.id, { desired_servings: req.servings }) : Promise.resolve())
+				.then(function () { return api("POST", "recipes/" + r.id + "/consume"); })
+				.then(function () { return api("GET", "objects/stock_log?query[]=id>" + mark); });
+		}).then(function (log) {
+			var done = function () {
+				var back = [];
+				if (restoreServings != null && req.consume) back.push(api("PUT", "objects/recipes/" + r.id, { desired_servings: restoreServings }));
+				if (detached) back.push(api("PUT", "objects/recipes/" + r.id, { product_id: detached }));
+				return Promise.all(back);
+			};
+			var txs = (log || []).filter(function (l) { return +l.recipe_id === +r.id && l.transaction_type !== "self-production" && String(l.undone) !== "1"; })
+				.map(function (l) { return l.transaction_id; }).filter(function (t, i, a) { return t && a.indexOf(t) === i; });
+			txs.forEach(function (t) { steps.push({ kind: "tx", id: t }); });
+			return done();
+		}).then(function () {
+			if (!result.dishId || !req.consume) return null;
+			return entries(result.dishId).then(function (es) {
+				var made = es.filter(function (e) { return before.indexOf(e.stock_id) < 0; });
+				return made.reduce(function (p, e, i) { return p.then(function () { return place(e, result.dishId, req, ids, today, i === 0); }); }, Promise.resolve())
+					.then(function () { return entries(result.dishId); }).then(function (now) {
+						var left = now.filter(function (e) { return before.indexOf(e.stock_id) < 0; });
+						result.produced = left;
+						left.forEach(function (e) { steps.push({ kind: "produced", productId: result.dishId, stockId: e.stock_id, amount: GC.num(e.amount) }); });
+						if (!made.length) return null;
+						return api("GET", "userfields/products/" + result.dishId).then(function (old) {
+							var vals = { cooked_on: today, shelf_status: "none" };
+							steps.push({ kind: "uf", entity: "products", id: result.dishId, old: { cooked_on: (old || {}).cooked_on || "", shelf_status: (old || {}).shelf_status || "" } });
+							return api("PUT", "userfields/products/" + result.dishId, vals);
+						});
+					});
+			});
+		}).then(function () {
+			return (req.planIds || []).reduce(function (p, id) {
+				return p.then(function () { return api("PUT", "objects/meal_plan/" + id, { done: 1 }); }).then(function () { steps.push({ kind: "plan", id: id }); });
+			}, Promise.resolve());
+		}).then(function () {
+			var vals = {}, u = m.uf;
+			if (req.rating) vals.rating = String(req.rating);
+			if (req.again != null) vals.would_make_again = req.again ? "1" : "0";
+			if ($.trim(req.note || "")) vals.notes = ($.trim(u.notes || "") ? $.trim(u.notes) + "\n" : "") + today + " " + $.trim(req.note);
+			if (!Object.keys(vals).length) return null;
+			var old = {};
+			Object.keys(vals).forEach(function (k) { old[k] = u[k] || ""; });
+			steps.push({ kind: "uf", entity: "recipes", id: +r.id, old: old });
+			return api("PUT", "userfields/recipes/" + r.id, vals);
+		}).then(function () {
+			result.undo = function () { return undo(steps); };
+			return result;
+		}, function (err) {
+			err.undo = function () { return undo(steps); };
+			throw err;
+		});
+	};
+
+	/// Runs the plan backwards: fields and plan flags, produced portions, ingredient consumes, then the dish product link.
+	function undo(steps) {
+		return steps.slice().reverse().reduce(function (p, s) {
+			return p.then(function () {
+				if (s.kind === "uf") return api("PUT", "userfields/" + s.entity + "/" + s.id, s.old);
+				if (s.kind === "plan") return api("PUT", "objects/meal_plan/" + s.id, { done: 0 });
+				if (s.kind === "produced") {
+					return entries(s.productId).then(function (es) {
+						var amount = es.filter(function (e) { return e.stock_id === s.stockId; }).reduce(function (t, e) { return t + GC.num(e.amount); }, 0);
+						if (amount > 0) return api("POST", "stock/products/" + s.productId + "/consume", { amount: amount, stock_entry_id: s.stockId, spoiled: false });
+					});
+				}
+				if (s.kind === "tx") return api("POST", "stock/transactions/" + s.id + "/undo");
+				if (s.kind === "dish") {
+					return api("PUT", "objects/recipes/" + s.recipeId, { product_id: null }).then(function () {
+						return api("GET", "objects/stock_log?query[]=product_id=" + s.productId);
+					}).then(function (log) { if (!(log || []).length) return api("DELETE", "objects/products/" + s.productId); });
+				}
+			});
+		}, Promise.resolve());
+	}
+
+	/// Plan the portions (BatchPlanEdit): one dish entry per slot with its batch_ref; undo deletes them.
+	GC.planPortions = function (dishId, slots) {
+		var made = [];
+		return api("GET", "objects/products/" + dishId).then(function (p) {
+			return slots.reduce(function (chain, s) {
+				return chain.then(function () {
+					return api("POST", "objects/meal_plan", { day: s.day, type: "product", product_id: dishId, product_amount: 1, product_qu_id: p.qu_id_stock, section_id: s.sectionId });
+				}).then(function (c) {
+					made.push(+c.created_object_id);
+					return api("PUT", "userfields/meal_plan/" + c.created_object_id, { batch_ref: s.batchRef });
+				});
+			}, Promise.resolve());
+		}).then(function () {
+			return function () { return Promise.all(made.map(function (id) { return api("DELETE", "objects/meal_plan/" + id); })); };
+		});
+	};
+})();
+</script>
