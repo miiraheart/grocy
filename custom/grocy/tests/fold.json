@@ -1,0 +1,242 @@
+[
+ {
+  "input": "pommes",
+  "output": "pomme"
+ },
+ {
+  "input": "Pomme",
+  "output": "pomme"
+ },
+ {
+  "input": "APPLES",
+  "output": "apple"
+ },
+ {
+  "input": "boxes",
+  "output": "box"
+ },
+ {
+  "input": "glasses",
+  "output": "glass"
+ },
+ {
+  "input": "matches",
+  "output": "match"
+ },
+ {
+  "input": "wishes",
+  "output": "wish"
+ },
+ {
+  "input": "buses",
+  "output": "bus"
+ },
+ {
+  "input": "dishes",
+  "output": "dish"
+ },
+ {
+  "input": "cafe",
+  "output": "cafe"
+ },
+ {
+  "input": "café",
+  "output": "cafe"
+ },
+ {
+  "input": "crème",
+  "output": "creme"
+ },
+ {
+  "input": "crème fraîche",
+  "output": "creme fraiche"
+ },
+ {
+  "input": "être",
+  "output": "etre"
+ },
+ {
+  "input": "être libre",
+  "output": "etre libre"
+ },
+ {
+  "input": "œuf",
+  "output": "oeuf"
+ },
+ {
+  "input": "bœuf",
+  "output": "boeuf"
+ },
+ {
+  "input": "cœur",
+  "output": "coeur"
+ },
+ {
+  "input": "nævus",
+  "output": "naevu"
+ },
+ {
+  "input": "vitæ",
+  "output": "vitae"
+ },
+ {
+  "input": "Épée",
+  "output": "epee"
+ },
+ {
+  "input": "École",
+  "output": "ecole"
+ },
+ {
+  "input": "Élève",
+  "output": "eleve"
+ },
+ {
+  "input": "Ça va",
+  "output": "ca va"
+ },
+ {
+  "input": "naïve",
+  "output": "naive"
+ },
+ {
+  "input": "hôtel",
+  "output": "hotel"
+ },
+ {
+  "input": "forêt",
+  "output": "foret"
+ },
+ {
+  "input": "noël",
+  "output": "noel"
+ },
+ {
+  "input": "  Café   au   lait!!  ",
+  "output": "cafe au lait"
+ },
+ {
+  "input": "pommes, ",
+  "output": "pomme"
+ },
+ {
+  "input": "Lait!",
+  "output": "lait"
+ },
+ {
+  "input": "riz.",
+  "output": "riz"
+ },
+ {
+  "input": "sel;",
+  "output": "sel"
+ },
+ {
+  "input": "poivre:",
+  "output": "poivre"
+ },
+ {
+  "input": "(pommes)",
+  "output": "pomme"
+ },
+ {
+  "input": "\"pommes\"",
+  "output": "pomme"
+ },
+ {
+  "input": "pomme's",
+  "output": "pomme'"
+ },
+ {
+  "input": "pommes de terre",
+  "output": "pommes de terre"
+ },
+ {
+  "input": "chou-fleur",
+  "output": "chou-fleur"
+ },
+ {
+  "input": "chou fleur",
+  "output": "chou fleur"
+ },
+ {
+  "input": "petit pois",
+  "output": "petit poi"
+ },
+ {
+  "input": "petits pois",
+  "output": "petits poi"
+ },
+ {
+  "input": "Haricots Verts",
+  "output": "haricots vert"
+ },
+ {
+  "input": "carottes",
+  "output": "carotte"
+ },
+ {
+  "input": "carotte",
+  "output": "carotte"
+ },
+ {
+  "input": "tomates",
+  "output": "tomate"
+ },
+ {
+  "input": "tomate",
+  "output": "tomate"
+ },
+ {
+  "input": "citrons",
+  "output": "citron"
+ },
+ {
+  "input": "citron",
+  "output": "citron"
+ },
+ {
+  "input": "oignons",
+  "output": "oignon"
+ },
+ {
+  "input": "oignon",
+  "output": "oignon"
+ },
+ {
+  "input": "pêche",
+  "output": "peche"
+ },
+ {
+  "input": "boîtes",
+  "output": "boite"
+ },
+ {
+  "input": "boîte",
+  "output": "boite"
+ },
+ {
+  "input": "bouteilles",
+  "output": "bouteille"
+ },
+ {
+  "input": "bouteille",
+  "output": "bouteille"
+ },
+ {
+  "input": "paquets",
+  "output": "paquet"
+ },
+ {
+  "input": "paquet",
+  "output": "paquet"
+ },
+ {
+  "input": "gâteaux",
+  "output": "gateau"
+ },
+ {
+  "input": "légumes",
+  "output": "legume"
+ }
+]

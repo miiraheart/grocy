@@ -2,7 +2,9 @@
 (function () {
 	if (!window.GC || !window.Grocy || Grocy.View !== "shoppinglist") return;
 	var S = GC.shop, CLASSIC = "gc.shop.classic", LAST = "gc.shop.list", FILTER = "gc.shop.filter.";
-	var state = { lists: [], rows: [], products: {}, groups: {}, stores: {}, units: {}, folders: [], config: null, filter: null, flash: null };
+	var state = { lists: [], rows: [], allRows: [], products: {}, groups: {}, stores: {}, units: {}, folders: [], config: null, filter: null, flash: null,
+		recipes: {}, conversions: [], inbox: { entries: [] } };
+	var H = GC.shopHooks;
 
 	function store(key, value) {
 		try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; }
@@ -21,7 +23,8 @@
 			GC.api("GET", "objects/shopping_lists"), GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + listId),
 			GC.api("GET", "objects/products"), GC.api("GET", "objects/product_groups"), GC.api("GET", "objects/shopping_locations"),
 			GC.api("GET", "objects/quantity_units"), GC.api("GET", "user/settings/al_folders").catch(function () { return null; }),
-			GC.api("GET", "objects/shopping_list")
+			GC.api("GET", "objects/shopping_list"), GC.api("GET", "objects/quantity_unit_conversions").catch(function () { return []; }),
+			GC.api("GET", "user/settings/al_inbox").catch(function () { return null; })
 		]).then(function (r) {
 			state.lists = r[0] || [];
 			var list = state.lists.filter(function (l) { return +l.id === listId; })[0] || state.lists[0];
@@ -30,9 +33,20 @@
 			state.products = byId(r[2]); state.groups = byId(r[3]); state.stores = byId(r[4]); state.units = byId(r[5]);
 			state.folders = ((S.json(r[6] && r[6].value) || {}).folders) || [];
 			state.remaining = {};
+			state.allRows = r[7] || [];
+			state.conversions = r[8] || [];
+			state.inbox = S.json(r[9] && r[9].value) || { v: 1, entries: [] };
 			(r[7] || []).forEach(function (row) { if (+row.done !== 1) state.remaining[row.shopping_list_id] = (state.remaining[row.shopping_list_id] || 0) + 1; });
 			store(LAST, String(state.config.id));
+			var wanted = state.rows.some(function (row) { return /\S/.test((row.userfields || {}).al_recipes || ""); });
+			return wanted ? GC.api("GET", "objects/recipes").then(function (rs) { (rs || []).forEach(function (x) { state.recipes[x.id] = x.name; }); }, function () { return null; }) : null;
 		});
+	}
+
+	/// The second line of a row with recipe shares: "3 + 2 for Poulet coco" (17-32).
+	function caption(row) {
+		var shares = S.json((row.userfields || {}).al_recipes);
+		return Array.isArray(shares) && S.merge ? S.merge.caption(+row.amount, shares, function (id) { return state.recipes[id]; }, GL.lang) : null;
 	}
 
 	function money(n) { return GL.money(n); }
@@ -52,6 +66,8 @@
 		var $title = $('<div class="gc-shop-name"></div>').text(S.nameOf(row, state.products)).appendTo($main);
 		var qty = quantity(row);
 		if (qty) $('<span class="gc-shop-qty"></span>').text(" (" + qty + ")").appendTo($title);
+		var cap = caption(row);
+		if (cap) $('<div class="gc-shop-caption"></div>').text(cap).appendTo($main);
 		if (note) $('<div class="gc-shop-note"></div>').text(note).appendTo($main);
 		var stores = S.ids(u.al_stores).map(function (id) { return (state.stores[id] || {}).name; }).filter(Boolean);
 		if (stores.length && cfg.showStoreNames) $('<div class="gc-shop-stores"></div>').text(stores.join(" · ")).appendTo($main);
@@ -80,6 +96,7 @@
 			$('<span></span>').text(label[slot] + " " + money(t[slot] || 0)).appendTo($bar);
 		});
 		if (t.missing) $('<span class="gc-shop-missing"></span>').text(GL.t("shop.noPrice", { n: t.missing })).appendTo($bar);
+		H.run("totals", $bar, state);
 		return $bar;
 	}
 
@@ -125,6 +142,7 @@
 				$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("title", GL.t(b[2])).attr("data-panel", b[0])
 					.append($('<i class="fa-solid"></i>').addClass(b[1])).on("click", function () { panel(b[0]); }).appendTo($h);
 			});
+		H.run("head", $h, state);
 		$('<button type="button" class="btn btn-sm btn-link gc-shop-classic"></button>').text(GL.t("shop.classic"))
 			.on("click", function () { store(CLASSIC, "1"); classic(true); }).appendTo($h);
 		return $h;
@@ -139,15 +157,17 @@
 		var cfg = viewConfig(), $root = $("#gc-shop").empty();
 		if (GC.shopLists) GC.shopLists.render($('<aside class="gc-shop-pane"></aside>').appendTo($root), state);
 		var $page = $('<section class="gc-shop-page"></section>').appendTo($root);
-		if (cfg.theme.banner) $page.css("--gc-shop-banner", cfg.theme.banner);
+		if (S.theme) $page.css(S.theme.style(cfg.theme, $("body").hasClass("night-mode")));
+		if (H.run("gate", $page, state)) return;
 		$page.append(header());
 		if (GC.shopAdd) GC.shopAdd.mount($('<div class="gc-shop-add"></div>').appendTo($page), state, function (result) {
 			state.flash = result && result.id;
 			refresh();
 		});
 		$page.append(filterBar());
+		H.run("top", $page, state);
 		var visible = state.rows.filter(function (r) { return S.matches(r, state.filter); });
-		S.sections(state.rows, cfg, state.products, state.groups, state.filter).forEach(function (section) {
+		H.order(S.sections(state.rows, cfg, state.products, state.groups, state.filter), state).forEach(function (section) {
 			if (section.name && cfg.headers) $('<h3 class="gc-shop-banner"></h3>').text(section.name).appendTo($page);
 			var $ul = $('<ul class="gc-shop-rows"></ul>').appendTo($page);
 			section.rows.forEach(function (row) { $ul.append(rowView(row)); });
@@ -155,6 +175,7 @@
 		if (!state.rows.length) $('<p class="gc-shop-empty"></p>').text(GL.t("shop.empty")).appendTo($page);
 		$page.append(totalsBar(visible));
 		if (S.diet) $('<p class="gc-shop-footer"></p>').text(GL.t("shop.dietVersion", { v: S.diet.version })).appendTo($page);
+		H.run("page", $page, state);
 		var $flash = $page.find(".is-flash")[0];
 		if ($flash) $flash.scrollIntoView({ block: "center" });
 		state.flash = null;
@@ -168,7 +189,7 @@
 		}, function (e) { toastr.error(e.message); });
 	}
 
-	GC.shopPage = { state: state, refresh: refresh, render: render, panel: panel, choose: choose };
+	GC.shopPage = { state: state, refresh: refresh, render: render, panel: panel, choose: choose, caption: caption };
 
 	function classic(on) {
 		$("body").toggleClass("gc-shop-on", !on);

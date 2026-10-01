@@ -1,0 +1,534 @@
+{
+ "about": "Shared inbox cases (17-32/17-33): parser, router and plan. Run by tests/shopping-rules.test.js (web GC.shop.inbox) and tests/app/InboxCasesFixtureTests.swift (InboxParser, ListRouter, InboxPlan). Catalog and rows are Grocy API shaped.",
+ "parser": [
+  {
+   "name": "a WhatsApp list loses its bullets, greetings and sign off",
+   "text": "Salut !\n- [ ] lait\n- 2 baguettes\n1. 500 g farine\n🥕 carottes\n* [x] œufs\nmerci bisous",
+   "expect": {
+    "names": [
+     "lait",
+     "baguettes",
+     "farine",
+     "carottes",
+     "œufs"
+    ],
+    "amounts": [
+     null,
+     2,
+     500,
+     null,
+     null
+    ],
+    "units": [
+     null,
+     null,
+     "g",
+     null,
+     null
+    ],
+    "minConfidence": 0.7
+   }
+  },
+  {
+   "name": "recipe ingredient lines keep their units",
+   "text": "200 g de farine\n2 càs huile d'olive\n3 oeufs",
+   "expect": {
+    "count": 3,
+    "names": [
+     "farine",
+     null,
+     "oeufs"
+    ],
+    "amounts": [
+     200,
+     2,
+     3
+    ],
+    "units": [
+     "g",
+     "tbsp",
+     null
+    ],
+    "nameContains": [
+     null,
+     "huile",
+     null
+    ]
+   }
+  },
+  {
+   "name": "headings and inline list names become list hints",
+   "text": "Biocoop:\nlait\npain\nPharmacie :\npansements\ncoton for the pharmacy list",
+   "expect": {
+    "hints": [
+     "Biocoop",
+     "Biocoop",
+     "Pharmacie",
+     "pharmacy list"
+    ],
+    "names": [
+     "lait",
+     "pain",
+     "pansements",
+     "coton"
+    ]
+   }
+  },
+  {
+   "name": "an inline pour names the list",
+   "text": "lait pour Biocoop",
+   "expect": {
+    "hints": [
+     "Biocoop"
+    ]
+   }
+  },
+  {
+   "name": "a lower case pour is not a list",
+   "text": "le truc pour le lave vaisselle",
+   "expect": {
+    "hints": [
+     null
+    ]
+   }
+  },
+  {
+   "name": "a chatty message is left to the model",
+   "text": "coucou, tu peux prendre du lait, 2 baguettes et le truc pour le lave vaisselle stp, merci",
+   "expect": {
+    "maxConfidence": 0.6999
+   }
+  },
+  {
+   "name": "an empty text",
+   "text": "",
+   "expect": {
+    "count": 0,
+    "confidence": 0
+   }
+  },
+  {
+   "name": "commas split and polite words go",
+   "text": "lait, pain, beurre stp",
+   "expect": {
+    "names": [
+     "lait",
+     "pain",
+     "beurre"
+    ],
+    "confidence": 1
+   }
+  },
+  {
+   "name": "a trailing amount and unit",
+   "text": "Riz basmati 250 g\n3x yaourts\nune botte de radis",
+   "expect": {
+    "names": [
+     "Riz basmati",
+     "yaourts",
+     "radis"
+    ],
+    "amounts": [
+     250,
+     3,
+     1
+    ],
+    "units": [
+     "g",
+     null,
+     "bunch"
+    ],
+    "qtyTexts": [
+     null,
+     null,
+     null
+    ]
+   }
+  }
+ ],
+ "route": {
+  "lists": [
+   {
+    "id": 1,
+    "name": "Courses",
+    "type": "grocery"
+   },
+   {
+    "id": 2,
+    "name": "Marché",
+    "type": "grocery"
+   },
+   {
+    "id": 3,
+    "name": "Pharmacie",
+    "type": "simple"
+   },
+   {
+    "id": 4,
+    "name": "Biocoop",
+    "type": "grocery"
+   }
+  ],
+  "productGroup": {
+   "41": 1,
+   "45": 3,
+   "46": 2,
+   "90": 3
+  },
+  "cases": [
+   {
+    "name": "a list named in the text wins",
+    "productId": 41,
+    "key": "p:41",
+    "hint": "Biocoop",
+    "expect": 4
+   },
+   {
+    "name": "the pharmacy list",
+    "productId": null,
+    "key": "t:coton",
+    "hint": "the pharmacy list",
+    "expect": 3
+   },
+   {
+    "name": "an unknown list name goes to the current list",
+    "productId": null,
+    "key": "t:coton",
+    "hint": "Carrefour",
+    "expect": 1
+   },
+   {
+    "name": "locked lists are skipped",
+    "locked": [
+     4
+    ],
+    "productId": 41,
+    "key": "p:41",
+    "hint": "Biocoop",
+    "expect": 1
+   },
+   {
+    "name": "a favorite comes first",
+    "productMemory": {
+     "41": {
+      "lists": {
+       "2": {
+        "recentAt": "2026-09-30 10:00:00"
+       },
+       "4": {
+        "fav": true
+       }
+      }
+     }
+    },
+    "productId": 41,
+    "key": "p:41",
+    "hint": null,
+    "expect": 4
+   },
+   {
+    "name": "then the latest recent",
+    "productMemory": {
+     "41": {
+      "lists": {
+       "2": {
+        "recentAt": "2026-09-30 10:00:00"
+       }
+      }
+     }
+    },
+    "productId": 41,
+    "key": "p:41",
+    "hint": null,
+    "expect": 2
+   },
+   {
+    "name": "free text uses the list memory",
+    "listMemory": {
+     "3": {
+      "items": {
+       "t:coton": {
+        "recentAt": "2026-09-29 09:00:00"
+       }
+      }
+     }
+    },
+    "productId": null,
+    "key": "t:coton",
+    "hint": null,
+    "expect": 3
+   },
+   {
+    "name": "a list whose type fits the group",
+    "productMemory": {
+     "90": {
+      "lists": {
+       "3": {
+        "amount": 1
+       }
+      }
+     }
+    },
+    "productId": 45,
+    "key": "p:45",
+    "hint": null,
+    "expect": 3
+   },
+   {
+    "name": "no hint and no memory",
+    "productMemory": {
+     "90": {
+      "lists": {
+       "3": {
+        "amount": 1
+       }
+      }
+     }
+    },
+    "productId": 46,
+    "key": "p:46",
+    "hint": null,
+    "expect": 1
+   }
+  ]
+ },
+ "plan": {
+  "catalog": {
+   "products": [
+    {
+     "id": 41,
+     "name": "Lait demi-écrémé",
+     "active": 1
+    },
+    {
+     "id": 45,
+     "name": "Oeufs",
+     "active": 1
+    },
+    {
+     "id": 46,
+     "name": "Riz basmati",
+     "active": 1,
+     "userfields": {
+      "receipt_aliases": "riz long"
+     }
+    }
+   ],
+   "units": [
+    {
+     "id": 7,
+     "name": "kg"
+    },
+    {
+     "id": 8,
+     "name": "g"
+    },
+    {
+     "id": 9,
+     "name": "Piece"
+    }
+   ],
+   "groups": [],
+   "locations": [],
+   "stores": [],
+   "conversions": [],
+   "task_categories": []
+  },
+  "lists": [
+   {
+    "id": 1,
+    "name": "Courses"
+   },
+   {
+    "id": 2,
+    "name": "Marché"
+   }
+  ],
+  "rows": [
+   {
+    "id": 90,
+    "product_id": 46,
+    "amount": 1,
+    "shopping_list_id": 1,
+    "done": 0,
+    "qu_id": 7
+   },
+   {
+    "id": 11,
+    "product_id": 41,
+    "amount": 2,
+    "shopping_list_id": 1,
+    "done": 0
+   },
+   {
+    "id": 12,
+    "note": "pain au levain",
+    "amount": 1,
+    "shopping_list_id": 2,
+    "done": 0,
+    "userfields": {
+     "al_source": "inbox:e0"
+    }
+   }
+  ],
+  "currentListId": 1,
+  "cases": [
+   {
+    "name": "items are matched, routed, summed and merged with their row",
+    "text": "Riz basmati 250 g\n250 g riz basmati\nMarché:\nradis\nlait demi-écrémé",
+    "entryId": "e1",
+    "expect": [
+     {
+      "name": "Riz basmati",
+      "productId": 46,
+      "amount": 500,
+      "quId": 8,
+      "listId": 1,
+      "decision": {
+       "kind": "confirm",
+       "rowId": 90,
+       "current": 1,
+       "incoming": 0.5,
+       "sum": 1.5
+      },
+      "choice": "add",
+      "action": {
+       "kind": "add",
+       "amount": 0.5
+      }
+     },
+     {
+      "name": "radis",
+      "productId": null,
+      "amount": 1,
+      "quId": null,
+      "listId": 2,
+      "decision": {
+       "kind": "create"
+      },
+      "choice": "keep",
+      "action": {
+       "kind": "create"
+      }
+     },
+     {
+      "name": "Lait demi-écrémé",
+      "productId": 41,
+      "amount": 1,
+      "quId": null,
+      "listId": 2,
+      "decision": {
+       "kind": "create"
+      },
+      "choice": "keep",
+      "action": {
+       "kind": "create"
+      }
+     }
+    ],
+    "move": {
+     "line": 2,
+     "to": 1,
+     "expect": {
+      "decision": {
+       "kind": "confirm",
+       "rowId": 11,
+       "current": 2,
+       "incoming": 1,
+       "sum": 3
+      },
+      "choice": "keep"
+     }
+    }
+   },
+   {
+    "name": "a receipt alias matches and a kitchen unit with no Grocy unit stays as text",
+    "text": "Marché:\nriz long 2 boites\n3 tbsp miel",
+    "entryId": null,
+    "expect": [
+     {
+      "name": "Riz basmati",
+      "productId": 46,
+      "amount": 1,
+      "quId": null,
+      "listId": 2,
+      "qtyText": "2 box",
+      "decision": {
+       "kind": "create"
+      },
+      "choice": "keep",
+      "action": {
+       "kind": "create"
+      },
+      "draft": {
+       "amount": 1,
+       "qtyText": "2 box"
+      }
+     },
+     {
+      "name": "miel",
+      "productId": null,
+      "amount": 3,
+      "quId": null,
+      "listId": 2,
+      "decision": {
+       "kind": "create"
+      },
+      "choice": "keep",
+      "action": {
+       "kind": "create"
+      },
+      "draft": {
+       "amount": 1,
+       "qtyText": "3 tbsp"
+      }
+     }
+    ]
+   },
+   {
+    "name": "an entry already applied to a row changes nothing",
+    "text": "Marché:\npain au levain",
+    "entryId": "e0",
+    "expect": [
+     {
+      "name": "pain au levain",
+      "productId": null,
+      "amount": 1,
+      "listId": 2,
+      "decision": {
+       "kind": "noChange",
+       "rowId": 12
+      },
+      "choice": "keep",
+      "action": null
+     }
+    ]
+   },
+   {
+    "name": "a text without an entry asks before adding to a row",
+    "text": "Marché:\n2 pain au levain",
+    "entryId": null,
+    "expect": [
+     {
+      "name": "pain au levain",
+      "productId": null,
+      "amount": 2,
+      "listId": 2,
+      "decision": {
+       "kind": "confirm",
+       "rowId": 12,
+       "current": 1,
+       "incoming": 2,
+       "sum": 3
+      },
+      "choice": "add",
+      "action": {
+       "kind": "add",
+       "amount": 2
+      }
+     }
+    ]
+   }
+  ]
+ }
+}

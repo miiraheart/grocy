@@ -1,0 +1,239 @@
+<script>
+(function (root) {
+	/// The beyond AnyList rules of 17-26 to 17-28 as pure functions: SuggestionEngine (with ConsumptionRate, TripCadence,
+	/// FreshnessAmount), the store estimate and cheapest split, PutAwayDefaults and AisleLearner. Days are Grocy day strings.
+	var NO_DATE = "2999-12-31", DAY = 86400000, RANKS = { belowMin: 0, expired: 1, overdue: 2, predicted: 3, usual: 4 };
+	var PROTEIN_GROUPS = ["viande et poisson", "viande", "poisson", "meat and fish", "meat", "fish"];
+	var AISLE_WEIGHT = 0.4, AISLE_MIN = 5;
+
+	function make(fold) {
+		function dayNum(d) { var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(d || "")); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / DAY : null; }
+		function age(day, today) { var a = dayNum(day), b = dayNum(today); return a === null || b === null ? null : Math.round(b - a); }
+		function addDays(day, n) { return new Date((dayNum(day) + n) * DAY).toISOString().slice(0, 10); }
+		function byId(list) { var o = {}; (list || []).forEach(function (x) { o[x.id] = x; }); return o; }
+
+		function recent(pid, ctx, today) {
+			return (ctx.consumes || []).filter(function (e) { var a = age(e.day, today); return +e.productId === +pid && a !== null && a >= 0 && a < 90; });
+		}
+		function rate(pid, ctx, today) {
+			var used = recent(pid, ctx, today).filter(function (e) { return !e.spoiled; });
+			if (used.length < 3) return null;
+			var total = used.reduce(function (s, e) { return s + e.amount; }, 0);
+			return total > 0 ? { perDay: total / 90, events: used.length } : null;
+		}
+		function cover(r, stock) { return Math.floor(Math.max(stock, 0) / r.perDay); }
+		function spoilShare(pid, ctx, today) {
+			var ev = recent(pid, ctx, today), total = ev.reduce(function (s, e) { return s + e.amount; }, 0);
+			return total > 0 ? ev.filter(function (e) { return e.spoiled; }).reduce(function (s, e) { return s + e.amount; }, 0) / total : null;
+		}
+		function distinctAges(days, today, windowDays) {
+			var seen = {};
+			days.forEach(function (d) { var a = age(d, today); if (a !== null && a >= 0 && a < windowDays) seen[a] = true; });
+			return Object.keys(seen).map(Number).sort(function (a, b) { return b - a; });
+		}
+		function medianGap(ages) {
+			if (ages.length < 2) return null;
+			var gaps = ages.slice(1).map(function (x, i) { return ages[i] - x; }).sort(function (a, b) { return a - b; }), mid = Math.floor(gaps.length / 2);
+			var m = gaps.length % 2 === 0 ? (gaps[mid - 1] + gaps[mid]) / 2 : gaps[mid];
+			return Math.max(Math.round(m), 1);
+		}
+		function bought(ctx, pid) {
+			return (ctx.purchases || []).concat(ctx.receipts || []).filter(function (p) { return pid == null || +p.productId === +pid; }).map(function (p) { return p.day; });
+		}
+		function tripDays(ctx, today) { return distinctAges(bought(ctx, null), today, 120); }
+		function gap(ctx, today, setting) { if (setting > 0) return setting; var g = medianGap(tripDays(ctx, today)); return g === null ? 10 : g; }
+		function nextTrip(ctx, today, setting) {
+			var g = gap(ctx, today, setting), days = tripDays(ctx, today);
+			return days.length ? Math.max(g - days[days.length - 1], 1) : g;
+		}
+		function usual(pid, ctx, today) {
+			var ages = distinctAges(bought(ctx, pid), today, 90);
+			var every = ages.length >= 3 ? medianGap(ages) : null, last = ages[ages.length - 1];
+			return every !== null && last > every ? { every: every, lastAgo: last } : null;
+		}
+		function stockOf(ctx, pid) { var l = (ctx.levels || []).filter(function (x) { return +x.productId === +pid; })[0]; return l ? l.amount : 0; }
+		function groupName(product, groups) { var g = product && product.product_group_id ? groups[product.product_group_id] : null; return g ? fold(g.name) : ""; }
+		function isProtein(product, groups) { var n = groupName(product, groups); return n.indexOf("viande") >= 0 || n.indexOf("poisson") >= 0; }
+		function isFreezer(loc) { return !!loc && String(loc.is_freezer) === "1"; }
+		function purchaseFactor(p, conv) {
+			var pu = +p.qu_id_purchase, st = +p.qu_id_stock;
+			if (!pu || !st) return null;
+			if (pu === st) return 1;
+			var cands = (conv || []).filter(function (c) { return +c.product_id === +p.id; }).concat((conv || []).filter(function (c) { return c.product_id == null; }));
+			var d = cands.filter(function (c) { return +c.from_qu_id === pu && +c.to_qu_id === st; })[0];
+			if (d && +d.factor > 0) return +d.factor;
+			var r = cands.filter(function (c) { return +c.from_qu_id === st && +c.to_qu_id === pu; })[0];
+			return r && +r.factor > 0 ? 1 / +r.factor : null;
+		}
+		/// FreshnessAmount.plan: what is used until the trip after next, no more than keeps fresh, minus the stock.
+		function amountPlan(p, cat, stock, r, horizon, frozen, missing) {
+			var need;
+			if (r) {
+				var days = horizon, shelf = p ? +p.default_best_before_days : 0;
+				if (shelf > 0) days = Math.min(days, shelf);
+				if (!frozen && isProtein(p, cat.groups)) days = Math.min(days, 1);
+				need = r.perDay * days - stock;
+			} else need = missing == null ? 1 : missing;
+			need = Math.max(need, 0);
+			if (!p) return { amount: Math.max(Math.ceil(need), 1), unitId: null };
+			var f = purchaseFactor(p, cat.conversions);
+			if (f) return { amount: Math.max(Math.ceil(need / f - 1e-9), 1), unitId: +p.qu_id_purchase };
+			return { amount: Math.max(Math.ceil(need - 1e-9), 1), unitId: p.qu_id_stock ? +p.qu_id_stock : null };
+		}
+		/// SuggestionEngine.suggestions: below min, expired and overdue, predicted run outs and usuals, never on the list or snoozed.
+		function suggestions(ctx, cat, rows, memory, settings, today) {
+			var products = cat.byId || (cat.byId = byId(cat.products)), groups = cat.groups, locs = cat.locations, sources = settings.sources || ["belowMin", "expired", "predicted", "usuals"];
+			var on = {}, found = {}, trip = nextTrip(ctx, today, settings.nextTripDays), g = gap(ctx, today, settings.nextTripDays);
+			rows.forEach(function (r) { if (r.product_id) on[r.product_id] = true; });
+			var push = function (pid, reason) { (found[pid] = found[pid] || []).push(reason); };
+			if (sources.indexOf("belowMin") >= 0) (ctx.missing || []).forEach(function (m) {
+				var p = products[m.productId], min = p && p.min_stock_amount != null ? +p.min_stock_amount : m.amount;
+				push(m.productId, { kind: "belowMin", min: min });
+			});
+			if (sources.indexOf("expired") >= 0) {
+				(ctx.expired || []).forEach(function (x) { push(x.productId, { kind: "expired", day: x.day }); });
+				(ctx.overdue || []).forEach(function (x) { push(x.productId, { kind: "overdue", day: x.day }); });
+			}
+			if (sources.indexOf("predicted") >= 0) {
+				var used = {};
+				(ctx.consumes || []).forEach(function (e) { used[e.productId] = true; });
+				Object.keys(used).forEach(function (pid) { var r = rate(pid, ctx, today); if (!r) return; var c = cover(r, stockOf(ctx, pid)); if (c < trip + 1) push(+pid, { kind: "predicted", cover: c, trip: trip }); });
+			}
+			if (sources.indexOf("usuals") >= 0) {
+				var seen = {};
+				(ctx.purchases || []).concat(ctx.receipts || []).forEach(function (e) { seen[e.productId] = true; });
+				Object.keys(seen).forEach(function (pid) { var u = usual(pid, ctx, today); if (u) push(+pid, { kind: "usual", every: u.every, lastAgo: u.lastAgo }); });
+			}
+			return Object.keys(found).map(Number).filter(function (pid) {
+				var p = products[pid], until = (memory.snoozeUntil || {})[pid];
+				return !on[pid] && !(p && +p.active === 0) && !(until && until > today);
+			}).map(function (pid) {
+				var p = products[pid], r = rate(pid, ctx, today), miss = (ctx.missing || []).filter(function (m) { return +m.productId === pid; })[0];
+				var frozen = !!(memory.freezer || {})[pid] || (p && isFreezer((locs || []).filter(function (l) { return +l.id === +p.location_id; })[0]));
+				var plan = amountPlan(p, cat, stockOf(ctx, pid), r, trip + g, frozen, miss ? miss.amount : null), spoil = spoilShare(pid, ctx, today);
+				return { productId: pid, reasons: found[pid].sort(function (a, b) { return RANKS[a.kind] - RANKS[b.kind]; }), amount: plan.amount, unitId: plan.unitId,
+					spoilPercent: spoil !== null && spoil > 0.25 ? Math.round(spoil * 100) : null };
+			}).sort(function (a, b) {
+				var ra = RANKS[a.reasons[0].kind], rb = RANKS[b.reasons[0].kind];
+				if (ra !== rb) return ra - rb;
+				var na = (products[a.productId] || {}).name || "", nb = (products[b.productId] || {}).name || "";
+				return na !== nb ? na.localeCompare(nb, undefined, { numeric: true }) : a.productId - b.productId;
+			});
+		}
+
+		function num(v, lang) { return String(Math.round(v * 100) / 100).replace(".", lang === "fr" ? "," : "."); }
+		/// The weekday within 6 days ("Tue", "mar."), else the day and month.
+		function when(day, lang, today) {
+			var a = age(day, today);
+			if (a === null) return "";
+			var loc = lang === "fr" ? "fr-FR" : "en-US", d = new Date(dayNum(day) * DAY);
+			var opt = Math.abs(a) <= 6 ? { weekday: "short", timeZone: "UTC" } : { day: "numeric", month: "short", timeZone: "UTC" };
+			return new Intl.DateTimeFormat(loc, opt).format(d);
+		}
+		/// SuggestionReason.text and the spoil warning, in English or French.
+		function reasonText(r, lang, today) {
+			var fr = lang === "fr";
+			switch (r.kind) {
+			case "belowMin": return (fr ? "sous le minimum " : "below min ") + num(r.min, lang);
+			case "expired": return (fr ? "p\u00e9rim\u00e9 " : "expired ") + when(r.day, lang, today);
+			case "overdue": return (fr ? "\u00e9ch\u00e9ance " : "due ") + when(r.day, lang, today);
+			case "predicted":
+				if (r.cover <= 0) return fr ? "\u00e9puis\u00e9 aujourd'hui, prochaines courses dans " + r.trip + " j" : "runs out today, next trip in " + r.trip;
+				return fr ? "\u00e9puis\u00e9 dans " + r.cover + (r.cover <= 1 ? " jour" : " jours") + ", prochaines courses dans " + r.trip + " j"
+					: "runs out in " + r.cover + " days, next trip in " + r.trip;
+			default:
+				return fr ? (r.every <= 1 ? "chaque jour d'habitude" : "tous les " + r.every + " jours d'habitude") + ", dernier achat il y a " + r.lastAgo + " jours"
+					: "usually every " + r.every + " days, last " + r.lastAgo + " days ago";
+			}
+		}
+		function warning(s, lang) { return s.spoilPercent == null ? null : lang === "fr" ? s.spoilPercent + " % jet\u00e9 la derni\u00e8re fois" : "you threw away " + s.spoilPercent + " % last time"; }
+
+		/// Price sightings of one product (purchases and manual store prices), the latest per store.
+		function latestPrices(pid, ctx, storePrices) {
+			var seen = [];
+			(ctx.purchases || []).forEach(function (e) { if (+e.productId === +pid && e.price > 0 && e.storeId) seen.push({ storeId: +e.storeId, price: e.price, day: e.day }); });
+			Object.keys(storePrices || {}).forEach(function (id) { var s = storePrices[id]; if (+id && s && s.price > 0) seen.push({ storeId: +id, price: +s.price, day: s.at || "" }); });
+			var best = {};
+			seen.sort(function (a, b) { return a.day < b.day ? 1 : a.day > b.day ? -1 : 0; }).forEach(function (s) { if (!best[s.storeId] || s.day > best[s.storeId].day) best[s.storeId] = s; });
+			return best;
+		}
+		/// StoreEstimates.lines: per store totals over the open rows, and the cheapest split; null below two priced stores.
+		function estimate(rows, ctx, products, stores) {
+			var prices = rows.filter(function (r) { return +r.done !== 1 && r.product_id && products[r.product_id]; }).map(function (r) {
+				var u = r.userfields || {}, sp = ((JSON.parse(((products[r.product_id].userfields || {}).al_store_prices) || "{}") || {}).stores) || {};
+				var best = latestPrices(r.product_id, ctx, sp), by = {}, qty = parseFloat(u.al_price_qty) || +r.amount;
+				stores.forEach(function (s) { if (best[s]) by[s] = best[s].price * qty; });
+				return Object.keys(by).length ? { id: +r.id, by: by } : null;
+			}).filter(Boolean);
+			var lines = stores.map(function (s) {
+				var total = 0, missing = 0;
+				prices.forEach(function (p) { if (p.by[s] != null) total += p.by[s]; else missing++; });
+				return { storeId: s, total: Math.round(total * 100) / 100, missing: missing, priced: prices.some(function (p) { return p.by[s] != null; }) };
+			}).filter(function (l) { return l.priced; });
+			if (lines.length < 2) return null;
+			var cheapest = prices.reduce(function (s, p) { return s + Math.min.apply(null, Object.keys(p.by).map(function (k) { return p.by[k]; })); }, 0);
+			return { stores: lines, cheapest: Math.round(cheapest * 100) / 100 };
+		}
+
+		/// PutAwayDefaults.line: price (row, else the latest at the store), store (trip, the row's only one, the product's),
+		/// place (product default, the freezer for fresh protein), date (freezer days, product days, else never).
+		function putAwayLine(row, cat, tripStoreId, ctx, today) {
+			var products = cat.byId || (cat.byId = byId(cat.products)), p = row.product_id ? products[row.product_id] : null, u = row.userfields || {};
+			var stores = String(u.al_stores || "").split(",").map(Number).filter(Boolean);
+			var line = { itemId: +row.id, productId: p ? +p.id : null, amount: +row.amount, price: null, priceSource: "none", locationId: p && p.location_id ? +p.location_id : null,
+				bestBefore: NO_DATE, freshProtein: false, skip: !p };
+			line.storeId = tripStoreId || (stores.length === 1 ? stores[0] : null) || (p && p.shopping_location_id ? +p.shopping_location_id : null);
+			var rowPrice = parseFloat(String(u.al_price || "").replace(",", "."));
+			if (!isNaN(rowPrice)) { line.price = rowPrice; line.priceSource = "row"; }
+			else if (p && line.storeId && ctx) {
+				var sp = ((JSON.parse((p.userfields || {}).al_store_prices || "{}") || {}).stores) || {}, best = latestPrices(p.id, ctx, sp)[line.storeId];
+				if (best) { line.price = best.price; line.priceSource = "store"; }
+			}
+			var locs = cat.locations || [], home = p ? locs.filter(function (l) { return +l.id === +p.location_id; })[0] : null;
+			line.freshProtein = !!p && PROTEIN_GROUPS.indexOf(groupName(p, cat.groups)) >= 0 && !isFreezer(home);
+			var freezer = locs.filter(isFreezer)[0];
+			if (line.freshProtein && freezer) line.locationId = +freezer.id;
+			line.bestBefore = bestBefore(p, locs, line.locationId, today);
+			return line;
+		}
+		function bestBefore(p, locs, locationId, today) {
+			var loc = locs.filter(function (l) { return +l.id === +locationId; })[0];
+			if (isFreezer(loc) && p && +p.default_best_before_days_after_freezing > 0) return addDays(today, +p.default_best_before_days_after_freezing);
+			var days = p ? +p.default_best_before_days || 0 : 0;
+			return days === -1 ? NO_DATE : days > 0 ? addDays(today, days) : NO_DATE;
+		}
+		/// "I cook it within 24 hours": the fridge, best before tomorrow.
+		function cookSoon(line, p, locs, today) {
+			var fridge = (p && locs.filter(function (l) { return +l.id === +p.location_id && !isFreezer(l); })[0]) || locs.filter(function (l) { return !isFreezer(l); })[0];
+			return Object.assign({}, line, { cookSoon: true, locationId: fridge ? +fridge.id : null, bestBefore: addDays(today, 1) });
+		}
+
+		/// AisleLearner: the crossing order of one trip (5 rows at least) folded into the store's al_aisles.
+		function aisleKey(cat) { return cat.builtin ? "b:" + cat.builtin : cat.group ? "g:" + cat.group : "n:" + fold(cat.name); }
+		function learn(steps, doc) {
+			var out = { v: doc.v || 1, trips: (doc.trips || 0) + 1, cats: Object.assign({}, doc.cats), items: Object.assign({}, doc.items), useLearned: doc.useLearned !== false };
+			var n = steps.length, avg = function (old, x) { return old == null ? x : old + AISLE_WEIGHT * (x - old); };
+			if (!n) return doc;
+			steps.forEach(function (s, i) { var x = n > 1 ? i / (n - 1) : 0; out.cats[s.cat] = avg(out.cats[s.cat], x); out.items[s.item] = avg(out.items[s.item], x); });
+			return out;
+		}
+		function crossedSteps(crossed, since) {
+			var list = crossed.filter(function (c) { return c.at && c.at >= since; }).sort(function (a, b) { return a.at < b.at ? -1 : a.at > b.at ? 1 : 0; });
+			return list.length >= AISLE_MIN ? list.map(function (c) { return { cat: c.cat, item: c.item }; }) : null;
+		}
+		/// The set's order, except under a store with learned aisles (2 trips): known categories first in the learned order.
+		function categoryOrder(cats, aisles) {
+			if (!aisles || aisles.useLearned === false || (aisles.trips || 0) < 2 || !Object.keys(aisles.cats || {}).length) return cats;
+			var known = cats.filter(function (c) { return aisles.cats[aisleKey(c)] != null; }).sort(function (a, b) { return aisles.cats[aisleKey(a)] - aisles.cats[aisleKey(b)]; });
+			return known.concat(cats.filter(function (c) { return aisles.cats[aisleKey(c)] == null; }));
+		}
+
+		return { NO_DATE: NO_DATE, age: age, addDays: addDays, rate: rate, medianGap: medianGap, gap: gap, nextTrip: nextTrip, usual: usual, amountPlan: amountPlan,
+			suggestions: suggestions, reasonText: reasonText, warning: warning, when: when, latestPrices: latestPrices, estimate: estimate, putAwayLine: putAwayLine, bestBefore: bestBefore, cookSoon: cookSoon,
+			aisleKey: aisleKey, learn: learn, crossedSteps: crossedSteps, categoryOrder: categoryOrder, purchaseFactor: purchaseFactor };
+	}
+
+	if (typeof module !== "undefined" && module.exports) module.exports = { make: make };
+	else if (root.GC && root.GC.shop) root.GC.shop.beyond = make(root.GC.shop.fold);
+})(this);
+</script>

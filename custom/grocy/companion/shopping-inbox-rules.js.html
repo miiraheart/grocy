@@ -1,0 +1,277 @@
+<script>
+(function (root) {
+	/// The shopping inbox rules (17-32/17-33): ItemNameParser.items, InboxParser.rules, ListRouter, InboxPlan and the
+	/// al_inbox document, as pure functions. Shared cases in tests/inbox-cases.json.
+	var MAX_LINES = 200, MAX_LINE = 200, MAX_TEXT = 20000, MAX_ENTRIES = 50, MIN_CONFIDENCE = 0.7, MAX_LIST_WORDS = 5;
+	var QTY_PHRASES = ["a bunch", "a bag", "a box", "a can", "a bottle", "a dozen", "a cup", "a pinch", "a handful", "a jar", "a pack", "a piece", "a slice",
+		"a head", "a bundle", "une botte", "un sachet", "une boite", "un paquet", "une bouteille", "une douzaine", "une tasse", "une pincee", "une poignee",
+		"un pot", "une tranche", "une tete", "un bouquet"];
+	var GREETINGS = ["salut", "coucou", "bonjour", "bonsoir", "hello", "hi", "hey", "merci", "merci beaucoup", "bisous", "bises", "bisou", "thanks", "thank",
+		"thank you", "thx", "cheers", "love", "xoxo", "a plus", "a toute", "bonne journee"];
+	var POLITE = ["stp", "svp", "please", "plz", "merci"];
+	var STARTS = ["tu", "je", "j", "on", "il", "elle", "nous", "vous", "peux", "pourrais", "pense", "n'oublie", "oublie", "can", "could", "would", "you", "i",
+		"we", "don't", "dont", "remember", "est", "c'est"];
+	var ROUTE_SKIP = ["the", "list", "liste", "les", "des", "pour"];
+	var BULLETS = [/^[-*+\u2022\u00B7\u25AA\u25E6\u2023]?\s*\[[ xX\u2713]?\]\s*/, /^[-*+\u2022\u00B7\u25AA\u25E6\u2023\u2013\u2014]+\s*/, /^\d{1,3}[.)]\s+/];
+
+	function make(fold, merge, parseIngredient) {
+		function number(word) { return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(String(word).replace(",", ".")) ? parseFloat(String(word).replace(",", ".")) : null; }
+		function words(text) { return String(text).split(" ").filter(function (w) { return w.length; }); }
+		function format(v) { return v === Math.round(v) && Math.abs(v) < 1e15 ? String(Math.round(v)) : String(v); }
+		function canonical(word) { return merge.canonical(word); }
+
+		/// ItemNameParser.items: lines (200), then ", ", " and ", " et ", " & "; a leading or trailing amount and unit.
+		function parseOne(text) {
+			var w = words(text), n, first = w[0], last = w[w.length - 1];
+			if (!w.length) return { name: text };
+			if (first.length > 1 && /x$/.test(first) && (n = number(first.slice(0, -1))) !== null) return { name: w.slice(1).join(" "), amount: n };
+			var of = w.findIndex(function (x) { return x.toLowerCase() === "of" || x.toLowerCase() === "de"; });
+			if (of > 0 && of < w.length - 1 && QTY_PHRASES.indexOf(fold(w.slice(0, of).join(" "))) >= 0) return { name: w.slice(of + 1).join(" "), qtyText: w.slice(0, of).join(" ") };
+			if ((n = number(first)) !== null) {
+				var rest = w.slice(1);
+				if (rest.length && canonical(rest[0])) return { name: rest.slice(1).join(" "), amount: n, unitWord: rest[0] };
+				return { name: rest.join(" "), amount: n };
+			}
+			if (w.length >= 2 && (n = number(w[w.length - 2])) !== null && canonical(last)) return { name: w.slice(0, -2).join(" "), amount: n, unitWord: last };
+			if ((n = number(last)) !== null) return { name: w.slice(0, -1).join(" "), amount: n };
+			return { name: text };
+		}
+		function items(text) {
+			var out = [];
+			String(text).split("\n").filter(function (l) { return l.length; }).slice(0, MAX_LINES).forEach(function (raw) {
+				var pieces = [Array.from(raw).slice(0, MAX_LINE).join("")];
+				[", ", " and ", " et ", " & "].forEach(function (sep) { pieces = [].concat.apply([], pieces.map(function (p) { return p.split(sep); })); });
+				pieces.forEach(function (p) { var t = p.trim(); if (t) out.push(parseOne(t)); });
+			});
+			return out;
+		}
+
+		function stripBullet(line) {
+			var text = line.trim();
+			BULLETS.forEach(function (re) { text = text.replace(re, ""); });
+			var chars = Array.from(text), i = 0;
+			while (i < chars.length) {
+				var c = chars[i], cp = c.codePointAt(0);
+				if (cp === 0xFE0F || cp === 0x200D || /\p{Emoji_Presentation}/u.test(c) || (/\p{Emoji}/u.test(c) && cp > 0x2000)) i++; else break;
+			}
+			return chars.slice(i).join("").trim();
+		}
+		function isGreeting(text) {
+			var f = fold(String(text).replace(/!/g, ""));
+			if (GREETINGS.indexOf(f) >= 0) return true;
+			var w = f.split(" ").filter(Boolean);
+			return w.length <= 3 && w.length > 0 && GREETINGS.indexOf(w[0]) >= 0 && w.slice(1).every(function (x) { return Array.from(x).length <= 6; });
+		}
+		function withoutPolite(name) {
+			return words(name).filter(function (w) { return POLITE.indexOf(fold(w)) < 0; }).join(" ").replace(/^[\s\p{P}]+|[\s\p{P}]+$/gu, "");
+		}
+		function upperFirst(s) { var c = Array.from(s)[0] || ""; return c !== c.toLowerCase() && c === c.toUpperCase(); }
+		/// "lait pour Biocoop", "coton for the pharmacy list": the list part leaves the item.
+		function inlineList(line) {
+			var markers = [" pour la liste ", " pour ", " for the ", " for "];
+			for (var i = 0; i < markers.length; i++) {
+				var at = line.toLowerCase().lastIndexOf(markers[i]);
+				if (at < 0) continue;
+				var tail = line.slice(at + markers[i].length).trim(), low = tail.toLowerCase();
+				if (!tail || words(tail).length > 3 || !(upperFirst(tail) || /\slist$/.test(low) || low.indexOf("liste") === 0)) continue;
+				return { line: line.slice(0, at), list: tail };
+			}
+			return { line: line, list: null };
+		}
+		function parseLine(line) {
+			var split = inlineList(line), ing = parseIngredient(split.line);
+			if (ing.quantity != null && ing.unit && ing.name) return [{ name: ing.name, amount: ing.quantity, unit: ing.unit, qtyText: null, listHint: split.list }];
+			return items(split.line).map(function (p) {
+				var name = withoutPolite(p.name);
+				if (!name || isGreeting(name)) return null;
+				return { name: name, amount: p.amount == null ? null : p.amount, unit: p.unitWord ? canonical(p.unitWord) : null, qtyText: p.qtyText || null, listHint: split.list };
+			}).filter(Boolean);
+		}
+		function listShaped(item) {
+			var w = words(item.name).map(fold);
+			return w.length > 0 && w.length <= MAX_LIST_WORDS && item.name.indexOf("?") < 0 && STARTS.indexOf(w[0]) < 0;
+		}
+		/// InboxParser.rules: items and the share of lines that read as a list item.
+		function rules(text) {
+			var out = [], hint = null, considered = 0, good = 0;
+			Array.from(String(text || "")).slice(0, MAX_TEXT).join("").split(/\r\n|[\n\r\u2028\u2029\u0085\u000B\u000C]/).filter(function (l) { return l.length; }).slice(0, MAX_LINES).forEach(function (raw) {
+				var line = stripBullet(raw);
+				if (!line) return;
+				if (/:$/.test(line) && words(line.slice(0, -1)).length <= MAX_LIST_WORDS) { hint = line.slice(0, -1).trim(); return; }
+				var colon = line.indexOf(":");
+				if (colon >= 0) {
+					var head = line.slice(0, colon).trim();
+					if (head && words(head).length <= 3 && !/\p{N}/u.test(head)) { hint = head; line = line.slice(colon + 1).trim(); }
+				}
+				if (isGreeting(line)) return;
+				considered++;
+				var found = parseLine(line).map(function (it) { it.listHint = it.listHint || hint; return it; });
+				if (found.length && found.every(listShaped)) good++;
+				out = out.concat(found);
+			});
+			return { items: out, confidence: considered ? good / considered : 0 };
+		}
+
+		function routeWords(text) { return fold(text).split(" ").filter(function (w) { return w.length >= 3 && ROUTE_SKIP.indexOf(w) < 0; }); }
+		function similar(a, b) { if (a === b) return true; var n = Math.min(6, a.length, b.length); return n >= 5 && a.slice(0, n) === b.slice(0, n); }
+		function named(hint, lists) {
+			var said = routeWords(hint), best = null;
+			if (!said.length) return null;
+			lists.forEach(function (l) {
+				var name = routeWords(l.name);
+				if (!name.length || !name.every(function (w) { return said.some(function (s) { return similar(s, w); }); })) return;
+				if (!best || name.length > best.score) best = { id: l.id, score: name.length };
+			});
+			return best ? best.id : null;
+		}
+		function entryOf(ctx, pid, key, list) {
+			if (pid != null) return (((ctx.productMemory[pid] || {}).lists) || {})[String(list.id)] || null;
+			return ((list.memory || {}).items || {})[key] || null;
+		}
+		/// ListRouter.route: a list named in the text, the item's list memory, a list whose type fits, the current list.
+		function route(pid, key, hint, ctx) {
+			var open = ctx.lists.filter(function (l) { return !l.locked; }), hit;
+			if (hint && (hit = named(hint, open)) !== null) return hit;
+			var entries = open.map(function (l) { var e = entryOf(ctx, pid, key, l); return e ? [l.id, e] : null; }).filter(Boolean);
+			var fav = entries.filter(function (e) { return e[1].fav === true; })[0];
+			if (fav) return fav[0];
+			var recent = entries.filter(function (e) { return e[1].recentAt != null; }).reduce(function (m, e) { return !m || (e[1].recentAt || "") > (m[1].recentAt || "") ? e : m; }, null);
+			if (recent) return recent[0];
+			if (entries.length === 1) return entries[0][0];
+			if (pid != null && (hit = typeFit(pid, open, ctx)) !== null) return hit;
+			return ctx.currentListId;
+		}
+		function typeFit(pid, lists, ctx) {
+			var group = ctx.productGroup[pid], counts = {};
+			if (group == null) return null;
+			Object.keys(ctx.productGroup).forEach(function (other) {
+				if (+ctx.productGroup[other] !== +group || +other === +pid || !ctx.productMemory[other]) return;
+				lists.forEach(function (l) { if ((ctx.productMemory[other].lists || {})[String(l.id)]) counts[l.type] = (counts[l.type] || 0) + 1; });
+			});
+			var ranked = Object.keys(counts).map(function (t) { return [t, counts[t]]; }).sort(function (a, b) { return b[1] - a[1]; });
+			if (!ranked.length || (ranked.length > 1 && ranked[1][1] >= ranked[0][1])) return null;
+			var current = lists.filter(function (l) { return +l.id === +ctx.currentListId; })[0];
+			if (current && current.type === ranked[0][0]) return current.id;
+			var first = lists.filter(function (l) { return l.type === ranked[0][0]; })[0];
+			return first ? first.id : null;
+		}
+
+		function matchProduct(name, products) {
+			var f = fold(name);
+			var p = (products || []).filter(function (x) {
+				if (+x.active === 0) return false;
+				if (fold(x.name) === f) return true;
+				return String(((x.userfields || {}).receipt_aliases) || "").split(",").map(fold).indexOf(f) >= 0;
+			})[0];
+			return p ? +p.id : null;
+		}
+		function resolveUnit(key, units) {
+			var u = (units || []).filter(function (x) { return merge.canonical(x.name) === key || (x.name_plural && merge.canonical(x.name_plural) === key); })[0];
+			return u ? +u.id : null;
+		}
+		function unitRef(line, units) {
+			var u = line.quId != null ? (units || []).filter(function (x) { return +x.id === +line.quId; })[0] : null;
+			if (u) return { grocy: { id: +u.id, name: u.name } };
+			return line.unitKey && merge.KITCHEN[line.unitKey] ? { kitchen: line.unitKey } : null;
+		}
+		function keyOf(line) { return line.productId != null ? "p:" + line.productId : "t:" + fold(line.name); }
+		function rowKey(r) { return r.product_id ? "p:" + r.product_id : "t:" + fold(r.note || ""); }
+		function json(t) { try { return t ? JSON.parse(t) : null; } catch (e) { return null; } }
+		/// ContributionRow of a Grocy shopping_list row (al_qty_text, al_recipes, al_source and the processed entries).
+		function contributionRow(r, units, processed) {
+			var u = r.userfields || {}, ids = (processed[r.id] || []).slice(), src = u.al_source || "";
+			if (src.indexOf(merge.INBOX) === 0) ids.push(src.slice(merge.INBOX.length));
+			var unit = r.qu_id ? (units || []).filter(function (x) { return +x.id === +r.qu_id; })[0] : null;
+			return { id: +r.id, amount: +r.amount, unit: unit ? { grocy: { id: +unit.id, name: unit.name } } : null, qtyText: u.al_qty_text || null,
+				done: +r.done === 1, shares: Array.isArray(json(u.al_recipes)) ? json(u.al_recipes) : [], inboxIds: ids };
+		}
+		function decided(line, entryId, snap) {
+			var key = keyOf(line);
+			var cands = snap.rows.filter(function (r) { return +r.shopping_list_id === +line.listId && rowKey(r) === key; });
+			var row = cands.filter(function (r) { return +r.done !== 1; })[0] || cands[0];
+			var incoming = { source: entryId ? { kind: "inbox", id: entryId } : { kind: "manual" }, amount: line.amount, unit: unitRef(line, snap.units),
+				qtyText: line.qtyText, productId: line.productId, productName: line.name };
+			line.decision = merge.decide(row ? contributionRow(row, snap.units, snap.processed || {}) : null, incoming, snap.conversions);
+			line.choice = merge.defaultChoice(line.decision, line.explicit);
+			return line;
+		}
+		/// InboxPlan.build: matched, routed, summed in one text, then merged with the row already on the list.
+		function plan(found, entryId, snap) {
+			var lines = [];
+			found.slice(0, MAX_LINES).forEach(function (item) {
+				var pid = matchProduct(item.name, snap.products);
+				var prod = pid != null ? snap.products.filter(function (p) { return +p.id === pid; })[0] : null;
+				var name = prod ? prod.name : item.name, key = pid != null ? "p:" + pid : "t:" + fold(name);
+				var quId = item.unit ? resolveUnit(item.unit, snap.units) : null;
+				var line = { id: lines.length, name: name, productId: pid, amount: item.amount == null ? 1 : item.amount, quId: quId,
+					unitKey: quId == null ? item.unit || null : null, qtyText: item.qtyText || null, listId: route(pid, key, item.listHint, snap.route),
+					explicit: item.amount != null || !!item.qtyText, included: true };
+				if (quId == null && item.unit && !merge.KITCHEN[item.unit] && !item.qtyText) { line.qtyText = format(line.amount) + " " + item.unit; line.amount = 1; }
+				var same = lines.filter(function (l) { return l.listId === line.listId && keyOf(l) === key; })[0];
+				if (same) {
+					var add = merge.convert({ amount: line.amount, unit: unitRef(line, snap.units), qtyText: line.qtyText, productId: line.productId, productName: line.name },
+						{ amount: same.amount, unit: unitRef(same, snap.units), qtyText: same.qtyText }, snap.conversions);
+					if (add != null) same.amount = merge.round(same.amount + add);
+					same.explicit = same.explicit || line.explicit;
+					return;
+				}
+				lines.push(line);
+			});
+			return lines.map(function (l) { return decided(l, entryId, snap); });
+		}
+		function moved(line, listId, entryId, snap) { return decided(Object.assign({}, line, { listId: listId }), entryId, snap); }
+		/// InboxPlanLine.applyLine: what one reviewed line writes.
+		function applyLine(line) {
+			if (!line.included) return null;
+			var d = line.decision, draft = { name: line.name, productId: line.productId, amount: line.amount, quId: line.quId, qtyText: line.qtyText };
+			if (line.quId == null && !line.qtyText && line.unitKey && line.unitKey !== "piece") { draft.qtyText = format(line.amount) + " " + line.unitKey; draft.amount = 1; }
+			var base = { listId: line.listId, draft: draft, rowId: d.rowId == null ? null : d.rowId };
+			if (d.kind === "create") return Object.assign(base, { action: { kind: "create" } });
+			if (d.kind === "noChange" || d.kind === "replaceShare") return null;
+			if (d.kind === "reopen") return Object.assign(base, { action: { kind: "reopen", amount: d.amount } });
+			var c = line.choice;
+			if (c.kind === "add") return Object.assign(base, { action: d.kind === "confirm" ? { kind: "add", amount: d.incoming } : { kind: "keep" } });
+			if (c.kind === "set") return Object.assign(base, { action: { kind: "set", amount: c.amount, note: c.note || null } });
+			return Object.assign(base, { action: { kind: "keep" } });
+		}
+		function adds(line) {
+			if (!line.included) return false;
+			var k = line.decision.kind;
+			return k === "create" || k === "reopen" || (k === "confirm" && line.choice.kind === "add");
+		}
+
+		/// al_inbox: adds an entry (text capped); past 50 the oldest done go first, then dismissed, then new.
+		function insert(doc, entry) {
+			doc.entries = doc.entries || [];
+			entry.text = Array.from(entry.text).slice(0, MAX_TEXT).join("");
+			doc.entries.push(entry);
+			["done", "dismissed", "new"].forEach(function (status) {
+				while (doc.entries.length > MAX_ENTRIES) {
+					var idx = -1;
+					doc.entries.forEach(function (e, i) { if (e.status === status && (idx < 0 || e.created < doc.entries[idx].created)) idx = i; });
+					if (idx < 0) break;
+					doc.entries.splice(idx, 1);
+				}
+			});
+			return doc;
+		}
+		function processedRows(doc) {
+			var out = {};
+			((doc && doc.entries) || []).forEach(function (e) { (e.processed || []).forEach(function (id) { (out[id] = out[id] || []).push(e.id); }); });
+			return out;
+		}
+		function title(text) {
+			var lines = String(text).split(/\r?\n/).filter(function (l) { return l.length; });
+			var first = lines.filter(function (l) { return !isGreeting(l); })[0] || lines[0] || String(text);
+			return Array.from(first).slice(0, 60).join("");
+		}
+
+		return { MIN_CONFIDENCE: MIN_CONFIDENCE, MAX_TEXT: MAX_TEXT, items: items, stripBullet: stripBullet, isGreeting: isGreeting, inlineList: inlineList,
+			rules: rules, route: route, named: named, matchProduct: matchProduct, resolveUnit: resolveUnit, contributionRow: contributionRow, plan: plan,
+			moved: moved, decided: decided, applyLine: applyLine, adds: adds, insert: insert, processedRows: processedRows, title: title, format: format };
+	}
+
+	if (typeof module !== "undefined" && module.exports) module.exports = { make: make };
+	else if (root.GC && root.GC.shop && root.GC.shop.merge && root.GCT) root.GC.shop.inbox = make(root.GC.shop.fold, root.GC.shop.merge, root.GCT.parseLine);
+})(this);
+</script>

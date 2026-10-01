@@ -114,6 +114,20 @@ saveWithTest("receipt-commit.json", workflow("receiptCommit0001", "Kitchen: rece
   respond(440),
 ], [["Webhook", "Commit"], ["Commit", "Respond"]]), "receiptCommitTest0001");
 
+// The shopping inbox reader (17-33): texts the inbox rules cannot read become items; it never writes Grocy.
+const inboxRespond = { ...respond(880), id: "respond-inbox" };
+saveWithTest("shopping-inbox.json", { ...workflow("shoppingInbox0001", "Kitchen: shopping inbox", [
+  webhook("shopping-inbox"),
+  code("Prepare", read("shopping-inbox", "prepare.js"), 220),
+  ifTrue("Needs model?", "needs_model", 440),
+  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 20000, 660, -120),
+  code("Reply", read("shopping-inbox", "reply.js"), 880, -120),
+  inboxRespond,
+], [
+  ["Webhook", "Prepare"], ["Prepare", "Needs model?"], ["Needs model?", "OpenRouter", 0], ["Needs model?", "Respond", 1],
+  ["OpenRouter", "Reply"], ["Reply", "Respond"],
+]), active: false }, "shoppingInboxTest0001");
+
 // Accepts the older TikTok secret and webhook.secret (what the iOS share extension sends).
 const tiktok = { ...workflow("tiktokRecipe0001", "TikTok -> Grocy recipe", [
   { id: "a1", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], webhookId: "tiktok-recipe",

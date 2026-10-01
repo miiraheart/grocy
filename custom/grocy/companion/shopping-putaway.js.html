@@ -1,0 +1,121 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop;
+
+	function crossed(state) { return state.rows.filter(function (r) { return +r.done === 1; }); }
+
+	/// One row: added to stock with its line, then deleted from the list; a failed delete takes back exactly that add.
+	function storeOne(row, line, purchased) {
+		var body = { amount: line.amount, best_before_date: line.bestBefore, purchased_date: purchased };
+		if (line.price != null) body.price = line.price;
+		if (line.locationId) body.location_id = line.locationId;
+		if (line.storeId) body.shopping_location_id = line.storeId;
+		return GC.api("POST", "stock/products/" + line.productId + "/add", body).then(function (res) {
+			var tx = (Array.isArray(res) ? res : [res]).map(function (e) { return e && e.transaction_id; }).filter(Boolean)[0] || null;
+			return GC.api("DELETE", "objects/shopping_list/" + row.id).then(function () { return { row: row, tx: tx }; }, function (err) {
+				return (tx ? GC.api("POST", "stock/transactions/" + tx + "/undo") : Promise.resolve()).then(function () { throw err; });
+			});
+		});
+	}
+	function restore(stored) {
+		var r = stored.row, cols = { shopping_list_id: r.shopping_list_id, amount: r.amount, done: 1 };
+		["product_id", "qu_id", "note"].forEach(function (k) { if (r[k] != null && r[k] !== "") cols[k] = r[k]; });
+		return (stored.tx ? GC.api("POST", "stock/transactions/" + stored.tx + "/undo") : Promise.resolve()).then(function () {
+			return GC.api("POST", "objects/shopping_list", cols);
+		}).then(function (c) {
+			var uf = {};
+			Object.keys(r.userfields || {}).forEach(function (k) { if (r.userfields[k] != null && r.userfields[k] !== "") uf[k] = r.userfields[k]; });
+			return Object.keys(uf).length ? GC.api("PUT", "userfields/shopping_list/" + c.created_object_id, uf) : null;
+		});
+	}
+
+	function options($s, list, value, empty) {
+		if (empty) $("<option></option>").val("").text(empty).appendTo($s);
+		list.forEach(function (x) { $("<option></option>").val(x.id).text(x.name).prop("selected", +x.id === +value).appendTo($s); });
+		return $s;
+	}
+
+	/// Put Away (17-28): every crossed row starts from the defaults (price, store, place, date), she fixes the exceptions.
+	function open(state) {
+		var $body = $('<div class="gc-putaway"></div>').append($('<p class="gc-loading"></p>').text(GL.t("loading")));
+		var dlg = bootbox.dialog({ title: GL.t("put.title"), message: $body, size: "large", onEscape: true, backdrop: true, className: "gc-panel-dialog",
+			buttons: { cancel: { label: GL.t("cancel"), className: "btn-secondary" }, ok: { label: GL.t("put.go"), className: "btn-primary gc-put-go", callback: function () { go(); return false; } } } });
+		var lines = [], locs = [], trip = GC.shopTrip ? GC.shopTrip.current(state) : null, $date, day = GC.today();
+		var stores = Object.keys(state.stores).map(function (id) { return state.stores[id]; });
+
+		function draw() {
+			$body.empty();
+			$date = $('<input type="date" class="form-control form-control-sm">').val(day).on("change", function () { day = this.value || GC.today(); });
+			$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("put.date"))).append($date).appendTo($body);
+			var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+			lines.forEach(function (l) {
+				var row = l.row, $li = $('<li class="gc-put-row"></li>').toggleClass("is-off", !l.on).appendTo($ul);
+				var $head = $('<div class="gc-put-head"></div>').appendTo($li);
+				$('<input type="checkbox">').prop("checked", l.on).prop("disabled", l.line.skip).on("change", function () { l.on = this.checked; $li.toggleClass("is-off", !l.on); }).appendTo($head);
+				$("<strong></strong>").text(S.nameOf(row, state.products)).appendTo($head);
+				if (l.line.skip) { $('<small class="gc-panel-caption"></small>').text(GL.t("put.noProduct")).appendTo($head); return; }
+				var $f = $('<div class="gc-put-fields"></div>').appendTo($li), line = l.line;
+				var field = function (label, $c, write) { $c.on("change", function () { write(this.value); }); $('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t(label))).append($c).appendTo($f); };
+				field("shop.quantity", $('<input type="number" step="any" min="0" class="form-control form-control-sm">').val(line.amount), function (v) { line.amount = S.num(v) || line.amount; });
+				field("shop.price", $('<input inputmode="decimal" class="form-control form-control-sm">').val(line.price == null ? "" : line.price).attr("title", GL.t("put.src." + line.priceSource)), function (v) { line.price = S.num(v); });
+				field("put.store", options($('<select class="custom-select custom-select-sm"></select>'), stores, line.storeId, " "), function (v) { line.storeId = +v || null; });
+				field("put.place", options($('<select class="custom-select custom-select-sm"></select>'), locs, line.locationId), function (v) {
+					line.locationId = +v; line.bestBefore = S.beyond.bestBefore(state.products[line.productId], locs, line.locationId, GC.today()); draw();
+				});
+				field("put.bestBefore", $('<input type="date" class="form-control form-control-sm">').val(line.bestBefore === S.beyond.NO_DATE ? "" : line.bestBefore), function (v) { line.bestBefore = v || S.beyond.NO_DATE; });
+				if (line.freshProtein || line.cookSoon) {
+					var $c = $('<input type="checkbox">').prop("checked", !!line.cookSoon).on("change", function () {
+						l.line = this.checked ? S.beyond.cookSoon(line, state.products[line.productId], locs, GC.today()) : S.beyond.putAwayLine(row, l.cat, trip && trip.storeId, l.ctx, GC.today());
+						draw();
+					});
+					$('<label class="gc-edit-check"></label>').append($c).append($("<span></span>").text(GL.t("put.cookSoon"))).appendTo($f);
+				}
+			});
+			dlg.find(".gc-put-go").text(GL.t("put.goN", { n: lines.filter(function (l) { return l.on; }).length }));
+		}
+
+		function go() {
+			var picked = lines.filter(function (l) { return l.on && !l.line.skip; }), stored = [], failures = [], purchased = day;
+			if (!picked.length) return;
+			dlg.find(".gc-put-go").prop("disabled", true);
+			picked.reduce(function (chain, l) {
+				return chain.then(function () {
+					return storeOne(l.row, l.line, purchased).then(function (s) { stored.push(s); }, function (e) { failures.push(S.nameOf(l.row, state.products) + ": " + e.message); });
+				});
+			}, Promise.resolve()).then(function () {
+				return Promise.all(stored.map(function (s) {
+					return GC.shopEdit.remember(s.row, state.config.id, function (m) { m.recentAt = S.stamp(); delete m.recentHidden; }).catch(function () { return null; });
+				}));
+			}).then(function () {
+				dlg.modal("hide");
+				if (failures.length) toastr.error(GL.t("put.failed", { list: failures.join("; ") }));
+				if (stored.length) GC.agendaUI.undoBar(GL.t("put.done", { n: stored.length }), function () { return stored.reduce(function (c, s) { return c.then(function () { return restore(s); }); }, Promise.resolve()); }, GC.shopPage.refresh);
+				if (GC.shopTray) GC.shopTray.reset();
+				GC.shopPage.refresh();
+			});
+		}
+
+		Promise.all([GC.api("GET", "objects/locations"), GC.shopTray ? GC.shopTray.context().catch(function () { return null; }) : null]).then(function (r) {
+			locs = r[0] || [];
+			var cat = { products: Object.keys(state.products).map(function (id) { return state.products[id]; }), byId: state.products, groups: state.groups, locations: locs };
+			lines = crossed(state).map(function (row) {
+				var line = S.beyond.putAwayLine(row, cat, trip && trip.storeId, r[1], GC.today());
+				return { row: row, line: line, on: !line.skip, cat: cat, ctx: r[1] };
+			});
+			if (!lines.length) { $body.empty().append($('<p class="gc-shop-empty"></p>').text(GL.t("put.none"))); return; }
+			draw();
+		}, function (e) { $body.empty().append($('<p class="gc-note gc-note-err"></p>').text(e.message)); });
+	}
+
+	GC.shopHooks.on("head", function ($h, state) {
+		var n = crossed(state).length;
+		if (!n) return;
+		$('<button type="button" class="btn btn-sm btn-outline-secondary gc-shop-putaway"></button>').attr("title", GL.t("put.title"))
+			.append('<i class="fa-solid fa-box-archive"></i> ').append($("<span></span>").text(GL.t("put.short", { n: n })))
+			.on("click", function () { open(state); }).appendTo($h);
+	});
+
+	GC.shopPutAway = { open: open, storeOne: storeOne, restore: restore };
+})();
+</script>

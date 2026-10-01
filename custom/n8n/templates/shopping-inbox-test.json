@@ -1,0 +1,198 @@
+{
+ "id": "shoppingInboxTest0001",
+ "name": "Kitchen: shopping inbox (TEST: grocy-test)",
+ "active": false,
+ "nodes": [
+  {
+   "id": "shopping-inbox-hook",
+   "name": "Webhook",
+   "type": "n8n-nodes-base.webhook",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "webhookId": "shopping-inbox-test",
+   "parameters": {
+    "httpMethod": "POST",
+    "path": "shopping-inbox-test",
+    "responseMode": "responseNode",
+    "options": {}
+   }
+  },
+  {
+   "id": "prepare",
+   "name": "Prepare",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    220,
+    0
+   ],
+   "parameters": {
+    "jsCode": "// Kitchen: shopping inbox, Prepare. A text the inbox rules could not read (app or web, 17-32/17-33) becomes one\n// structured OpenRouter request on free models. Nothing is written anywhere; the reply only lists items.\nconst SECRET = \"__WEBHOOK_SECRET__\";\nconst TWIN = true;\nconst MODELS = [\"nvidia/nemotron-3-super-120b-a12b:free\", \"nvidia/nemotron-3-super-120b-a12b:free\"];\nconst MAX_TEXT = 20000;\nconst req = $input.first().json;\nconst headers = req.headers || {};\nconst stop = (http_status, reply) => [{ json: { http_status, reply, needs_model: false } }];\nif (headers[\"x-trigger-secret\"] !== SECRET) return stop(401, { ok: false, error: \"unauthorized\" });\n\nconst body = req.body || {};\nconst text = typeof body.text === \"string\" ? body.text.trim() : \"\";\nif (!text) return stop(400, { ok: false, error: \"text required\" });\nif (text.length > MAX_TEXT) return stop(413, { ok: false, error: \"text over \" + MAX_TEXT + \" characters\" });\nconst lists = (Array.isArray(body.lists) ? body.lists : []).filter((l) => typeof l === \"string\" && l.trim()).map((l) => l.trim().slice(0, 80)).slice(0, 50);\n\n// The app's extractor prompt (IntakePrompt.inboxExtractRules) and schema (InboxExtractor.schema).\nconst system = [\n  \"You read a message, a note or a pasted list and return only the things to buy in it.\",\n  \"- One item per thing to buy, named as the text names it, without articles (\\\"du lait\\\" is \\\"lait\\\").\",\n  \"- amount: the number given (\\\"2 baguettes\\\" is 2), null when none. unit: g, kg, ml, cl, l, tbsp, tsp or null.\",\n  \"- A vague thing stays one item named by what it is for (\\\"le truc pour le lave vaisselle\\\" is \\\"produit lave-vaisselle\\\").\",\n  \"- list: the list a heading or the text names for the item (\\\"Biocoop:\\\", \\\"pour la pharmacie\\\"), else null. Lists: \" + lists.join(\", \") + \".\",\n  \"- Greetings, thanks, sign offs, questions and chat are not items.\",\n  \"- Keep the language of the text: never translate a name.\",\n].join(\"\\n\");\nconst schema = {\n  type: \"object\",\n  properties: { items: { type: \"array\", items: { type: \"object\", properties: {\n    name: { type: \"string\" }, amount: { type: [\"number\", \"null\"] }, unit: { type: [\"string\", \"null\"] }, list: { type: [\"string\", \"null\"] },\n  }, required: [\"name\", \"amount\", \"unit\", \"list\"], additionalProperties: false } } },\n  required: [\"items\"], additionalProperties: false,\n};\nconst openrouter_body = {\n  models: MODELS, temperature: 0, max_tokens: 2000,\n  messages: [{ role: \"system\", content: system }, { role: \"user\", content: text }],\n  response_format: { type: \"json_schema\", json_schema: { name: \"shopping_inbox\", strict: true, schema } },\n};\nreturn [{ json: { needs_model: true, twin: TWIN, lists, openrouter_body } }];\n"
+   }
+  },
+  {
+   "id": "needs-model-",
+   "name": "Needs model?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2,
+   "position": [
+    440,
+    0
+   ],
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "typeValidation": "loose"
+     },
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "c-needs_model",
+       "leftValue": "={{ $json.needs_model }}",
+       "rightValue": true,
+       "operator": {
+        "type": "boolean",
+        "operation": "true",
+        "singleValue": true
+       }
+      }
+     ]
+    },
+    "options": {}
+   }
+  },
+  {
+   "id": "openrouter",
+   "name": "OpenRouter",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    660,
+    -120
+   ],
+   "credentials": {
+    "openRouterApi": {
+     "id": "orTestKey0000001",
+     "name": "OpenRouter test"
+    }
+   },
+   "onError": "continueRegularOutput",
+   "parameters": {
+    "method": "POST",
+    "url": "https://openrouter.ai/api/v1/chat/completions",
+    "authentication": "predefinedCredentialType",
+    "nodeCredentialType": "openRouterApi",
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify($json.openrouter_body) }}",
+    "options": {
+     "timeout": 20000
+    }
+   }
+  },
+  {
+   "id": "reply",
+   "name": "Reply",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    880,
+    -120
+   ],
+   "parameters": {
+    "jsCode": "// Kitchen: shopping inbox, Reply. Checks the model answer like InboxExtractor.parse: names not empty, amounts positive,\n// units short, list_hint only from the lists the caller sent. The caller reviews everything before any write.\nconst MAX_ITEMS = 200;\nconst prep = $(\"Prepare\").first().json;\nconst res = $input.first().json || {};\nconst fail = (error) => [{ json: { http_status: 502, reply: { ok: false, error } } }];\nconst content = res.choices && res.choices[0] && res.choices[0].message && res.choices[0].message.content;\nif (res.error || typeof content !== \"string\") return fail(\"model failed: \" + ((res.error && res.error.message) || \"no answer\"));\n\nlet parsed;\ntry { parsed = JSON.parse(content.replace(/^\\s*```(?:json)?|```\\s*$/g, \"\").trim()); } catch (e) { return fail(\"model answer is not JSON\"); }\nif (!parsed || !Array.isArray(parsed.items)) return fail(\"model answer has no items\");\n\nconst fold = (s) => String(s || \"\").toLowerCase().normalize(\"NFKD\").replace(/[̀-ͯ]/g, \"\").replace(/\\s+/g, \" \").trim();\nconst byFold = new Map(prep.lists.map((l) => [fold(l), l]));\nconst items = parsed.items.slice(0, MAX_ITEMS).map((it) => {\n  const name = typeof it.name === \"string\" ? it.name.trim().slice(0, 120) : \"\";\n  if (!name) return null;\n  const amount = typeof it.amount === \"number\" && Number.isFinite(it.amount) && it.amount > 0 ? it.amount : null;\n  const unit = typeof it.unit === \"string\" && it.unit.trim() && it.unit.trim().length <= 20 ? it.unit.trim().toLowerCase() : null;\n  const list_hint = typeof it.list === \"string\" ? byFold.get(fold(it.list)) || null : null;\n  return { name, amount, unit, note: null, list_hint };\n}).filter(Boolean);\nreturn [{ json: { http_status: 200, reply: { ok: true, items, parser: \"openrouter:\" + (res.model || \"unknown\") } } }];\n"
+   }
+  },
+  {
+   "id": "respond-inbox",
+   "name": "Respond",
+   "type": "n8n-nodes-base.respondToWebhook",
+   "typeVersion": 1.1,
+   "position": [
+    880,
+    0
+   ],
+   "parameters": {
+    "respondWith": "json",
+    "responseBody": "={{ JSON.stringify($json.reply) }}",
+    "options": {
+     "responseCode": "={{ $json.http_status || 200 }}"
+    }
+   }
+  }
+ ],
+ "connections": {
+  "Webhook": {
+   "main": [
+    [
+     {
+      "node": "Prepare",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Prepare": {
+   "main": [
+    [
+     {
+      "node": "Needs model?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Needs model?": {
+   "main": [
+    [
+     {
+      "node": "OpenRouter",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Respond",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "OpenRouter": {
+   "main": [
+    [
+     {
+      "node": "Reply",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Reply": {
+   "main": [
+    [
+     {
+      "node": "Respond",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "settings": {
+  "executionOrder": "v1",
+  "timezone": "Europe/Paris",
+  "saveDataSuccessExecution": "all"
+ },
+ "pinData": {}
+}

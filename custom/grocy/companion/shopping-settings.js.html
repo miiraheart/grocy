@@ -1,0 +1,183 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, TH = S.theme, UNLOCKED = "gc.shop.unlocked";
+	var ICONS = ["cart", "basket", "leaf", "fork.knife", "house", "gift", "airplane"];
+	var FA = { cart: "fa-cart-shopping", basket: "fa-basket-shopping", leaf: "fa-leaf", "fork.knife": "fa-utensils", house: "fa-house", gift: "fa-gift", airplane: "fa-plane" };
+
+	function set(state, field, value) {
+		var body = {};
+		body[field] = value == null ? "" : value;
+		return GC.api("PUT", "userfields/shopping_lists/" + state.config.id, body);
+	}
+	function onOff(v) { return v ? "on" : "off"; }
+	function mainListId(state) { return Math.min.apply(null, state.lists.map(function (l) { return +l.id; })); }
+
+	function row($form, label, $control) {
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t(label))).append($control).appendTo($form);
+		return $control;
+	}
+	function select(options, value) {
+		var $s = $('<select class="custom-select custom-select-sm"></select>');
+		options.forEach(function (o) { $("<option></option>").val(o[0]).text(GL.t(o[1])).prop("selected", o[0] === value).appendTo($s); });
+		return $s;
+	}
+	function toggle($form, label, on, write) {
+		var $c = $('<input type="checkbox">').prop("checked", on).on("change", function () { write(this.checked); });
+		$('<label class="gc-edit-check"></label>').append($c).append($("<span></span>").text(GL.t(label))).appendTo($form);
+	}
+
+	/// Theme swatches: grocy first, then AnyList's 9 colours, then Custom with its contrast check (17-21).
+	function themes(state, pending) {
+		var cfg = state.config, current = TH.read(cfg.theme), $box = $('<div class="gc-themes" role="radiogroup"></div>');
+		TH.OFFERED.forEach(function (t) {
+			var on = current.id === t.id;
+			$('<button type="button" class="gc-theme-swatch"></button>').toggleClass("is-soft", !!t.soft).toggleClass("is-on", on).attr({ role: "radio", "aria-checked": on ? "true" : "false", title: GL.t("ltheme." + t.name) })
+				.css(t.soft ? {} : { background: t.light }).append(on ? '<i class="fa-solid fa-check"></i>' : "")
+				.on("click", function () { pending.push(set(state, "al_theme", JSON.stringify({ id: t.id }))); $box.replaceWith(themes(Object.assign({}, state, { config: Object.assign({}, cfg, { theme: { id: t.id } }) }), pending)); })
+				.appendTo($box);
+		});
+		var $custom = $('<div class="gc-theme-custom"></div>').appendTo($box), mine = cfg.theme && cfg.theme.id === "custom" ? cfg.theme : {};
+		var $banner = $('<input type="color">').val(mine.banner || TH.ANYLIST[0].light), $text = $('<input type="color">').val(mine.bannerText || "#ffffff");
+		var $item = $('<input type="color">').val(mine.text || "#1c1c1e");
+		[["ltheme.banner", $banner], ["ltheme.bannerText", $text], ["ltheme.item", $item]].forEach(function (p) { $('<label></label>').append($("<span></span>").text(GL.t(p[0]))).append(p[1]).appendTo($custom); });
+		var $why = $('<p class="gc-note gc-note-warn"></p>').hide();
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("ltheme.useCustom")).appendTo($custom).on("click", function () {
+			var t = { id: "custom", banner: $banner.val().toUpperCase(), bannerText: $text.val().toUpperCase(), text: $item.val().toUpperCase() };
+			var bad = TH.problems(t);
+			$why.toggle(bad.length > 0).text(bad.map(function (b) { return GL.t("ltheme.problem." + b); }).join(" "));
+			if (!bad.length) pending.push(set(state, "al_theme", JSON.stringify(t)));
+		});
+		$custom.append($why);
+		return $box;
+	}
+
+	/// Passcode: a new code twice, stored as a salted SHA-256 like the app (never the code itself).
+	function passcode(state, done) {
+		var $f = $('<div class="gc-edit"></div>');
+		var $a = row($f, "pass.new", $('<input type="password" inputmode="numeric" maxlength="4" class="form-control form-control-sm">'));
+		var $b = row($f, "pass.confirm", $('<input type="password" inputmode="numeric" maxlength="4" class="form-control form-control-sm">'));
+		bootbox.dialog({ title: GL.t("pass.title"), message: $f, buttons: { cancel: { label: GL.t("cancel"), className: "btn-secondary" }, ok: { label: GL.t("save"), className: "btn-primary", callback: function () {
+			if (!/^\d{4}$/.test($a.val()) || $a.val() !== $b.val()) { toastr.warning(GL.t("pass.mismatch")); return false; }
+			TH.hash($a.val(), TH.salt(function (x) { return crypto.getRandomValues(x); }), crypto.subtle).then(function (h) { return set(state, "al_passcode", h); }).then(done, function (e) { toastr.error(e.message); });
+		} } } });
+	}
+
+	function duplicate(state) {
+		bootbox.prompt({ title: GL.t("list.duplicate"), value: GL.t("list.copyName", { name: state.config.name }), callback: function (name) {
+			name = (name || "").trim();
+			if (!name) return;
+			if (state.lists.some(function (l) { return S.fold(l.name) === S.fold(name); })) { toastr.warning(GL.t("list.exists")); return false; }
+			GC.api("GET", "userfields/shopping_lists/" + state.config.id).then(function (uf) {
+				var values = {};
+				Object.keys(uf || {}).forEach(function (k) { if (uf[k] !== null && uf[k] !== "" && k !== "al_passcode") values[k] = uf[k]; });
+				return GC.api("POST", "objects/shopping_lists", { name: name }).then(function (c) {
+					var id = +c.created_object_id;
+					return GC.api("PUT", "userfields/shopping_lists/" + id, values).then(function () {
+						return state.rows.reduce(function (chain, r) {
+							return chain.then(function () {
+								var cols = { shopping_list_id: id, amount: r.amount, done: r.done };
+								["product_id", "qu_id", "note"].forEach(function (k) { if (r[k] != null && r[k] !== "") cols[k] = r[k]; });
+								return GC.api("POST", "objects/shopping_list", cols).then(function (x) {
+									var v = {};
+									Object.keys(r.userfields || {}).forEach(function (k) { if (r.userfields[k] !== null && r.userfields[k] !== "") v[k] = r.userfields[k]; });
+									if (Grocy.UserId > 0) v.al_added_by = String(Grocy.UserId);
+									return Object.keys(v).length ? GC.api("PUT", "userfields/shopping_list/" + x.created_object_id, v) : null;
+								});
+							});
+						}, Promise.resolve()).then(function () { location.href = GC.url("/shoppinglist?list=" + id); });
+					});
+				});
+			}).catch(function (e) { toastr.error(e.message); });
+		} });
+	}
+
+	function remove(state) {
+		if (+state.config.id === mainListId(state)) { bootbox.alert(GL.t("list.mainRefused")); return; }
+		bootbox.confirm(GL.t("list.deleteConfirm", { name: state.config.name }), function (ok) {
+			if (!ok) return;
+			Promise.all(state.rows.map(function (r) { return GC.api("DELETE", "objects/shopping_list/" + r.id); }))
+				.then(function () { return GC.api("DELETE", "objects/shopping_lists/" + state.config.id); })
+				.then(function () { location.href = GC.url("/shoppinglist?list=" + mainListId(state)); }, function (e) { toastr.error(e.message); });
+		});
+	}
+
+	/// List Settings (S-08): every row writes its own userfield, the list redraws when the sheet closes.
+	function open(state) {
+		var cfg = state.config, pending = [], $f = $('<div class="gc-edit gc-list-settings"></div>');
+		var $name = row($f, "shop.name", $('<input class="form-control form-control-sm">').val(cfg.name)).on("change", function () {
+			var n = this.value.trim(); if (n && n !== cfg.name) pending.push(GC.api("PUT", "objects/shopping_lists/" + cfg.id, { name: n }));
+		});
+		var $icon = row($f, "list.icon", $('<div class="gc-icons" role="radiogroup"></div>'));
+		ICONS.forEach(function (ic) {
+			$('<button type="button" class="gc-icon-pick"></button>').toggleClass("is-on", cfg.icon === ic).attr("aria-label", ic).append($('<i class="fa-solid"></i>').addClass(FA[ic]))
+				.on("click", function () { $icon.find(".is-on").removeClass("is-on"); $(this).addClass("is-on"); pending.push(set(state, "al_icon", ic)); }).appendTo($icon);
+		});
+		row($f, "list.theme", themes(state, pending));
+		row($f, "list.type", select([["grocery", "list.type.grocery"], ["categorized", "list.type.categorized"], ["simple", "list.type.simple"]], cfg.type)).on("change", function () {
+			var v = this.value, $s = $(this);
+			if (v === "simple" && cfg.headers && !window.confirm(GL.t("list.basicConfirm"))) { $s.val(cfg.type); return; }
+			pending.push(set(state, "al_type", v));
+		});
+		row($f, "list.sort", select([["manual", "list.sort.manual"], ["alpha", "list.sort.alpha"]], cfg.sort)).on("change", function () { pending.push(set(state, "al_sort", this.value)); });
+		row($f, "list.insert", select([["bottom", "list.insert.bottom"], ["top", "list.insert.top"]], cfg.insert)).on("change", function () { pending.push(set(state, "al_insert", this.value)); });
+		toggle($f, "list.headers", cfg.headers, function (v) { pending.push(set(state, "al_headers", onOff(v))); });
+		toggle($f, "shop.hideCrossed", cfg.hideCrossed, function (v) { pending.push(set(state, "al_hide_crossed", onOff(v))); });
+		toggle($f, "list.autocomplete", cfg.autocomplete, function (v) { pending.push(set(state, "al_autocomplete", onOff(v))); });
+		toggle($f, "list.prices", cfg.showPrices, function (v) { pending.push(set(state, "al_show_prices", onOff(v))); });
+		toggle($f, "list.storeNames", cfg.showStoreNames, function (v) { pending.push(set(state, "al_show_store_names", onOff(v))); });
+		toggle($f, "list.totals", cfg.totals, function (v) { pending.push(set(state, "al_totals", onOff(v))); });
+		var slots = [["all", "shop.total.all"], ["crossed", "shop.total.crossed"], ["remaining", "shop.total.remaining"]];
+		row($f, "list.totalLeft", select(slots, cfg.totalLeft)).on("change", function () { pending.push(set(state, "al_total_left", this.value)); });
+		row($f, "list.totalRight", select(slots, cfg.totalRight)).on("change", function () { pending.push(set(state, "al_total_right", this.value)); });
+		var $stores = row($f, "shop.stores", $('<select multiple class="custom-select custom-select-sm"></select>'));
+		Object.keys(state.stores).forEach(function (id) { $("<option></option>").val(id).text(state.stores[id].name).prop("selected", cfg.stores.indexOf(+id) >= 0).appendTo($stores); });
+		$stores.on("change", function () { pending.push(set(state, "al_stores", ($stores.val() || []).join(","))); });
+		var $tools = $('<div class="gc-inline gc-list-tools"></div>').appendTo($f);
+		var finish = function () { Promise.all(pending).then(GC.shopPage.refresh, function (e) { toastr.error(e.message); GC.shopPage.refresh(); }); };
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t(cfg.locked ? "pass.change" : "pass.on")).appendTo($tools)
+			.on("click", function () { bootbox.hideAll(); passcode(state, GC.shopPage.refresh); });
+		if (cfg.locked) $('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("pass.off")).appendTo($tools)
+			.on("click", function () { set(state, "al_passcode", "").then(function () { bootbox.hideAll(); GC.shopPage.refresh(); }); });
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("list.duplicate")).appendTo($tools).on("click", function () { bootbox.hideAll(); duplicate(state); });
+		$('<button type="button" class="btn btn-sm btn-outline-danger"></button>').text(GL.t("list.delete")).appendTo($tools).on("click", function () { bootbox.hideAll(); remove(state); });
+		bootbox.dialog({ title: GL.t("list.settings"), message: $f, size: "large", onEscape: finish, backdrop: true,
+			buttons: { done: { label: GL.t("list.done"), className: "btn-primary", callback: finish } } });
+	}
+
+	/// A locked list asks its 4 digits before showing (after 3 wrong codes it waits 30 seconds); unlocked for this tab.
+	var failures = 0, waitUntil = 0;
+	function unlocked(id) { try { return (sessionStorage.getItem(UNLOCKED) || "").split(",").indexOf(String(id)) >= 0; } catch (e) { return false; } }
+	function unlock(id) { try { sessionStorage.setItem(UNLOCKED, ((sessionStorage.getItem(UNLOCKED) || "") + "," + id).replace(/^,/, "")); } catch (e) { /* private mode */ } }
+	GC.shopHooks.on("gate", function ($page, state) {
+		var cfg = state.config, stored = (state.lists.filter(function (l) { return +l.id === cfg.id; })[0].userfields || {}).al_passcode;
+		if (!cfg.locked || unlocked(cfg.id)) return false;
+		var $g = $('<div class="gc-shop-gate"></div>').appendTo($page);
+		$('<h2 class="gc-shop-title"></h2>').text(cfg.name).appendTo($g);
+		$('<p></p>').append('<i class="fa-solid fa-lock"></i> ').append(document.createTextNode(GL.t("pass.enter"))).appendTo($g);
+		var $in = $('<input type="password" inputmode="numeric" maxlength="4" class="form-control gc-pass-input">').attr("aria-label", GL.t("pass.enter")).appendTo($g);
+		var $msg = $('<p class="gc-note gc-note-warn" role="alert"></p>').hide().appendTo($g);
+		$in.on("input", function () {
+			if (this.value.length < 4) return;
+			if (Date.now() < waitUntil) { $msg.show().text(GL.t("pass.wait", { n: Math.ceil((waitUntil - Date.now()) / 1000) })); this.value = ""; return; }
+			var code = this.value;
+			this.value = "";
+			TH.matches(code, stored, crypto.subtle).then(function (ok) {
+				if (ok) { failures = 0; unlock(cfg.id); GC.shopPage.render(); return; }
+				failures++;
+				if (failures >= 3) { failures = 0; waitUntil = Date.now() + 30000; }
+				$msg.show().text(GL.t("pass.wrong"));
+			});
+		});
+		setTimeout(function () { $in.trigger("focus"); }, 50);
+		return true;
+	});
+
+	GC.shopHooks.on("head", function ($h, state) {
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("title", GL.t("list.settings")).attr("data-panel", "settings")
+			.append('<i class="fa-solid fa-sliders"></i>').on("click", function () { open(state); }).appendTo($h);
+	});
+
+	GC.shopSettings = { open: open, passcode: passcode, duplicate: duplicate, remove: remove, ICONS: ICONS, FA: FA };
+})();
+</script>

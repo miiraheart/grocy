@@ -1,0 +1,165 @@
+<script>
+(function (root) {
+	/// One row per product (17-32 rules contract): the web copy of ContributionMerge, ContributionCaption,
+	/// RecipeShareSync.combine/removed and KitchenUnitConverter. Pure; shared cases in tests/contribution-cases.json.
+	var KITCHEN = {
+		g: ["mass", 1], kg: ["mass", 1000], ml: ["volume", 1], cl: ["volume", 10], dl: ["volume", 100], l: ["volume", 1000],
+		tsp: ["spoon", 5], tbsp: ["spoon", 15], cup: ["cup", 240], oz: ["mass", 28.35], lb: ["mass", 453.6], fl_oz: ["volume", 29.57],
+		pinch: ["pinch", null], clove: ["count", null], bunch: ["count", null], can: ["count", null], sachet: ["count", null],
+		slice: ["count", null], piece: ["count", null]
+	};
+	var GROCY_NAMES = { "c.à.s.": "tbsp", "c.à.c.": "tsp", "pincée": "pinch", "tasse": "cup" };
+	var ALIASES = {
+		g: "g", gram: "g", gramme: "g", kg: "kg", kilogram: "kg", kilogramme: "kg", ml: "ml", milliliter: "ml", millilitre: "ml",
+		l: "l", liter: "l", litre: "l", cl: "cl", centiliter: "cl", centilitre: "cl", pc: "piece", pce: "piece", piece: "piece",
+		pkt: "pkt", pkg: "pkt", "package": "pkt", paquet: "pkt", boite: "box", box: "box", can: "can", bottle: "bottle", bouteille: "bottle",
+		dozen: "dozen", douzaine: "dozen", cup: "cup", tasse: "cup", tbsp: "tbsp", tablespoon: "tbsp", "c a s": "tbsp", "cuillere a soupe": "tbsp",
+		tsp: "tsp", teaspoon: "tsp", "c a c": "tsp", "cuillere a cafe": "tsp", oz: "oz", ounce: "oz", lb: "lb", pound: "lb", livre: "lb"
+	};
+	var DENSITIES = [
+		[["farine de riz", "rice flour"], 0.53], [["farine de chataigne", "chestnut flour"], 0.5], [["farine", "flour"], 0.53],
+		[["fecule", "starch"], 0.6], [["huile", "oil"], 0.92], [["sucre", "sugar"], 0.85], [["sel", "salt"], 1.2], [["miel", "honey"], 1.42],
+		[["beurre", "butter"], 0.96], [["cacao", "cocoa"], 0.42], [["epice", "spice"], 0.5], [["riz", "rice"], 0.85],
+		[["lait vegetal", "plant milk"], 1.0], [["eau", "water", "lait", "milk"], 1.0]
+	];
+	var INBOX = "inbox:";
+
+	function make(fold) {
+		function round(v) { return Math.round(v * 1000) / 1000; }
+		function dimension(family) { return family === "mass" ? "mass" : family === "volume" || family === "spoon" || family === "cup" ? "volume" : null; }
+		/// A unit is {kitchen: "g"} or {grocy: {id, name}}.
+		function baseKey(ref) {
+			if (!ref) return null;
+			if (ref.kitchen) return ref.kitchen;
+			var lower = String(ref.grocy.name || "").toLowerCase();
+			return GROCY_NAMES[lower] || (KITCHEN[lower] ? lower : null);
+		}
+		function canonical(word) { return ALIASES[fold(word)] || null; }
+		function kitchen(ref) {
+			if (!ref || !ref.grocy || baseKey(ref) !== null) return ref;
+			var key = canonical(ref.grocy.name);
+			return key && KITCHEN[key] ? { kitchen: key } : ref;
+		}
+		function equal(a, b) { return a.kitchen ? a.kitchen === b.kitchen : !!b.grocy && +a.grocy.id === +b.grocy.id; }
+		function sameUnit(a, b) {
+			if (equal(a, b)) return true;
+			var l = baseKey(kitchen(a)), r = baseKey(kitchen(b));
+			return l !== null && r !== null && l === r;
+		}
+		function grocyFactor(conv, from, to, pid) {
+			if (!from || !to || !from.grocy || !to.grocy) return null;
+			var f = +from.grocy.id, t = +to.grocy.id, rows = conv || [];
+			var find = function (a, b, own) { return rows.filter(function (c) { return +c.from_qu_id === a && +c.to_qu_id === b && (own ? c.product_id != null && +c.product_id === +pid : c.product_id == null); })[0]; };
+			var row = (pid != null && find(f, t, true)) || find(f, t, false);
+			if (row) return +row.factor;
+			row = (pid != null && find(t, f, true)) || find(t, f, false);
+			return row && +row.factor !== 0 ? 1 / +row.factor : null;
+		}
+		function kitchenParts(from, to) {
+			var a = baseKey(from), b = baseKey(to);
+			if (!a || !b || !KITCHEN[a] || !KITCHEN[b]) return null;
+			var da = dimension(KITCHEN[a][0]), db = dimension(KITCHEN[b][0]);
+			if (!da || !db || KITCHEN[a][1] == null || KITCHEN[b][1] == null) return null;
+			return { da: da, db: db, fa: KITCHEN[a][1], fb: KITCHEN[b][1] };
+		}
+		function density(name) {
+			var folded = String(name || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+			for (var i = 0; i < DENSITIES.length; i++) if (DENSITIES[i][0].some(function (k) { return folded.indexOf(k) !== -1; })) return DENSITIES[i][1];
+			return null;
+		}
+		/// Grocy conversions first (product rows win), then kitchen factors, then the density table.
+		function convertUnits(amount, from, to, conv, pid, pname) {
+			var f = grocyFactor(conv, from, to, pid);
+			if (f != null) return amount * f;
+			var k = kitchenParts(from, to);
+			if (k && k.da === k.db) return amount * (k.fa / k.fb);
+			var d = pname ? density(pname) : null;
+			if (k && d) return k.da === "volume" ? amount * (k.fa * d / k.fb) : amount * (k.fa / d / k.fb);
+			return null;
+		}
+		/// The incoming amount in the row's unit; null when no conversion exists (nothing is summed silently).
+		function convert(incoming, row, conv) {
+			if (incoming.qtyText) return row.qtyText && fold(row.qtyText) === fold(incoming.qtyText) ? 1 : null;
+			if (row.qtyText) return null;
+			var from = incoming.unit, to = row.unit;
+			if (!from || !to || sameUnit(from, to)) return incoming.amount;
+			var v = convertUnits(incoming.amount, from, to, conv, incoming.productId, incoming.productName);
+			return v != null ? v : convertUnits(incoming.amount, kitchen(from), kitchen(to), conv, incoming.productId, incoming.productName);
+		}
+		function total(shares) { return (shares || []).reduce(function (s, x) { return s + (+x.amount || 0); }, 0); }
+		function sameShare(a, b) { return +a.recipe === +b.recipe && (a.mealPlan == null ? null : +a.mealPlan) === (b.mealPlan == null ? null : +b.mealPlan); }
+		/// A share of the same recipe and plan entry is replaced, others appended; the manual extra stays.
+		function combine(amount, existing, adding) {
+			var shares = (existing || []).slice(), a = amount;
+			adding.forEach(function (share) {
+				var i = shares.findIndex(function (s) { return sameShare(s, share); });
+				if (i >= 0) { a -= shares[i].amount; shares[i] = share; } else shares.push(share);
+				a += share.amount;
+			});
+			return { amount: round(Math.max(a, total(shares))), shares: shares };
+		}
+		/// RecipeShareSync.removed: the share leaves, the manual extra is never reduced.
+		function removeShare(amount, shares, recipeId, mealPlanId) {
+			var extra = Math.max(0, amount - total(shares));
+			var next = (shares || []).filter(function (s) { return !((recipeId == null || +s.recipe === +recipeId) && (mealPlanId == null || +s.mealPlan === +mealPlanId)); });
+			if (next.length === (shares || []).length) return null;
+			var a = round(extra + total(next));
+			return { amount: a > 0.0001 ? a : amount, shares: next };
+		}
+		function describe(incoming) {
+			if (incoming.qtyText) return incoming.qtyText;
+			var n = String(round(incoming.amount)), u = incoming.unit;
+			return !u ? n : n + " " + (u.kitchen || u.grocy.name);
+		}
+		function decide(row, incoming, conv) {
+			if (!row) return { kind: "create" };
+			var src = incoming.source || { kind: "manual" };
+			if (src.kind === "inbox" && (row.inboxIds || []).indexOf(src.id) >= 0) return { kind: "noChange", rowId: row.id };
+			if (src.kind === "recipe" && !row.done) {
+				var same = (row.shares || []).filter(function (s) { return sameShare(s, src.share); })[0];
+				var a0 = same ? convert(incoming, row, conv) : null;
+				if (same && a0 != null && Math.abs(same.amount - round(a0)) < 0.0001) return { kind: "noChange", rowId: row.id };
+			}
+			var amount = convert(incoming, row, conv);
+			if (amount == null) return { kind: "confirmUnconvertible", rowId: row.id, current: row.amount, incoming: describe(incoming) };
+			var converted = round(amount), share = null;
+			if (src.kind === "recipe") { share = Object.assign({}, src.share, { amount: converted }); delete share.qu; }
+			if (row.done) return { kind: "reopen", rowId: row.id, amount: converted, shares: share ? [share] : [] };
+			if (share) { var r = combine(row.amount, row.shares, [share]); return { kind: "replaceShare", rowId: row.id, amount: r.amount, shares: r.shares }; }
+			return { kind: "confirm", rowId: row.id, current: row.amount, incoming: converted, sum: round(row.amount + converted) };
+		}
+		function asks(d) { return d.kind === "confirm" || d.kind === "confirmUnconvertible"; }
+		/// What Add, Keep current or Set amount writes; null = no write.
+		function resolve(d, choice) {
+			if (choice.kind === "keep") return null;
+			if (choice.kind === "add") return d.kind === "confirm" ? { amount: d.sum, note: null } : null;
+			if (!asks(d) || !(choice.amount > 0) || !isFinite(choice.amount)) return null;
+			return { amount: round(choice.amount), note: choice.note || null };
+		}
+		function defaultChoice(d, explicit) { return d.kind === "confirm" && explicit ? { kind: "add" } : { kind: "keep" }; }
+		function number(v, lang) { return String(round(v)).replace(".", lang === "fr" ? "," : "."); }
+		function shortDay(day, lang) {
+			var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(day || ""));
+			if (!m) return null;
+			return new Intl.DateTimeFormat(lang === "fr" ? "fr-FR" : "en-US", { weekday: "short", timeZone: "UTC" }).format(new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])));
+		}
+		/// "3 + 2 for Poulet coco + 1 for Dal (Thu)": the manual extra first, then each share in the row unit.
+		function caption(amount, shares, recipeName, lang) {
+			if (!shares || !shares.length) return null;
+			var parts = [], extra = round(amount - total(shares)), word = lang === "fr" ? " pour " : " for ";
+			if (extra > 0.0001) parts.push(number(extra, lang));
+			shares.forEach(function (s) {
+				var day = s.mealPlan != null && s.day ? shortDay(s.day, lang) : null;
+				parts.push(number(s.amount, lang) + word + (recipeName(s.recipe) || "") + (day ? " (" + day + ")" : ""));
+			});
+			return parts.join(" + ");
+		}
+		return { KITCHEN: KITCHEN, INBOX: INBOX, round: round, baseKey: baseKey, canonical: canonical, kitchen: kitchen, sameUnit: sameUnit,
+			convertUnits: convertUnits, convert: convert, combine: combine, removeShare: removeShare, total: total, decide: decide, asks: asks,
+			resolve: resolve, defaultChoice: defaultChoice, caption: caption, number: number };
+	}
+
+	if (typeof module !== "undefined" && module.exports) module.exports = { make: make };
+	else if (root.GC && root.GC.shop) root.GC.shop.merge = make(root.GC.shop.fold);
+})(this);
+</script>

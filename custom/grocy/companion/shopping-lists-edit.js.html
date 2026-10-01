@@ -1,0 +1,89 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, FOLDERS = "user/settings/al_folders";
+
+	/// al_folders (user setting shared with the app): fresh read, change, write, read back, 3 tries.
+	function folders(mutate, tries) {
+		tries = tries || 1;
+		var read = function () { return GC.api("GET", FOLDERS).then(function (r) { var d = S.json(r && r.value) || {}; d.v = d.v || 1; d.folders = d.folders || []; return d; }, function () { return { v: 1, folders: [] }; }); };
+		return read().then(function (doc) {
+			mutate(doc);
+			var text = JSON.stringify(doc);
+			return GC.api("PUT", FOLDERS, { value: text }).then(read).then(function (back) { return JSON.stringify(back) === text || tries >= 3 ? back : folders(mutate, tries + 1); });
+		});
+	}
+	function listField(id, field, value) { var b = {}; b[field] = value == null ? "" : String(value); return GC.api("PUT", "userfields/shopping_lists/" + id, b); }
+
+	/// Lists menu (17-09, 17-20): rename, icon, folder and order of every list, new list, folders added, renamed or deleted
+	/// (a deleted folder's lists and folders move up one level).
+	function open(state) {
+		var $body = $('<div class="gc-lists-edit"></div>'), work = [];
+		var options = function (value) {
+			var $s = $('<select class="custom-select custom-select-sm"></select>').attr("aria-label", GL.t("list.folder"));
+			$("<option></option>").val("").text(GL.t("list.noFolder")).appendTo($s);
+			state.folders.forEach(function (f) { $("<option></option>").val(f.id).text(f.name).prop("selected", f.id === value).appendTo($s); });
+			return $s;
+		};
+		var ordered = [];
+		[null].concat(state.folders.map(function (f) { return f.id; })).forEach(function (fid) { ordered = ordered.concat(GC.shopLists.ordered(state.lists, fid)); });
+		var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		ordered.forEach(function (l, i) {
+			var cfg = S.config(l), $li = $('<li class="gc-panel-row gc-lists-row"></li>').appendTo($ul);
+			$('<i class="fa-solid"></i>').addClass((GC.shopSettings && GC.shopSettings.FA[cfg.icon]) || "fa-list").appendTo($li);
+			$('<input class="form-control form-control-sm">').val(l.name).attr("aria-label", GL.t("shop.name")).on("change", function () {
+				var n = this.value.trim(); if (n && n !== l.name) work.push(GC.api("PUT", "objects/shopping_lists/" + l.id, { name: n }));
+			}).appendTo($li);
+			options(cfg.folder).on("change", function () { work.push(listField(l.id, "al_folder", this.value)); }).appendTo($li);
+			[["fa-arrow-up", -1, "list.up"], ["fa-arrow-down", 1, "list.down"]].forEach(function (b) {
+				var other = ordered[i + b[1]];
+				$('<button type="button" class="btn btn-sm btn-link"></button>').attr("title", GL.t(b[2])).prop("disabled", !other || (S.config(other).folder || null) !== (cfg.folder || null))
+					.append($('<i class="fa-solid"></i>').addClass(b[0])).on("click", function () {
+						var peers = GC.shopLists.ordered(state.lists, cfg.folder || null), at = peers.indexOf(l), to = at + b[1];
+						peers.splice(at, 1); peers.splice(to, 0, l);
+						Promise.all(peers.map(function (p, k) { return listField(p.id, "al_order", k + 1); })).then(function () { bootbox.hideAll(); GC.shopPage.refresh().then(function () { open(GC.shopPage.state); }); });
+					}).appendTo($li);
+			});
+		});
+		var $new = $('<div class="gc-inline"></div>').appendTo($body);
+		var $newName = $('<input class="form-control form-control-sm">').attr("placeholder", GL.t("list.newName")).appendTo($new);
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("list.new")).appendTo($new).on("click", function () {
+			var n = $newName.val().trim();
+			if (!n) return;
+			if (state.lists.some(function (l) { return S.fold(l.name) === S.fold(n); })) { toastr.warning(GL.t("list.exists")); return; }
+			GC.api("POST", "objects/shopping_lists", { name: n }).then(function (c) { location.href = GC.url("/shoppinglist?list=" + c.created_object_id); }, function (e) { toastr.error(e.message); });
+		});
+		$('<h4 class="gc-panel-head"></h4>').text(GL.t("list.folders")).appendTo($body);
+		var $fl = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		state.folders.forEach(function (f) {
+			var $li = $('<li class="gc-panel-row gc-lists-row"></li>').appendTo($fl);
+			$('<i class="fa-solid fa-folder"></i>').appendTo($li);
+			$('<input class="form-control form-control-sm">').val(f.name).attr("aria-label", GL.t("list.folder")).on("change", function () {
+				var n = this.value.trim(); if (n) work.push(folders(function (doc) { doc.folders.forEach(function (x) { if (x.id === f.id) x.name = n; }); }));
+			}).appendTo($li);
+			$('<button type="button" class="btn btn-sm btn-link text-danger"></button>').attr("title", GL.t("delete")).append('<i class="fa-solid fa-trash"></i>').on("click", function () {
+				bootbox.confirm(GL.t("list.deleteFolder", { name: f.name }), function (ok) {
+					if (!ok) return;
+					var up = f.parent || "";
+					Promise.all(state.lists.filter(function (l) { return S.config(l).folder === f.id; }).map(function (l) { return listField(l.id, "al_folder", up); }))
+						.then(function () { return folders(function (doc) { doc.folders = doc.folders.filter(function (x) { return x.id !== f.id; }); doc.folders.forEach(function (x) { if (x.parent === f.id) x.parent = f.parent || null; }); }); })
+						.then(function () { bootbox.hideAll(); GC.shopPage.refresh(); }, function (e) { toastr.error(e.message); });
+				});
+			}).appendTo($li);
+		});
+		var $nf = $('<div class="gc-inline"></div>').appendTo($body);
+		var $nfName = $('<input class="form-control form-control-sm">').attr("placeholder", GL.t("list.folderName")).appendTo($nf);
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("list.newFolder")).appendTo($nf).on("click", function () {
+			var n = $nfName.val().trim();
+			if (!n) return;
+			folders(function (doc) { doc.folders.push({ id: "f" + Date.now().toString(36), name: n, parent: null, order: doc.folders.length + 1 }); })
+				.then(function () { bootbox.hideAll(); GC.shopPage.refresh(); }, function (e) { toastr.error(e.message); });
+		});
+		var finish = function () { Promise.all(work).then(GC.shopPage.refresh, function (e) { toastr.error(e.message); GC.shopPage.refresh(); }); };
+		bootbox.dialog({ title: GL.t("list.edit"), message: $body, size: "large", onEscape: finish, backdrop: true, className: "gc-panel-dialog",
+			buttons: { done: { label: GL.t("list.done"), className: "btn-primary", callback: finish } } });
+	}
+
+	GC.shopListsEdit = { open: open, folders: folders };
+})();
+</script>

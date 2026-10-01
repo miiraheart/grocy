@@ -60,7 +60,9 @@
 
 	function render($pane, state) {
 		$pane.empty();
-		$('<h3 class="gc-shop-pane-title"></h3>').text(GL.t("shop.lists")).appendTo($pane);
+		var $t = $('<h3 class="gc-shop-pane-title"></h3>').text(GL.t("shop.lists")).appendTo($pane);
+		if (GC.shopListsEdit) $('<button type="button" class="btn btn-sm btn-link gc-shop-lists-edit"></button>').attr("title", GL.t("list.edit"))
+			.append('<i class="fa-solid fa-pen"></i>').on("click", function () { GC.shopListsEdit.open(state); }).appendTo($t);
 		level($('<ul class="gc-shop-lists"></ul>').appendTo($pane), state, null, openFolders());
 		$pane.append(picker(state));
 	}

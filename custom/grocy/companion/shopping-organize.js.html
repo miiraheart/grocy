@@ -1,0 +1,120 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop;
+	/// The 19 built in grocery categories (CategoryEngine.builtins) and her Grocy groups linked by name (17-SPEC 6.3).
+	var BUILTINS = [["produce", "Produce", "Fruits et légumes"], ["bakery", "Bakery", "Boulangerie"], ["meat", "Meat and Seafood", "Viande et poisson"],
+		["dairy", "Dairy and Eggs", "Crèmerie et œufs"], ["deli", "Deli and Prepared", "Traiteur"], ["frozen", "Frozen", "Surgelés"], ["pantry", "Pantry", "Épicerie"],
+		["grains", "Pasta, Rice and Grains", "Pâtes, riz et céréales"], ["canned", "Canned Goods", "Conserves"], ["baking", "Baking", "Pâtisserie"],
+		["condiments", "Condiments and Sauces", "Condiments et sauces"], ["spices", "Spices and Herbs", "Épices et herbes"], ["snacks", "Snacks", "Grignotage"],
+		["beverages", "Beverages", "Boissons"], ["household", "Household", "Maison et entretien"], ["personal", "Personal Care", "Hygiène et beauté"],
+		["baby", "Baby", "Bébé"], ["pets", "Pets", "Animaux"], ["other", "Other", "Autre"]];
+	var GROUP_LINKS = { "Plats cuisinés": "deli", "Fruits et légumes": "produce", "Produits laitiers et œufs": "dairy", "Viande et poisson": "meat",
+		"Épicerie": "pantry", "Boissons": "beverages", "Surgelés": "frozen", "Hygiène et maison": "household" };
+
+	/// CategoryEngine.seed: one "Standard" set, the built ins in order with her groups linked by name, other groups appended.
+	function seed(groups) {
+		var cats = BUILTINS.map(function (b) { return { id: "c:" + b[0], name: GL.lang === "fr" ? b[2] : b[1], builtin: b[0] }; });
+		Object.keys(groups).map(function (id) { return groups[id]; }).sort(function (a, b) { return a.id - b.id; }).forEach(function (g) {
+			var key = GROUP_LINKS[g.name], hit = key ? cats.filter(function (c) { return c.builtin === key; })[0] : null;
+			if (hit) hit.group = +g.id;
+			else if (!cats.some(function (c) { return +c.group === +g.id; })) cats.push({ id: "c:g" + g.id, name: g.name, group: +g.id });
+		});
+		return { v: 1, active: "s1", "default": "c:other", sets: [{ id: "s1", name: "Standard", cats: cats }] };
+	}
+	function doc(state, mutate) { return S.docs.merge("shopping_lists", state.config.id, "al_categories", function (d) { if (!d.sets || !d.sets.length) Object.assign(d, seed(state.groups)); mutate(d); }); }
+	function activeOf(d) { return d.sets.filter(function (s) { return s.id === d.active; })[0] || d.sets[0]; }
+	function again(state) { bootbox.hideAll(); GC.shopPage.refresh().then(function () { open(GC.shopPage.state); }); }
+	function fail(e) { toastr.error(e.message); }
+
+	function categories(state, $body) {
+		var current = state.config.categories && state.config.categories.sets && state.config.categories.sets.length ? state.config.categories : seed(state.groups);
+		var set = activeOf(current);
+		$('<h4 class="gc-panel-head"></h4>').text(GL.t("org.sets")).appendTo($body);
+		var $sets = $('<div class="gc-inline"></div>').appendTo($body);
+		var $pick = $('<select class="custom-select custom-select-sm"></select>').attr("aria-label", GL.t("org.activeSet")).appendTo($sets);
+		current.sets.forEach(function (s) { $("<option></option>").val(s.id).text(s.name).prop("selected", s.id === set.id).appendTo($pick); });
+		$pick.on("change", function () { var id = this.value; doc(state, function (d) { d.active = id; }).then(function () { again(state); }, fail); });
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("org.newSet")).appendTo($sets).on("click", function () {
+			bootbox.prompt(GL.t("org.newSet"), function (n) {
+				if (!n || !n.trim()) return;
+				doc(state, function (d) { var from = activeOf(d), id = "s" + Date.now().toString(36); d.sets.push({ id: id, name: n.trim(), cats: JSON.parse(JSON.stringify(from.cats)) }); d.active = id; })
+					.then(function () { again(state); }, fail);
+			});
+		});
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("org.renameSet")).appendTo($sets).on("click", function () {
+			bootbox.prompt({ title: GL.t("org.renameSet"), value: set.name, callback: function (n) {
+				if (n && n.trim()) doc(state, function (d) { activeOf(d).name = n.trim(); }).then(function () { again(state); }, fail);
+			} });
+		});
+		if (current.sets.length > 1) $('<button type="button" class="btn btn-sm btn-outline-danger"></button>').text(GL.t("org.deleteSet")).appendTo($sets).on("click", function () {
+			bootbox.confirm(GL.t("org.deleteSetConfirm", { name: set.name }), function (ok) {
+				if (ok) doc(state, function (d) { d.sets = d.sets.filter(function (s) { return s.id !== d.active; }); d.active = d.sets[0].id; }).then(function () { again(state); }, fail);
+			});
+		});
+		var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		set.cats.forEach(function (c, i) {
+			var $li = $('<li class="gc-panel-row gc-lists-row"></li>').appendTo($ul);
+			$('<input type="radio" name="gc-default-cat">').prop("checked", current["default"] === c.id).attr("title", GL.t("org.default")).on("change", function () {
+				doc(state, function (d) { d["default"] = c.id; }).then(function () { again(state); }, fail);
+			}).appendTo($li);
+			$('<input class="form-control form-control-sm">').val(c.name).attr("aria-label", GL.t("org.category")).on("change", function () {
+				var n = this.value.trim();
+				if (n) doc(state, function (d) { activeOf(d).cats.forEach(function (x) { if (x.id === c.id) x.name = n; }); }).catch(fail);
+			}).appendTo($li);
+			[["fa-arrow-up", -1, "list.up"], ["fa-arrow-down", 1, "list.down"]].forEach(function (b) {
+				$('<button type="button" class="btn btn-sm btn-link"></button>').attr("title", GL.t(b[2])).prop("disabled", !set.cats[i + b[1]]).append($('<i class="fa-solid"></i>').addClass(b[0]))
+					.on("click", function () {
+						doc(state, function (d) { var cats = activeOf(d).cats, at = cats.findIndex(function (x) { return x.id === c.id; }), moved = cats.splice(at, 1)[0]; cats.splice(at + b[1], 0, moved); })
+							.then(function () { again(state); }, fail);
+					}).appendTo($li);
+			});
+			$('<button type="button" class="btn btn-sm btn-link text-danger"></button>').attr("title", GL.t("delete")).append('<i class="fa-solid fa-trash"></i>').on("click", function () {
+				doc(state, function (d) { var s = activeOf(d); s.cats = s.cats.filter(function (x) { return x.id !== c.id; }); }).then(function () { again(state); }, fail);
+			}).appendTo($li);
+		});
+		var $add = $('<div class="gc-inline"></div>').appendTo($body);
+		var $name = $('<input class="form-control form-control-sm">').attr("placeholder", GL.t("org.categoryName")).appendTo($add);
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("org.addCategory")).appendTo($add).on("click", function () {
+			var n = $name.val().trim();
+			if (n) doc(state, function (d) { activeOf(d).cats.push({ id: "c" + Date.now().toString(36), name: n }); }).then(function () { again(state); }, fail);
+		});
+	}
+
+	function stores(state, $body) {
+		$('<h4 class="gc-panel-head"></h4>').text(GL.t("shop.stores")).appendTo($body);
+		var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		Object.keys(state.stores).forEach(function (id) {
+			var st = state.stores[id], u = st.userfields || {}, aisles = S.json(u.al_aisles) || {};
+			var $li = $('<li class="gc-panel-row gc-store-row"></li>').appendTo($ul);
+			$("<strong></strong>").text(st.name).appendTo($li);
+			var write = function (field) { return function () { var b = {}; b[field] = this.value.trim(); GC.api("PUT", "userfields/shopping_locations/" + id, b).catch(fail); }; };
+			$('<input class="form-control form-control-sm">').val(u.al_card || "").attr({ placeholder: GL.t("org.card"), "aria-label": GL.t("org.card") }).on("change", write("al_card")).appendTo($li);
+			$('<input class="form-control form-control-sm">').val(u.al_perks || "").attr({ placeholder: GL.t("org.perks"), "aria-label": GL.t("org.perks") }).on("change", write("al_perks")).appendTo($li);
+			if (aisles.trips) {
+				var $c = $('<input type="checkbox">').prop("checked", aisles.useLearned !== false).on("change", function () {
+					var on = this.checked;
+					S.docs.merge("shopping_locations", id, "al_aisles", function (d) { d.useLearned = on; }).catch(fail);
+				});
+				$('<label class="gc-edit-check"></label>').append($c).append($("<span></span>").text(GL.t("org.learned", { n: aisles.trips }))).appendTo($li);
+			}
+		});
+	}
+
+	/// Organize (17-22): category sets and categories of this list, and every store's card, perks and learned aisles.
+	function open(state) {
+		var $body = $('<div class="gc-organize"></div>');
+		categories(state, $body);
+		stores(state, $body);
+		bootbox.dialog({ title: GL.t("org.title"), message: $body, size: "large", onEscape: true, backdrop: true, className: "gc-panel-dialog",
+			buttons: { done: { label: GL.t("list.done"), className: "btn-primary", callback: function () { GC.shopPage.refresh(); } } } });
+	}
+
+	GC.shopHooks.on("head", function ($h, state) {
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').attr("title", GL.t("org.title")).attr("data-panel", "organize")
+			.append('<i class="fa-solid fa-layer-group"></i>').on("click", function () { open(state); }).appendTo($h);
+	});
+
+	GC.shopOrganize = { open: open, seed: seed };
+})();
+</script>

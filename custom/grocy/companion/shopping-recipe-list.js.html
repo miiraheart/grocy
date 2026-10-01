@@ -1,0 +1,96 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !GC.shop.merge || !window.Grocy || (Grocy.View !== "recipes" && Grocy.View !== "mealplan")) return;
+	var S = GC.shop, M = S.merge;
+
+	/// RecipeToList.plan: what the recipe needs at these servings against stock, pre-ticked when stock does not cover it.
+	function plan(recipe, positions, servings) {
+		var desired = +recipe.desired_servings || +recipe.base_servings || 1, factor = servings > 0 && desired > 0 ? servings / desired : 1, by = {}, order = [];
+		positions.forEach(function (p) {
+			var pid = +p.product_id, amount = (+p.recipe_amount || 0) * factor;
+			if (!pid) return;
+			if (by[pid]) { by[pid].need += amount; return; }
+			order.push(pid);
+			by[pid] = { productId: pid, need: amount, have: +p.stock_amount || 0 };
+		});
+		return order.map(function (pid) {
+			var l = by[pid], missing = Math.max(0, l.need - l.have);
+			l.ticked = missing > 0.0001;
+			l.add = M.round(l.ticked ? missing : l.need);
+			l.share = { recipe: +recipe.id, amount: l.add, servings: servings };
+			return l;
+		});
+	}
+
+	/// One recipe share per product on the list (17-32): a new row carries its share, a row already there gets the share
+	/// beside its manual extra, a crossed row is reopened, a unit the row cannot take is left out.
+	function apply(lines, listId, products, units, conv) {
+		var undo = [];
+		return Promise.all([GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + listId), GC.api("GET", "objects/shopping_lists")]).then(function (r) {
+			var rows = r[0] || [], list = (r[1] || []).filter(function (l) { return +l.id === +listId; })[0];
+			return lines.reduce(function (chain, l) {
+				return chain.then(function () {
+					var p = products[l.productId], cands = rows.filter(function (x) { return +x.product_id === l.productId; });
+					var row = cands.filter(function (x) { return +x.done !== 1; })[0] || cands[0];
+					var stockUnit = p && p.qu_id_stock && units[p.qu_id_stock] ? { grocy: { id: +p.qu_id_stock, name: units[p.qu_id_stock].name } } : null;
+					var d = M.decide(row ? S.inbox.contributionRow(row, Object.keys(units).map(function (k) { return units[k]; }), {}) : null,
+						{ source: { kind: "recipe", share: l.share }, amount: l.add, unit: stockUnit, productId: l.productId, productName: p ? p.name : "" }, conv);
+					if (d.kind === "create") {
+						return S.createRow({ config: S.config(list), rows: rows, filter: null }, { name: p.name, product_id: l.productId, amount: l.add, qu_id: p.qu_id_stock, source: "recipe" })
+							.then(function (res) {
+								rows.push({ id: res.id, product_id: l.productId, done: 0, userfields: { al_position: String(res.position) } });
+								undo.push(function () { return GC.api("DELETE", "objects/shopping_list/" + res.id); });
+								return GC.api("PUT", "userfields/shopping_list/" + res.id, { al_recipes: JSON.stringify([l.share]) });
+							});
+					}
+					if (d.kind !== "replaceShare" && d.kind !== "reopen") return null;
+					var before = { amount: +row.amount, done: +row.done }, beforeUf = { al_recipes: (row.userfields || {}).al_recipes || "", al_crossed_at: (row.userfields || {}).al_crossed_at || "" };
+					undo.push(function () { return GC.api("PUT", "objects/shopping_list/" + row.id, before).then(function () { return GC.api("PUT", "userfields/shopping_list/" + row.id, beforeUf); }); });
+					var cols = { amount: d.amount }, uf = { al_recipes: d.shares.length ? JSON.stringify(d.shares) : "" };
+					if (d.kind === "reopen") { cols.done = 0; uf.al_crossed_at = ""; }
+					return GC.api("PUT", "objects/shopping_list/" + row.id, cols).then(function () { return GC.api("PUT", "userfields/shopping_list/" + row.id, uf); });
+				});
+			}, Promise.resolve());
+		}).then(function () { return function () { return Promise.all(undo.map(function (u) { return u(); })); }; });
+	}
+
+	function open(recipeId, servings) {
+		Promise.all([GC.api("GET", "objects/recipes/" + recipeId), GC.api("GET", "objects/recipes_pos_resolved?query[]=recipe_id=" + recipeId), GC.api("GET", "objects/products"),
+			GC.api("GET", "objects/quantity_units"), GC.api("GET", "objects/quantity_unit_conversions").catch(function () { return []; }), GC.master()]).then(function (r) {
+			var recipe = r[0], by = function (list) { var o = {}; (list || []).forEach(function (x) { o[x.id] = x; }); return o; };
+			var products = by(r[2]), units = by(r[3]), lists = r[5].lists || [], lines = plan(recipe, r[1] || [], servings || +recipe.desired_servings || 1);
+			var $b = $("<div></div>"), $list = $('<select class="custom-select custom-select-sm"></select>').attr("aria-label", GL.t("shop.lists"));
+			var saved = (function () { try { return +localStorage.getItem("gc.shop.list"); } catch (e) { return 0; } })();
+			lists.forEach(function (l) { $("<option></option>").val(l.id).text(l.name).prop("selected", +l.id === (saved || GC.IDS.shoppingList)).appendTo($list); });
+			$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("rtl.list"))).append($list).appendTo($b);
+			var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($b);
+			if (!lines.length) $('<li class="gc-shop-empty"></li>').text(GL.t("rtl.none")).appendTo($ul);
+			lines.forEach(function (l) {
+				var p = products[l.productId] || {}, u = units[p.qu_id_stock] ? " " + units[p.qu_id_stock].name : "";
+				var $c = $('<input type="checkbox">').prop("checked", l.ticked).on("change", function () { l.ticked = this.checked; });
+				$('<li class="gc-panel-row"></li>').append($('<label class="gc-edit-check"></label>').append($c).append($("<span></span>").text(p.name + " (" + M.number(l.add, GL.lang) + u + ")"))).appendTo($ul);
+			});
+			bootbox.dialog({ title: GL.t("rtl.title", { name: recipe.name }), message: $b, onEscape: true, buttons: {
+				cancel: { label: GL.t("cancel"), className: "btn-secondary" },
+				ok: { label: GL.t("rtl.add"), className: "btn-primary", callback: function () {
+					var picked = lines.filter(function (l) { return l.ticked && l.add > 0.0001; });
+					if (!picked.length) return;
+					apply(picked, +$list.val(), products, units, r[4]).then(function (undo) {
+						GC.agendaUI.undoBar(GL.t("rtl.added", { n: picked.length }), undo, function () {});
+					}, function (e) { toastr.error(e.message); });
+				} } } });
+		}, function (e) { toastr.error(e.message); });
+	}
+
+	/// The native "Put missing products on shopping list" buttons go through the shares instead of Grocy's endpoint.
+	document.addEventListener("click", function (e) {
+		var el = e.target.closest && e.target.closest(".recipe-shopping-list, .recipe-order-missing-button");
+		if (!el || el.classList.contains("disabled")) return;
+		e.preventDefault();
+		e.stopPropagation();
+		open(+el.getAttribute("data-recipe-id"), +el.getAttribute("data-mealplan-servings") || null);
+	}, true);
+
+	GC.recipeToList = { plan: plan, apply: apply, open: open };
+})();
+</script>

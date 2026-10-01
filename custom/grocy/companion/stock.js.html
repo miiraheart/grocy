@@ -104,11 +104,14 @@
 		});
 	}
 
+	/// The row star is the per list favorite of the app (al_memory lists[listId].fav), on the list last opened on the web.
 	function favoriteMenu() {
-		var favs = null;
-		GC.api("GET", "objects/products").then(function (ps) {
+		var favs = null, listId = null;
+		Promise.all([GC.api("GET", "objects/products"), GC.master()]).then(function (r) {
+			var lists = r[1].lists || [], saved = +(function () { try { return localStorage.getItem("gc.shop.list"); } catch (e) { return null; } })();
+			listId = lists.some(function (l) { return +l.id === saved; }) ? saved : GC.IDS.shoppingList || (lists[0] && +lists[0].id);
 			favs = {};
-			ps.forEach(function (p) { favs[p.id] = (p.userfields || {}).favori === "1"; });
+			r[0].forEach(function (p) { favs[p.id] = !!((((GC.shop.json((p.userfields || {}).al_memory) || {}).lists) || {})[listId] || {}).fav; });
 		});
 		$(document).on("show.bs.dropdown", "#stock-overview-table .dropdown", function () {
 			var $menu = $(this).find(".table-inline-menu");
@@ -121,7 +124,7 @@
 			$a.find(".dropdown-item-text").text(GL.t(on ? "fav.remove" : "fav.star"));
 			$a.on("click", function (e) {
 				e.preventDefault();
-				GC.setFavori("products", pid, !on).then(function () {
+				GC.shopEdit.setFavorite({ product_id: +pid }, listId, !on).then(function () {
 					favs[pid] = !on;
 					GC.toast("success", GL.t(on ? "fav.removed" : "fav.added"));
 				}, function (err) { GC.toast("error", err.message); });
