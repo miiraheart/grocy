@@ -2,3 +2,4 @@ embedded.txt
 /.release
 /packages
 /public/packages
+/custom/grocy/plugins/*.eansearch-cache.json
