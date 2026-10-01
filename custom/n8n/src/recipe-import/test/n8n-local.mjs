@@ -1,10 +1,12 @@
 // Runs a built TEST twin template on this Mac the way n8n would (webhook, code, if, http request, respond nodes),
 // against grocy-test and OpenRouter with the test key. Refuses the real Grocy and any non twin template.
+// Code nodes run in the task runner sandbox (sandbox.mjs), so code that only works with Node globals fails here too.
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { DIR } from "./load.mjs";
 import { credential, GROCY_TEST } from "./grocy-test.mjs";
+import { runInSandbox } from "./sandbox.mjs";
 
 const TEST_CRED_ID = "orTestKey0000001";
 const BLOCKED_HOSTS = ["grocy.audibox.cc", "grocy", "n8n.audibox.cc"];
@@ -29,7 +31,11 @@ async function httpRequest(opts) {
     parsed = buffer.toString("utf8");
     if (opts.json !== false && /json/.test(res.headers.get("content-type") || "") || opts.json === true) { try { parsed = JSON.parse(parsed); } catch (e) { parsed = String(parsed); } }
   }
-  if (res.status >= 400 && !opts.ignoreHttpStatusErrors) throw new Error("Request failed with status code " + res.status + " " + String(buffer).slice(0, 160));
+  if (res.status >= 400 && !opts.ignoreHttpStatusErrors) {
+    const error = new Error("Request failed with status code " + res.status + " " + String(buffer).slice(0, 160));
+    error.toJSON = () => ({ message: error.message, status: res.status });
+    throw error;
+  }
   if (opts.returnFullResponse) return { body: parsed, headers: Object.fromEntries(res.headers), statusCode: res.status };
   return parsed;
 }
@@ -63,10 +69,8 @@ export function runTwin({ wf }, request, log = () => {}) {
     const p = node.parameters;
     switch (node.type) {
       case "n8n-nodes-base.webhook": return [items];
-      case "n8n-nodes-base.code": {
-        const fn = new (Object.getPrototypeOf(async function () {}).constructor)("$input", "$", p.jsCode);
-        return [await fn.call({ helpers: { httpRequest } }, { first: () => items[0], all: () => items }, $)];
-      }
+      case "n8n-nodes-base.code":
+        return [await runInSandbox(p.jsCode, { $input: { first: () => items[0], all: () => items }, $, helpers: { httpRequest } })];
       case "n8n-nodes-base.if": {
         const c = p.conditions.conditions[0];
         const left = evaluate(c.leftValue, json, $);
@@ -77,16 +81,19 @@ export function runTwin({ wf }, request, log = () => {}) {
         answer({ status: Number(evaluate(p.options.responseCode, json, $)), body: JSON.parse(evaluate(p.responseBody, json, $)) });
         return [items];
       case "n8n-nodes-base.httpRequest": {
-        const headers = {};
+        const headers = Object.fromEntries(p.sendHeaders ? p.headerParameters.parameters.map((h) => [h.name, evaluate(h.value, json, $)]) : []);
         if (node.credentials && node.credentials.openRouterApi) {
           if (node.credentials.openRouterApi.id !== TEST_CRED_ID) throw new Error("twin uses a non test OpenRouter credential");
           headers.Authorization = "Bearer " + credential("OPENROUTER_TEST_KEY");
         }
-        const body = p.sendBody ? JSON.parse(evaluate(p.jsonBody, json, $)) : undefined;
+        const file = p.contentType === "binaryData" && items[0].binary && items[0].binary[p.inputDataFieldName];
+        if (file) headers["Content-Type"] = file.mimeType;
+        const body = !p.sendBody ? undefined : p.contentType === "binaryData" ? Buffer.from(file ? file.data : "", "base64") : JSON.parse(evaluate(p.jsonBody, json, $));
         if (body && body.models && !body.models.every((m) => m.endsWith(":free"))) throw new Error("twin model is not :free");
         try {
+          if (p.contentType === "binaryData" && !file) throw new Error("no binary data in " + p.inputDataFieldName);
           const r = await httpRequest({ method: p.method, url: evaluate(p.url, json, $), headers, body, json: true, timeout: p.options.timeout });
-          return [[{ json: r }]];
+          return [[{ json: r && typeof r === "object" ? r : r ? { data: r } : {} }]];
         } catch (e) {
           if (node.onError === "continueRegularOutput") return [[{ json: { error: { message: e.message } } }]];
           throw e;

@@ -178,7 +178,7 @@ saveWithTest("tiktok-recipe.json", tiktok, "tiktokRecipeTest0001");
 
 const lib = (file) => read("recipe-import", file);
 const linesLib = lib("lines-lib.js");
-const netLib = lib("net-lib.js");
+const netLib = lib("url-lib.js") + lib("net-lib.js");
 const grocyLib = lib("grocy-lib.js");
 const htmlLib = lib("html-lib.js");
 saveWithTest("recipe-import.json", workflow("recipeImport0001", "Kitchen: recipe import", [
@@ -191,9 +191,16 @@ saveWithTest("recipe-import.json", workflow("recipeImport0001", "Kitchen: recipe
   ifTrue("Needs model?", "needs_model", 1320),
   openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 120000, 1540, -120),
   code("Draft", linesLib + netLib + grocyLib + providersLib + lib("draft.js"), 1760),
+  ifTrue("Has photo?", "has_photo", 1980),
+  { id: "upload-photo", name: "Upload photo", type: "n8n-nodes-base.httpRequest", typeVersion: 4.2, position: [2200, -120],
+    onError: "continueRegularOutput", parameters: { method: "PUT", url: "=http://grocy/api/files/recipepictures/{{ $json.photo.name_b64 }}",
+      sendHeaders: true, headerParameters: { parameters: [{ name: "GROCY-API-KEY", value: "__GROCY_API_KEY__" }] },
+      sendBody: true, contentType: "binaryData", inputDataFieldName: "photo", options: { timeout: 30000 } } },
+  code("Finish", grocyLib + lib("finish.js"), 2420),
 ], [
   ["Webhook", "Start"], ["Start", "Respond"], ["Respond", "Continue?"], ["Continue?", "Read", 0], ["Read", "Parse"],
   ["Parse", "Needs model?"], ["Needs model?", "OpenRouter", 0], ["Needs model?", "Draft", 1], ["OpenRouter", "Draft"],
+  ["Draft", "Has photo?"], ["Has photo?", "Upload photo", 0], ["Has photo?", "Finish", 1], ["Upload photo", "Finish"],
 ]), "recipeImportTest0001");
 
 save("openrouter-quota.json", {
