@@ -42,7 +42,7 @@ test("every assistant string has English and French, no dash characters", () => 
 		assert.equal(d[key].length, 2, key);
 		assert.ok(d[key][0] && d[key][1], key);
 	}
-	for (const f of PARTS.concat(["assistant.css.html"])) assert.ok(!/[–—]/.test(read(f)), f + " has a dash character");
+	for (const f of PARTS.concat(["assistant.css.html"])) assert.ok(!/[\u2013\u2014]/.test(read(f)), f + " has a dash character");
 });
 
 test("the shortlist puts the products she named first, then screen and stock", () => {
@@ -92,21 +92,23 @@ test("a history entry goes to the gc_actions fields and back", () => {
 	assert.equal(back.parent_id, null);
 	assert.deepEqual(back.record, rec.record);
 	assert.equal(A.fromRow({ id: 1, userfields: { record: "{bad" } }), null);
-	assert.match(A.stamp(new Date()), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+	assert.match(A.stamp(new Date()), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$/);
 });
 
 test("the action menu follows the app: undo needs calls, redo needs an undone web operation", () => {
 	const undo = [{ method: "POST", path: "stock/transactions/t/undo" }];
 	const op = { op: "add", product_id: 2, amount: 1 };
-	const a = { action_id: "a", session_id: "s", created: "1", status: "applied", record: { op, undo, product_id: 2 } };
-	const b = { action_id: "b", session_id: "s", created: "2", status: "applied", record: { op, undo, product_id: 2 } };
-	const phone = { action_id: "c", session_id: "p", created: "3", status: "applied", record: { object_type: "task", object_id: "4" } };
-	const gone = { action_id: "d", session_id: "s", created: "0", status: "undone", record: { op, undo, product_id: 2 } };
+	const a = { action_id: "a", session_id: "s", created: "2026-10-01T10:00:00+02:00", status: "applied", record: { op, undo, product_id: 2 } };
+	const b = { action_id: "b", session_id: "s", created: "2026-10-01T10:00:05+02:00", status: "applied", record: { op, undo, product_id: 2 } };
+	const phone = { action_id: "c", session_id: "p", created: "2026-10-01T10:01:00+02:00", status: "applied", record: { object_type: "task", object_id: "4" } };
+	const gone = { action_id: "d", session_id: "s", created: "2026-10-01T09:00:00+02:00", status: "undone", record: { op, undo, product_id: 2 } };
 	assert.deepEqual(A.menu(a, [a, b]), ["inspect", "undo", "duplicate", "undoFromHere", "open"]);
 	assert.deepEqual(A.menu(b, [a, b]), ["inspect", "undo", "duplicate", "open"]);
 	assert.deepEqual(A.menu(phone, [phone]), ["inspect", "open"]);
 	assert.deepEqual(A.menu(gone, [gone]), ["inspect", "redo", "open"]);
 	assert.deepEqual(A.fromHere(a, [a, b, gone]).map((r) => r.action_id), ["b", "a"]);
+	const utc = { ...b, action_id: "u", created: "2026-10-01T19:30:00+00:00" }, paris = { ...a, action_id: "p", created: "2026-10-01T21:26:32.284+02:00" };
+	assert.deepEqual([utc, paris].sort(A.newest).map((r) => r.action_id), ["u", "p"], "ordered by instant across offsets");
 	assert.equal(A.link(phone), "/task/4");
 	assert.equal(A.link({ record: { object_type: "listItem", list_id: 2 } }), "/shoppinglist?list=2");
 });
