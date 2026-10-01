@@ -1,0 +1,151 @@
+<script>
+(function () {
+	if (!window.GC || !GC.agendaUI) return;
+	/// The quick add bar: the app's grammar with live chips, then a chore or a task. Lines it cannot save alone go to the assistant sheet.
+	var UI = GC.agendaUI;
+	var STOP = ["is", "are", "the", "a", "an", "out", "did", "do", "does", "i", "we", "have", "has", "when", "what", "to", "of", "in", "on", "it", "my",
+		"le", "la", "les", "l", "un", "une", "des", "du", "de", "est", "ce", "que", "qu", "quand", "quoi", "j", "ai", "il", "elle", "t", "on", "mon", "ma", "mes"];
+
+	function categories(ctx) { return (ctx.data.categories || []).map(function (c) { return c.name; }); }
+
+	function parse(text, ctx, removed) {
+		var r = GCQ.parse(text, { now: GC.agenda.nowText(), categories: categories(ctx) });
+		removed = removed || {};
+		if (removed.repeats) { r.schedule = null; r.isChore = false; }
+		if (removed.day) { r.day = null; r.time = null; }
+		if (removed.room) r.room = null;
+		if (removed.category) { r.category = null; r.newCategory = false; }
+		if (removed.priority) r.priority = null;
+		if (removed.effort) r.effort = null;
+		return r;
+	}
+
+	/// The chips of the app's QuickAddChip, same order and words.
+	function chips(r) {
+		var out = [];
+		if (r.handOff) out.push({ kind: "handOff", icon: "fa-wand-magic-sparkles", label: GL.t("qa.handOff") });
+		if (r.schedule) out.push({ kind: "repeats", icon: "fa-rotate", label: UI.schedulePhrase(r.schedule) });
+		if (r.day) {
+			var ms = GCA.wall(r.day), label = UI.dayLabel(ms, GC.agenda.now());
+			out.push({ kind: "day", icon: "fa-calendar-day", label: r.time ? label + " " + r.time : label });
+		}
+		if (r.room) out.push({ kind: "room", icon: UI.roomIcon(r.room), label: UI.roomName(r.room) });
+		if (r.category) out.push({ kind: "category", icon: "fa-folder", label: r.newCategory ? GL.t("qa.newCategory", { c: r.category }) : r.category });
+		if (r.priority) out.push({ kind: "priority", icon: "fa-flag", label: GL.t("prio." + r.priority) });
+		if (r.effort) out.push({ kind: "effort", icon: "fa-gauge", label: GL.t("qa.dots", { n: r.effort }) });
+		if (r.warnings.indexOf("priorityOnChore") !== -1) out.push({ kind: "warning", icon: "fa-triangle-exclamation", label: GL.t("qa.priorityOnChore") });
+		return out;
+	}
+
+	function chipRow(r, onRemove, onHandOff) {
+		var $c = $('<div class="gc-ag-qchips"></div>');
+		chips(r).forEach(function (c) {
+			var $chip = UI.pill(c.icon, c.label, "gc-ag-qchip gc-ag-q-" + c.kind);
+			if (c.kind === "handOff" && onHandOff) $chip = $('<button type="button"></button>').attr("class", $chip.attr("class")).append($chip.children()).on("click", onHandOff);
+			if (onRemove && ["handOff", "warning"].indexOf(c.kind) === -1) {
+				$('<button type="button" class="gc-ag-chip-x"><i class="fa-solid fa-xmark"></i></button>').attr("aria-label", GL.t("qa.remove", { label: c.label }))
+					.on("click", function () { onRemove(c.kind); }).appendTo($chip);
+			}
+			$c.append($chip);
+		});
+		return $c;
+	}
+
+	function answer(text, ctx) {
+		var words = GCQ.fold(text).split(/[^\p{L}\p{N}]+/u).filter(function (w) { return w.length > 1 && STOP.indexOf(w) === -1; });
+		var scored = ctx.data.entries.map(function (e) {
+			var name = GCQ.fold(e.name + " " + e.searchText);
+			return { e: e, n: words.filter(function (w) { return name.indexOf(w) !== -1; }).length };
+		});
+		var best = scored.reduce(function (m, s) { return Math.max(m, s.n); }, 0);
+		var hits = best ? scored.filter(function (s) { return s.n === best; }).map(function (s) { return s.e; }) : [];
+		var $b = $("<div></div>");
+		if (!hits.length) return $b.append($('<p class="gc-sub"></p>').text(GL.t("as.nothing")));
+		$b.append(UI.heading(GL.t("as.found")));
+		var $l = $('<div class="gc-ag-list" role="list"></div>').appendTo($b);
+		hits.forEach(function (e) {
+			var section = GCA.section(e, ctx.data.now, true);
+			var when = e.due != null ? UI.dayLabel(e.due, ctx.data.now) : GL.t("ag." + (section === "noDate" ? "anytime" : "today"));
+			var $r = $('<div class="gc-ag-row" role="listitem"></div>').appendTo($l);
+			$('<div class="gc-ag-main"></div>').append($('<span class="gc-ag-name"></span>').text(e.name))
+				.append($('<div class="gc-ag-meta"></div>').append(UI.pill("fa-calendar-day", when))).appendTo($r);
+		});
+		return $b;
+	}
+
+	/// The assistant sheet: a question is answered from the list; a line with several things becomes one card each, added together.
+	function assistant(text, ctx, done) {
+		if (text.indexOf("?") !== -1) {
+			GC.sheet(GL.t("as.title"), answer(text, ctx), [{ label: GL.t("close"), onClick: function (c) { c(); } }]);
+			return;
+		}
+		var parts = GCQ.splitParts(text);
+		var $b = $("<div class='gc-ag-assist'></div>").append($('<p class="gc-sub"></p>').text(GL.t("as.split", { n: parts.length })));
+		var cards = parts.map(function (p) {
+			var $card = $('<div class="gc-ag-card"></div>').appendTo($b);
+			var $in = $('<input type="text" class="form-control">').val(p).appendTo($card);
+			var $preview = $("<div></div>").appendTo($card);
+			function update() {
+				var r = parse($in.val(), ctx);
+				$preview.empty().append(chipRow(r));
+				if (r.handOff) $preview.append($('<p class="gc-sub"></p>').text(GL.t("as.fix")));
+			}
+			$in.on("input", update);
+			update();
+			return $in;
+		});
+		GC.sheet(GL.t("as.title"), $b, [
+			{ label: GL.t("cancel"), onClick: function (c) { c(); } },
+			{ label: GL.t("as.addAll"), primary: true, onClick: function (close, $btn) {
+				var lines = cards.map(function ($in) { return parse($in.val(), ctx); });
+				if (lines.some(function (r) { return !r.canSave; })) { GC.toast("warning", GL.t("as.fix")); return; }
+				$btn.prop("disabled", true);
+				var undos = [];
+				var chain = lines.reduce(function (p, r) {
+					return p.then(function () { return GC.agenda.create(r, ctx.data.categories).then(function (u) { undos.push(u); }); });
+				}, Promise.resolve());
+				var all = chain.then(function () {
+					return function () { return undos.reverse().reduce(function (p, u) { return p.then(u); }, Promise.resolve()); };
+				}, function (err) {
+					return undos.reverse().reduce(function (p, u) { return p.then(u); }, Promise.resolve()).then(function () { throw err; });
+				});
+				close();
+				ctx.run(all, GL.t("as.added", { n: lines.length })).then(function (ok) { if (ok) done(); });
+			} }
+		]);
+	}
+
+	GC.agendaAdd = function ($host, ctx) {
+		var removed = {};
+		var $f = $('<form class="gc-ag-add" novalidate></form>').appendTo($host);
+		var $row = $('<div class="gc-ag-add-row"></div>').appendTo($f);
+		var $in = $('<input type="text" class="form-control" autocomplete="off">').attr({ placeholder: GL.t("qa.ph"), "aria-label": GL.t("qa.ph"), title: GL.t("qa.help") }).appendTo($row);
+		var $btn = $('<button type="submit" class="btn btn-primary"><i class="fa-solid fa-plus"></i> </button>').append(document.createTextNode(GL.t("qa.add"))).appendTo($row);
+		var $chips = $("<div></div>").appendTo($f);
+
+		function reset() { $in.val(""); removed = {}; render(); }
+		function handOff() { assistant($.trim($in.val()), ctx, reset); }
+		function render() {
+			var text = $.trim($in.val());
+			$chips.empty();
+			if (!text) return;
+			$chips.append(chipRow(parse(text, ctx, removed), function (kind) { removed[kind] = true; render(); }, handOff));
+		}
+		$in.on("input", function () { removed = {}; render(); });
+		$f.on("submit", function (ev) {
+			ev.preventDefault();
+			var text = $.trim($in.val());
+			if (!text) return;
+			var r = parse(text, ctx, removed);
+			if (r.handOff) { handOff(); return; }
+			if (!r.canSave) return;
+			$btn.prop("disabled", true);
+			ctx.run(GC.agenda.create(r, ctx.data.categories), GL.t("ag.didAdd", { name: r.name })).then(function (ok) {
+				$btn.prop("disabled", false);
+				if (ok) reset();
+			});
+		});
+	};
+	GC.agendaAdd.chips = chips;
+})();
+</script>

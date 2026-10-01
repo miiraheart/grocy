@@ -1,0 +1,282 @@
+<script>
+(function (root) {
+	/// Port of the app's AgendaEntryBuilder, AgendaSections, ThingsLists, RoomsModel and LogbookModel rules.
+	/// Dates are Paris wall times held as UTC milliseconds, like the app's Wall, so no daylight change moves a day.
+	var DAY = 86400000, EVENING_HOUR = 17;
+	var KINDS = ["overdue", "today", "evening", "tomorrow", "week", "later", "noDate"];
+	var ROOM_ORDER = ["kitchen", "bathroom", "bedroom", "living_room"];
+
+	function wall(text) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(text || ""));
+		if (!m || m[1] === "2999") return null;
+		return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+	}
+	function fmt(ms) { return new Date(ms).toISOString().slice(0, 19).replace("T", " "); }
+	function dayText(ms) { return fmt(ms).slice(0, 10); }
+	function startOfDay(ms) { return Math.floor(ms / DAY) * DAY; }
+	function days(now, date) { return Math.round((startOfDay(date) - startOfDay(now)) / DAY); }
+	function hour(ms) { return new Date(ms).getUTCHours(); }
+	function flag(v) { return String(v) === "1" || v === true; }
+	function fold(t) { return String(t == null ? "" : t).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); }
+
+	function steps(text) {
+		return String(text || "").split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+			var m = /^- \[( |x|X)\]\s*(.*)$/.exec(l);
+			return m ? { text: m[2].trim(), done: m[1] !== " " } : { text: l.replace(/^- /, "").trim(), done: false };
+		}).filter(function (s) { return s.text; });
+	}
+	function tags(text) { return String(text || "").split(",").map(function (t) { return t.trim(); }).filter(Boolean); }
+	function effort(text) { var n = parseInt(text, 10); return n >= 1 && n <= 3 && String(n) === String(text).trim() ? n : null; }
+	function room(text) { return ROOM_ORDER.indexOf(text) !== -1 ? text : null; }
+
+	function dueness(last, next, now) {
+		if (next == null) return null;
+		if (last == null) return now >= next ? 1 : 0;
+		var span = next - last;
+		if (span <= 0) return 1.5;
+		return Math.min(Math.max((now - last) / span, 0), 1.5);
+	}
+	function bucket(d) { return d == null ? null : d < 0.6 ? "fresh" : d < 1 ? "soon" : d <= 1.2 ? "due" : "late"; }
+
+	function base(kind, id, name) {
+		return { key: kind + ":" + id, kind: kind, id: +id, name: name || "", due: null, hasTime: false, dateOnly: false, lastDone: null,
+			dueness: null, room: null, effort: null, priority: null, category: null, rescheduled: false, rollover: false, paused: false,
+			stepsDone: 0, stepsTotal: 0, planned: null, deadline: null, deadlineHasTime: false, skippedCount: 0, tags: [], searchText: "", periodType: null };
+	}
+	function extrasInto(e, uf, description) {
+		uf = uf || {};
+		var st = steps(uf.steps);
+		e.room = room(uf.room);
+		e.effort = effort(uf.effort);
+		e.tags = tags(uf.tags);
+		e.stepsDone = st.filter(function (s) { return s.done; }).length;
+		e.stepsTotal = st.length;
+		e.searchText = [description || ""].concat(e.tags, st.map(function (s) { return s.text; })).filter(Boolean).join("\n");
+	}
+
+	/// Agenda entries from Grocy: objects/chores, GET /chores, objects/chores_log, open objects/tasks, task_categories, GET /batteries.
+	function entries(d, nowText) {
+		var now = wall(nowText), out = [];
+		var cats = {}; (d.categories || []).forEach(function (c) { cats[c.id] = c.name; });
+		(d.tasks || []).filter(function (t) { return !flag(t.done); }).forEach(function (t) {
+			var e = base("task", t.id, t.name), uf = t.userfields || {};
+			var timed = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(t.due_date || "") && String(t.due_date).slice(11, 19) !== "00:00:00";
+			e.deadline = wall(timed ? t.due_date : String(t.due_date || "").slice(0, 10));
+			e.deadlineHasTime = timed && e.deadline != null;
+			e.planned = wall(uf.planned ? String(uf.planned).slice(0, 10) : null);
+			e.due = e.planned != null ? e.planned : e.deadline;
+			e.hasTime = e.planned == null && e.deadlineHasTime;
+			e.dateOnly = !e.hasTime;
+			extrasInto(e, uf, t.description);
+			e.priority = ["urgent", "high", "normal", "low"].indexOf(uf.priority) !== -1 ? uf.priority : null;
+			e.category = t.category_id != null ? cats[t.category_id] || null : null;
+			out.push(e);
+		});
+		var current = {}; (d.current || []).forEach(function (c) { current[c.chore_id] = c; });
+		var skipped = {};
+		(d.log || []).forEach(function (l) { if (flag(l.skipped) && !flag(l.undone)) skipped[l.chore_id] = (skipped[l.chore_id] || 0) + 1; });
+		(d.chores || []).filter(function (c) { return flag(c.active); }).forEach(function (c) {
+			var cur = current[c.id] || {}, e = base("chore", c.id, c.name);
+			e.dateOnly = flag(cur.track_date_only != null ? cur.track_date_only : c.track_date_only);
+			e.due = wall(cur.next_estimated_execution_time);
+			e.hasTime = e.due != null && !e.dateOnly;
+			e.lastDone = wall(cur.last_tracked_time);
+			e.rescheduled = flag(cur.is_rescheduled);
+			e.rollover = flag(c.rollover);
+			e.periodType = c.period_type || null;
+			e.dueness = dueness(e.lastDone, e.due, now);
+			e.skippedCount = skipped[c.id] || 0;
+			extrasInto(e, c.userfields, c.description);
+			out.push(e);
+		});
+		(d.batteries || []).forEach(function (b) {
+			var o = b.battery || {};
+			if (o.active != null && !flag(o.active)) return;
+			var e = base("battery", b.battery_id, o.name);
+			e.due = wall(b.next_estimated_charge_time);
+			e.dateOnly = true;
+			e.lastDone = wall(b.last_tracked_time);
+			e.dueness = dueness(e.lastDone, e.due, now);
+			e.category = o.used_in || null;
+			e.searchText = o.description || "";
+			out.push(e);
+		});
+		return out;
+	}
+
+	function place(date, hasTime, now) {
+		var off = days(now, date);
+		if (hasTime && date < now) return "overdue";
+		if (off < 0) return "overdue";
+		if (off === 0) return hasTime && hour(date) >= EVENING_HOUR ? "evening" : "today";
+		if (off === 1) return "tomorrow";
+		return off <= 7 ? "week" : "later";
+	}
+	function minKind(list) { return list.sort(function (a, b) { return KINDS.indexOf(a) - KINDS.indexOf(b); })[0]; }
+
+	function section(e, now, undatedBatteries) {
+		if (e.paused && e.kind !== "task") return "noDate";
+		if (e.kind === "task") {
+			var found = [];
+			if (e.deadline != null) found.push(place(e.deadline, e.deadlineHasTime, now));
+			if (e.planned != null) { var p = place(e.planned, false, now); found.push(p === "overdue" ? "today" : p); }
+			return found.length ? minKind(found) : "noDate";
+		}
+		if (e.due == null) return e.kind === "battery" && undatedBatteries === false ? null : "noDate";
+		var placed = place(e.due, e.hasTime, now);
+		return e.rollover && placed === "overdue" ? "today" : placed;
+	}
+
+	function daysLate(e, now) {
+		var ref = e.kind === "task" ? e.deadline : e.due;
+		if (ref == null) return 0;
+		var timed = e.kind === "task" ? e.deadlineHasTime : e.hasTime;
+		return place(ref, timed, now) === "overdue" ? Math.max(0, -days(now, ref)) : 0;
+	}
+
+	function priorityRank(p) { return p === "urgent" ? 0 : p === "high" ? 1 : p === "low" ? 3 : 2; }
+	function sortKey(e, kind) {
+		var k = { group: 0, time: -Infinity, dueness: e.dueness || 0, priority: 0 };
+		if (kind === "overdue") k.time = (e.kind === "task" ? e.deadline : e.due) || -Infinity;
+		else if (kind === "today") {
+			k.group = e.hasTime ? 0 : e.kind === "chore" ? 1 : e.kind === "task" ? 2 : 3;
+			if (e.hasTime) k.time = e.due;
+			if (e.kind === "task") k.priority = priorityRank(e.priority);
+		} else if (kind !== "noDate") k.time = e.due != null ? e.due : -Infinity;
+		return k;
+	}
+	function sorted(list, kind) {
+		return list.slice().sort(function (a, b) {
+			var l = sortKey(a, kind), r = sortKey(b, kind);
+			if (l.group !== r.group) return l.group - r.group;
+			if (l.time !== r.time) return l.time < r.time ? -1 : 1;
+			if (l.dueness !== r.dueness) return r.dueness - l.dueness;
+			if (l.priority !== r.priority) return l.priority - r.priority;
+			return fold(a.name) < fold(b.name) ? -1 : fold(a.name) > fold(b.name) ? 1 : 0;
+		});
+	}
+
+	function build(list, now, opts) {
+		opts = opts || {};
+		var grouped = {};
+		list.forEach(function (e) {
+			if (e.paused && !opts.includePaused) return;
+			var k = section(e, now, !!opts.undatedBatteries);
+			if (k) (grouped[k] = grouped[k] || []).push(e);
+		});
+		return KINDS.filter(function (k) { return grouped[k]; }).map(function (k) { return { kind: k, entries: sorted(grouped[k], k) }; });
+	}
+
+	function today(list, now) {
+		var r = { now: [], evening: [] };
+		build(list, now).forEach(function (s) {
+			if (s.kind === "overdue" || s.kind === "today") r.now = r.now.concat(s.entries);
+			else if (s.kind === "evening") r.evening = r.evening.concat(s.entries);
+		});
+		return r;
+	}
+
+	function upcoming(list, now) {
+		var groups = {};
+		build(list, now).filter(function (s) { return ["tomorrow", "week", "later"].indexOf(s.kind) !== -1; }).forEach(function (s) {
+			s.entries.forEach(function (e) {
+				var date = e.due != null ? e.due : e.deadline;
+				if (date == null) return;
+				var span = days(now, date) <= 7 ? "day" : "month";
+				var d = new Date(date), start = span === "day" ? startOfDay(date) : Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+				var id = span + start;
+				(groups[id] = groups[id] || { span: span, date: start, entries: [] }).entries.push(e);
+			});
+		});
+		return Object.keys(groups).map(function (k) {
+			var g = groups[k];
+			g.entries.sort(function (a, b) { return (a.due != null ? a.due : Infinity) - (b.due != null ? b.due : Infinity); });
+			return g;
+		}).sort(function (a, b) { return a.span !== b.span ? (a.span === "day" ? -1 : 1) : a.date - b.date; });
+	}
+
+	function area(e) { return e.room ? { type: "room", key: e.room } : e.category ? { type: "category", key: e.category } : { type: "none", key: "" }; }
+	function rank(a) { return a.type === "room" ? "0" + ROOM_ORDER.indexOf(a.key) : a.type === "category" ? "1" + a.key.toLowerCase() : "2"; }
+
+	function anytime(list, now) {
+		var groups = {};
+		build(list, now).filter(function (s) { return ["tomorrow", "week", "later"].indexOf(s.kind) === -1; }).forEach(function (s) {
+			s.entries.forEach(function (e) {
+				var a = area(e), id = a.type + ":" + a.key;
+				(groups[id] = groups[id] || { area: a, entries: [] }).entries.push(e);
+			});
+		});
+		return Object.keys(groups).map(function (k) { return groups[k]; }).sort(function (a, b) { return rank(a.area) < rank(b.area) ? -1 : rank(a.area) > rank(b.area) ? 1 : 0; });
+	}
+
+	function freshness(chores) {
+		var v = chores.map(function (e) { return e.dueness; }).filter(function (x) { return x != null; }).map(function (x) { return Math.min(Math.max(x, 0), 1); });
+		return v.length ? 1 - v.reduce(function (s, x) { return s + x; }, 0) / v.length : 1;
+	}
+	function worst(chores) {
+		var order = ["fresh", "soon", "due", "late"], w = -1;
+		chores.forEach(function (e) { var b = order.indexOf(bucket(e.dueness)); if (b > w) w = b; });
+		return w < 0 ? "fresh" : order[w];
+	}
+	function tile(key, list) {
+		var inRoom = list.filter(function (e) { return (e.room || null) === key; });
+		var chores = inRoom.filter(function (e) { return e.kind === "chore"; }).sort(function (a, b) {
+			var x = a.dueness == null ? -1 : a.dueness, y = b.dueness == null ? -1 : b.dueness;
+			return x !== y ? y - x : fold(a.name) < fold(b.name) ? -1 : 1;
+		});
+		var tasks = inRoom.filter(function (e) { return e.kind === "task"; });
+		return { room: key, chores: chores, tasks: tasks, bucket: worst(chores), freshness: freshness(chores),
+			due: chores.filter(function (e) { return bucket(e.dueness) === "due"; }).length, late: chores.filter(function (e) { return bucket(e.dueness) === "late"; }).length };
+	}
+	/// Kitchen, Bathroom, Bedroom, Living room, then No room when something has none (18-SPEC 5.3).
+	function rooms(list) {
+		var active = list.filter(function (e) { return !e.paused && e.kind !== "battery"; });
+		var tiles = ROOM_ORDER.map(function (r) { return tile(r, active); });
+		var loose = tile(null, active);
+		if (loose.chores.length || loose.tasks.length) tiles.push(loose);
+		var chores = active.filter(function (e) { return e.kind === "chore"; });
+		return { tiles: tiles, freshness: freshness(chores), due: chores.filter(function (e) { return bucket(e.dueness) === "due"; }).length,
+			late: chores.filter(function (e) { return bucket(e.dueness) === "late"; }).length };
+	}
+
+	/// Done tasks, chore executions and battery charges, newest first, grouped by day.
+	function logbook(d) {
+		var names = {}, bnames = {}, seen = {};
+		(d.chores || []).forEach(function (c) { names[c.id] = c.name; });
+		(d.batteries || []).forEach(function (b) { bnames[b.id] = b.name; });
+		var items = [];
+		(d.tasks || []).filter(function (t) { return flag(t.done) && wall(t.done_timestamp) != null; }).forEach(function (t) {
+			items.push({ id: "task:" + t.id, kind: "task", ref: +t.id, name: t.name, at: wall(t.done_timestamp) });
+		});
+		(d.log || []).filter(function (l) { return !flag(l.undone) && wall(l.tracked_time) != null; }).forEach(function (l) {
+			items.push({ id: "chore:" + l.id, kind: "chore", ref: +l.id, choreId: +l.chore_id, skipped: flag(l.skipped), name: names[l.chore_id] || "", at: wall(l.tracked_time) });
+		});
+		(d.cycles || []).filter(function (c) { return !flag(c.undone) && wall(c.tracked_time) != null; }).forEach(function (c) {
+			items.push({ id: "battery:" + c.id, kind: "battery", ref: +c.id, batteryId: +c.battery_id, name: bnames[c.battery_id] || "", at: wall(c.tracked_time) });
+		});
+		items = items.filter(function (i) { return seen[i.id] ? false : (seen[i.id] = true); }).sort(function (a, b) { return b.at - a.at; });
+		var byDay = [];
+		items.forEach(function (i) {
+			var day = startOfDay(i.at), last = byDay[byDay.length - 1];
+			if (last && last.day === day) last.items.push(i); else byDay.push({ day: day, items: [i] });
+		});
+		return byDay;
+	}
+
+	/// Later today (hidden after 21:00), Tomorrow, This weekend, Next week, as in the app's PostponeQuickPick.
+	function postponePicks(now) {
+		var out = [], wd = new Date(now).getUTCDay();
+		if (hour(now) < 21) out.push({ key: "laterToday", at: Math.floor((now + 3 * 3600000) / 3600000) * 3600000 });
+		out.push({ key: "tomorrow", at: now + DAY });
+		out.push({ key: "weekend", at: startOfDay(now) + (wd === 6 ? 1 : (6 - wd + 7) % 7) * DAY + 10 * 3600000 });
+		var ahead = (1 - wd + 7) % 7;
+		out.push({ key: "nextWeek", at: now + (ahead === 0 ? 7 : ahead) * DAY });
+		return out;
+	}
+
+	var A = { KINDS: KINDS, ROOM_ORDER: ROOM_ORDER, wall: wall, fmt: fmt, dayText: dayText, startOfDay: startOfDay, days: days, steps: steps,
+		entries: entries, section: section, build: build, today: today, upcoming: upcoming, anytime: anytime, daysLate: daysLate,
+		bucket: bucket, dueness: dueness, rooms: rooms, logbook: logbook, postponePicks: postponePicks, fold: fold };
+	if (typeof module !== "undefined" && module.exports) module.exports = A; else root.GCA = A;
+})(this);
+</script>

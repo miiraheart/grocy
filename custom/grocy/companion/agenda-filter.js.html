@@ -1,0 +1,114 @@
+<script>
+(function (root) {
+	/// Port of the app's AgendaFilter and SavedFilters: words, #room, @category, !1..4, ~1..3, type:, tag:, skipped>N,
+	/// late>N, today, tomorrow, week, later, overdue, nodate, paused; "-" negates, "|" means or.
+	var MAX_LENGTH = 200, MAX_TERMS = 30;
+	var SECTION_WORDS = { overdue: ["overdue"], today: ["today", "evening"], tomorrow: ["tomorrow"], week: ["today", "evening", "tomorrow", "week"],
+		later: ["later"], nodate: ["noDate"] };
+	var PRIORITIES = { 1: "urgent", 2: "high", 3: "normal", 4: "low" };
+	var ROOM_NAMES = { kitchen: ["kitchen", "cuisine"], bathroom: ["bathroom", "salledebain", "sdb"], bedroom: ["bedroom", "chambre"],
+		living_room: ["livingroom", "salon", "sejour"] };
+
+	function fold(t) { return String(t == null ? "" : t).normalize("NFD").replace(/\p{M}/gu, "").toLowerCase(); }
+	function squash(t) { return String(t).replace(/[\s_\-']/g, ""); }
+
+	function term(text) {
+		if (SECTION_WORDS[text]) return { t: "sections", v: SECTION_WORDS[text] };
+		if (text === "paused") return { t: "paused" };
+		var head = text.charAt(0), rest = text.slice(1);
+		if (head === "#" && rest) return { t: "room", v: squash(rest) };
+		if (head === "@" && rest) return { t: "category", v: squash(rest) };
+		if (head === "!" && PRIORITIES[rest]) return { t: "priority", v: PRIORITIES[rest] };
+		if (head === "~" && /^[123]$/.test(rest)) return { t: "effort", v: +rest };
+		if (/^type:(task|chore|battery)$/.test(text)) return { t: "kind", v: text.slice(5) };
+		if (text.indexOf("tag:") === 0 && text.length > 4) return { t: "tag", v: text.slice(4) };
+		if (/^skipped>\d+$/.test(text)) return { t: "skipped", v: +text.slice(8) };
+		if (/^late>\d+$/.test(text)) return { t: "late", v: +text.slice(5) };
+		return { t: "word", v: text };
+	}
+	function clause(token) {
+		var text = fold(token), neg = false;
+		if (text.charAt(0) === "-") { text = text.slice(1); neg = true; }
+		return text ? { term: term(text), negated: neg } : null;
+	}
+
+	function parse(query) {
+		return String(query || "").split("|").map(function (g) {
+			return g.split(/\s+/).filter(Boolean).map(clause).filter(Boolean);
+		}).filter(function (g) { return g.length; });
+	}
+
+	function roomMatches(room, name) {
+		if (!room) return false;
+		var r = squash(fold(room));
+		var names = [r].concat(ROOM_NAMES[r] || (Object.keys(ROOM_NAMES).filter(function (k) { return squash(k) === r; }).map(function (k) { return ROOM_NAMES[k]; })[0]) || []);
+		return names.some(function (n) { return n.indexOf(name) === 0; });
+	}
+
+	function holds(term, e, section, now, R) {
+		switch (term.t) {
+			case "sections": return section != null && term.v.indexOf(section) !== -1;
+			case "paused": return !!e.paused;
+			case "room": return roomMatches(e.room, term.v);
+			case "category": return e.category ? squash(fold(e.category)).indexOf(term.v) !== -1 : false;
+			case "priority": return String(e.priority || "").toLowerCase() === term.v;
+			case "effort": return (e.effort || 1) === term.v;
+			case "kind": return e.kind === term.v;
+			case "tag": return (e.tags || []).some(function (t) { return fold(t).indexOf(term.v) === 0; });
+			case "skipped": return (e.skippedCount || 0) > term.v;
+			case "late": return R.daysLate(e, now) > term.v;
+			default: return fold(e.name + "\n" + (e.searchText || "")).indexOf(term.v) !== -1;
+		}
+	}
+
+	function matches(groups, e, now, R) {
+		R = R || root.GCA;
+		if (!groups.length) return true;
+		var section = R.section(e, now, true);
+		return groups.some(function (g) {
+			return g.every(function (c) { return holds(c.term, e, section, now, R) !== c.negated; });
+		});
+	}
+
+	function structured(token) {
+		return (token.length > 0 && "#@!~".indexOf(token.charAt(0)) !== -1) || ["type:", "tag:", "skipped>", "late>"].some(function (p) { return token.toLowerCase().indexOf(p) === 0; });
+	}
+
+	/// { ok: groups } or { error: "empty" | "tooLong" | "tooManyTerms" | "unknownToken", token }.
+	function validate(query) {
+		var q = String(query || "").trim();
+		if (!q) return { error: "empty" };
+		if (q.length > MAX_LENGTH) return { error: "tooLong" };
+		var tokens = q.split(/[\s|]+/).filter(Boolean);
+		if (tokens.length > MAX_TERMS) return { error: "tooManyTerms" };
+		for (var i = 0; i < tokens.length; i++) {
+			var bare = tokens[i].charAt(0) === "-" ? tokens[i].slice(1) : tokens[i];
+			if (!structured(bare)) continue;
+			var g = parse(bare);
+			if (g.length && g[0][0].term.t === "word") return { error: "unknownToken", token: tokens[i] };
+		}
+		var groups = parse(q);
+		return groups.length ? { ok: groups } : { error: "empty" };
+	}
+
+	/// Saved filters keep the app's SavedFilter shape: { id, name, query, pinned, order }.
+	function addSaved(list, name, query, id) {
+		name = String(name || "").trim();
+		if (!name) return { error: "noName" };
+		var v = validate(query);
+		if (v.error) return v;
+		var next = (list || []).filter(function (f) { return f.name.toLowerCase() !== name.toLowerCase(); });
+		var order = next.reduce(function (m, f) { return Math.max(m, f.order || 0); }, -1) + 1;
+		next.push({ id: id, name: name, query: String(query).trim(), pinned: true, order: order });
+		return { ok: next };
+	}
+	function sortSaved(list) {
+		return (Array.isArray(list) ? list : []).filter(function (f) { return f && f.name && f.query; }).sort(function (a, b) {
+			return (a.order || 0) - (b.order || 0) || (a.name < b.name ? -1 : 1);
+		});
+	}
+
+	var F = { parse: parse, matches: matches, validate: validate, addSaved: addSaved, sortSaved: sortSaved };
+	if (typeof module !== "undefined" && module.exports) module.exports = F; else root.GCF = F;
+})(this);
+</script>

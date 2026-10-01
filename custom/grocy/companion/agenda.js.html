@@ -1,0 +1,180 @@
+<script>
+(function () {
+	if (!window.GC || !GC.agenda || Grocy.View !== "userobjects" || GC.entityName() !== "agenda") return;
+	/// The Tasks page: Things lists (Today, Upcoming, Anytime, Someday), Logbook, Rooms and Calendar over chores, tasks and batteries.
+	var UI = GC.agendaUI, TABS = ["today", "upcoming", "anytime", "someday", "logbook", "rooms", "calendar"];
+	var ctx = { data: null, query: "", groups: [], saved: [] }, ui = null, $filters = null;
+
+	ctx.filtered = function () {
+		var d = ctx.data;
+		return ctx.groups.length ? d.entries.filter(function (e) { return GCF.matches(ctx.groups, e, d.now, GCA); }) : d.entries;
+	};
+
+	ctx.refresh = function () {
+		return GC.agenda.load().then(function (d) {
+			ctx.data = d;
+			counts();
+			TABS.forEach(function (k) { ui.refresh(k); });
+		}, function (err) { GC.toast("error", GL.t("ag.loadFail", { msg: err.message })); });
+	};
+
+	ctx.run = function (promise, message, onFail) {
+		return promise.then(function (undo) {
+			UI.undoBar(message, undo, ctx.refresh);
+			return ctx.refresh().then(function () { return true; });
+		}, function (err) {
+			if (onFail) onFail();
+			GC.toast("error", GL.t("ag.failed", { msg: err.message }));
+			return false;
+		});
+	};
+
+	ctx.detail = function (e) { GC.agendaDetail(e, ctx); };
+	ctx.show = function (key) { ui.refresh(key); ui.show(key); };
+
+	function editUrl(e) { return GC.url("/" + e.kind + "/" + e.id); }
+
+	function pickDate(e, close) {
+		var $f = $('<form class="gc-form" novalidate></form>').on("submit", function (ev) { ev.preventDefault(); });
+		var start = GCA.fmt(ctx.data.now + 86400000).slice(0, 16).replace(" ", "T");
+		var $in = $('<input type="datetime-local" class="form-control" name="when">').val(start);
+		$f.append($("<label></label>").text(GL.t("ag.moveTo")).append($in));
+		close();
+		GC.sheet(GL.t("ag.postpone") + " : " + e.name, $f, [
+			{ label: GL.t("cancel"), onClick: function (c) { c(); } },
+			{ label: GL.t("ag.postpone"), primary: true, onClick: function (c) {
+				var ms = GCA.wall(String($in.val()).replace("T", " "));
+				if (ms == null) return;
+				c();
+				ctx.run(GC.agenda.postpone(e, ms), GL.t("ag.didMove", { name: e.name, d: UI.dayLabel(ms, ctx.data.now) }));
+			} }
+		]);
+	}
+
+	function doneEarlier(e, close) {
+		var $f = $('<form class="gc-form" novalidate></form>').on("submit", function (ev) { ev.preventDefault(); });
+		var $in = $('<input type="datetime-local" class="form-control" name="when">').val(GCA.fmt(ctx.data.now).slice(0, 16).replace(" ", "T"))
+			.attr("max", GCA.fmt(ctx.data.now).slice(0, 16).replace(" ", "T"));
+		$f.append($("<label></label>").text(GL.t("ag.when")).append($in));
+		close();
+		GC.sheet(GL.t("ag.doneEarlier") + " : " + e.name, $f, [
+			{ label: GL.t("cancel"), onClick: function (c) { c(); } },
+			{ label: GL.t("ag.done"), primary: true, onClick: function (c) {
+				var ms = GCA.wall(String($in.val()).replace("T", " ") + ":00");
+				if (ms == null) return;
+				c();
+				ctx.run(GC.agenda.done(e, ms), GL.t("ag.didDone", { name: e.name }));
+			} }
+		]);
+	}
+
+	/// The row menu of the app: done now or earlier, skip, postpone quick picks or a date, pause, details, edit.
+	ctx.actions = function (e) {
+		var $b = $('<div class="gc-ag-actions"></div>');
+		var sheet = null;
+		function close() { if (sheet) sheet.close(); }
+		function add(icon, label, fn, cls) {
+			$('<button type="button" class="gc-ag-action"></button>').addClass(cls || "").append($("<i></i>").attr("class", "fa-solid " + icon))
+				.append($("<span></span>").text(label)).on("click", fn).appendTo($b);
+		}
+		add("fa-circle-check", e.kind === "battery" ? GL.t("ag.changed") : GL.t("ag.done"), function () { close(); ctx.run(GC.agenda.done(e), GL.t("ag.didDone", { name: e.name })); });
+		add("fa-clock-rotate-left", GL.t("ag.doneEarlier"), function () { doneEarlier(e, close); });
+		if (e.kind === "chore" && e.periodType && e.periodType !== "manually") {
+			add("fa-forward", GL.t("ag.skip"), function () { close(); ctx.run(GC.agenda.skip(e), GL.t("ag.didSkip", { name: e.name })); });
+		}
+		if (e.kind !== "battery") {
+			$('<div class="gc-ag-actions-title"></div>').text(GL.t("ag.postpone")).appendTo($b);
+			GCA.postponePicks(ctx.data.now).forEach(function (p) {
+				add("fa-calendar-day", GL.t("ag." + p.key), function () {
+					close();
+					ctx.run(GC.agenda.postpone(e, p.at), GL.t("ag.didMove", { name: e.name, d: UI.dayLabel(p.at, ctx.data.now) }));
+				});
+			});
+			add("fa-calendar", GL.t("ag.pickDate"), function () { pickDate(e, close); });
+		}
+		if (e.kind === "chore") {
+			add("fa-pause", GL.t("ag.pause"), function () { close(); ctx.run(GC.agenda.setActive(e.id, false), GL.t("ag.didPause", { name: e.name })); });
+		}
+		add("fa-circle-info", GL.t("ag.details"), function () { close(); ctx.detail(e); });
+		add("fa-pen", GL.t("ag.edit"), function () { location.href = editUrl(e); });
+		sheet = GC.sheet(e.name, $b, []);
+	};
+
+	function counts() {
+		var t = GCA.today(ctx.filtered(), ctx.data.now);
+		var $tab = ui.$root.find('.gc-tab[data-tab="today"]');
+		$tab.find(".gc-chip-n").remove();
+		var n = t.now.length + t.evening.length;
+		if (n) $tab.append($('<span class="gc-chip-n"></span>').text(" " + n));
+	}
+
+	function renderFilters() {
+		$filters.find(".gc-ag-saved").remove();
+		var $chips = $('<div class="gc-chips gc-ag-saved"></div>');
+		ctx.saved.filter(function (f) { return f.pinned; }).forEach(function (f) {
+			var on = ctx.query === f.query;
+			var $c = $('<button type="button" class="gc-chip"></button>').attr("aria-pressed", on ? "true" : "false").text(f.name)
+				.on("click", function () { setQuery(on ? "" : f.query); });
+			var $x = $('<button type="button" class="gc-ag-chip-x"><i class="fa-solid fa-xmark"></i></button>').attr("aria-label", GL.t("fl.remove", { name: f.name }))
+				.on("click", function () {
+					var keep = ctx.saved.filter(function (s) { return s.id !== f.id; });
+					GC.agenda.saveFilters(keep).then(function () { ctx.saved = keep; renderFilters(); }, function (err) { GC.toast("error", GL.t("ag.failed", { msg: err.message })); });
+				});
+			$chips.append($('<span class="gc-ag-chipwrap"></span>').append($c, $x));
+		});
+		var v = GCF.validate(ctx.query);
+		if (ctx.query && !v.error && !ctx.saved.some(function (f) { return f.query === ctx.query.trim(); })) {
+			$('<button type="button" class="gc-chip"><i class="fa-solid fa-bookmark"></i></button>').append($("<span></span>").text(GL.t("fl.save"))).on("click", saveFilter).appendTo($chips);
+		}
+		if (ctx.query && v.error === "unknownToken") $chips.append($('<span class="gc-sub"></span>').text(GL.t("fl.unknownToken", { t: v.token })));
+		$filters.append($chips);
+	}
+
+	function saveFilter() {
+		var $in = $('<input type="text" class="form-control" name="name" maxlength="40">');
+		GC.sheet(GL.t("fl.save"), $("<label></label>").text(GL.t("fl.name")).append($in), [
+			{ label: GL.t("cancel"), onClick: function (c) { c(); } },
+			{ label: GL.t("save"), primary: true, onClick: function (c) {
+				var r = GCF.addSaved(ctx.saved, $in.val(), ctx.query, GC.agenda.uuid());
+				if (r.error) { GC.toast("warning", GL.t("fl." + r.error, { t: r.token })); return; }
+				GC.agenda.saveFilters(r.ok).then(function () {
+					ctx.saved = GCF.sortSaved(r.ok);
+					c();
+					GC.toast("success", GL.t("fl.saved", { name: $.trim($in.val()) }));
+					renderFilters();
+				}, function (err) { GC.toast("error", GL.t("ag.failed", { msg: err.message })); });
+			} }
+		]);
+	}
+
+	function setQuery(q) {
+		ctx.query = q;
+		ctx.groups = GCF.parse(q);
+		$filters.find("input").val(q);
+		renderFilters();
+		counts();
+		TABS.forEach(function (k) { ui.refresh(k); });
+	}
+
+	function start(d) {
+		ctx.data = d;
+		ui = GC.page({
+			eyebrow: GL.t("sec.home"),
+			title: GL.t("ag.title"),
+			tabs: TABS.map(function (k) { return { key: k, label: GL.t("ag." + k) }; }),
+			onTab: function (key, $p) { GC.agendaViews.render(key, $p, ctx); }
+		});
+		var $top = $('<div class="gc-ag-top"></div>');
+		ui.$root.find(".gc-tabs").before($top);
+		GC.agendaAdd($top, ctx);
+		$filters = $('<div class="gc-ag-filters"></div>').appendTo($top);
+		var timer = null;
+		$('<input type="search" class="form-control gc-search">').attr({ placeholder: GL.t("fl.ph"), "aria-label": GL.t("fl.ph") }).appendTo($filters)
+			.on("input", function () { var q = this.value; clearTimeout(timer); timer = setTimeout(function () { setQuery(q); }, 200); });
+		counts();
+		GC.agenda.savedFilters().then(function (list) { ctx.saved = list; renderFilters(); });
+	}
+
+	GC.agenda.load().then(start, function (err) { GC.toast("error", GL.t("ag.loadFail", { msg: err.message })); });
+})();
+</script>

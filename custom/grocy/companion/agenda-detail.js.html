@@ -1,0 +1,112 @@
+<script>
+(function () {
+	if (!window.GC || !GC.agendaUI) return;
+	/// The detail sheet: a chore's rule, numbers, next dates, steps and history with undo; a task's or battery's fields.
+	var UI = GC.agendaUI, PAGE = 50;
+
+	function stat($g, label, value) {
+		$('<div class="gc-ag-stat"></div>').append($("<span></span>").text(label), $("<b></b>").text(value)).appendTo($g);
+	}
+	function when(ms, now) { return ms == null ? GL.t("cd.never") : UI.dayLabel(ms, now) + " " + UI.time(ms); }
+	function section($b, title) { return $('<div class="gc-ag-sec"></div>').append(UI.heading(title)).appendTo($b); }
+
+	function steps($b, text) {
+		var list = GCA.steps(text);
+		if (!list.length) return;
+		var $s = section($b, GL.t("cd.steps"));
+		list.forEach(function (s) {
+			$('<div class="gc-ag-step"></div>').toggleClass("is-on", s.done).append($("<i></i>").attr("class", s.done ? "fa-solid fa-square-check" : "fa-regular fa-square"))
+				.append($("<span></span>").text(s.text)).appendTo($s);
+		});
+	}
+
+	function history($sec, ctx, choreId, log, close) {
+		$sec.find(".gc-ag-list, .gc-ag-more-log, .gc-sub").remove();
+		var live = log.filter(function (l) { return String(l.undone) !== "1"; });
+		if (!live.length) { $sec.append($('<p class="gc-sub"></p>').text(GL.t("cd.noHistory"))); return; }
+		var $l = $('<div class="gc-ag-list" role="list"></div>').appendTo($sec);
+		live.forEach(function (l) {
+			var ms = GCA.wall(l.tracked_time);
+			var $r = $('<div class="gc-ag-row is-logged" role="listitem"></div>').appendTo($l);
+			$('<div class="gc-ag-main"></div>').append($('<span class="gc-ag-name"></span>').text(when(ms, ctx.data.now)))
+				.append(String(l.skipped) === "1" ? $('<div class="gc-ag-meta"></div>').append(UI.pill("fa-forward", GL.t("lb.skipped"))) : null).appendTo($r);
+			$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("ag.undo")).on("click", function () {
+				GC.agenda.undoExecution({ kind: "chore", ref: l.id }).then(function () {
+					GC.toast("info", GL.t("ag.undone"));
+					close();
+					ctx.refresh();
+				}, function (err) { GC.toast("error", GL.t("ag.failed", { msg: err.message })); });
+			}).appendTo($r);
+		});
+		if (log.length % PAGE === 0) {
+			$('<button type="button" class="btn btn-sm btn-outline-secondary gc-ag-more-log"></button>').text(GL.t("lb.older")).on("click", function () {
+				GC.agenda.choreDetail(choreId, log.length + PAGE).then(function (r) { history($sec, ctx, choreId, r.log, close); });
+			}).appendTo($sec);
+		}
+	}
+
+	function chore(e, ctx, $b, close) {
+		var c = (ctx.data.chores || []).filter(function (x) { return +x.id === e.id; })[0] || {};
+		var cur = (ctx.data.current || []).filter(function (x) { return +x.chore_id === e.id; })[0] || {};
+		$b.append($('<p class="gc-ag-rule"></p>').append(UI.pill("fa-rotate", UI.schedulePhrase(c))).append(String(c.active) === "1" ? null : UI.pill("fa-pause", GL.t("cd.paused"))));
+		if (c.description) $b.append($('<p class="gc-sub"></p>').text(c.description));
+		var $g = $('<div class="gc-ag-stats"><div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i></div></div>').appendTo($b);
+		var next = GCS.nextDates(c, cur.last_tracked_time, 5);
+		if (next.length) {
+			var $n = section($b, GL.t("cd.next"));
+			$('<div class="gc-chips"></div>').append(next.map(function (ms) { return UI.pill("fa-calendar-day", UI.dayLabel(ms, ctx.data.now)); })).appendTo($n);
+		}
+		steps($b, (c.userfields || {}).steps);
+		var $h = section($b, GL.t("cd.history"));
+		GC.agenda.choreDetail(e.id, PAGE).then(function (r) {
+			var d = r.details || {}, live = r.log.filter(function (l) { return String(l.undone) !== "1"; });
+			var month = GCA.wall(GCA.dayText(ctx.data.now).slice(0, 8) + "01");
+			$g.empty();
+			stat($g, GL.t("cd.count"), String(d.tracked_count || 0));
+			var by = d.last_done_by && c.assignment_type && c.assignment_type !== "no-assignment" ? " " + GL.t("cd.by", { name: d.last_done_by.display_name }) : "";
+			stat($g, GL.t("cd.last"), when(GCA.wall(d.last_tracked), ctx.data.now) + by);
+			if (d.average_execution_frequency_hours) stat($g, GL.t("cd.real"), GL.t("cd.everyDays", { n: Math.round(d.average_execution_frequency_hours / 2.4) / 10 }));
+			stat($g, GL.t("cd.skipped"), String(live.filter(function (l) { return String(l.skipped) === "1"; }).length));
+			stat($g, GL.t("cd.month"), String(live.filter(function (l) { return String(l.skipped) !== "1" && GCA.wall(l.tracked_time) >= month; }).length));
+			history($h, ctx, e.id, r.log, close);
+		}, function (err) { $g.empty().append($('<p class="gc-sub"></p>').text(GL.t("ag.loadFail", { msg: err.message }))); });
+	}
+
+	function task(e, ctx, $b) {
+		var t = (ctx.data.tasks || []).filter(function (x) { return +x.id === e.id; })[0] || {};
+		var $g = $('<div class="gc-ag-stats"></div>').appendTo($b);
+		if (e.deadline != null) stat($g, GL.t("date"), e.deadlineHasTime ? when(e.deadline, ctx.data.now) : UI.dayLabel(e.deadline, ctx.data.now));
+		if (e.planned != null) stat($g, GL.t("ag.upcoming"), UI.dayLabel(e.planned, ctx.data.now));
+		var $m = $('<div class="gc-ag-meta"></div>').appendTo($b);
+		if (e.room) $m.append(UI.pill(UI.roomIcon(e.room), UI.roomName(e.room)));
+		if (e.category) $m.append(UI.pill("fa-folder", e.category));
+		if (e.priority) $m.append(UI.pill("fa-flag", GL.t("prio." + e.priority)));
+		if (e.effort) $m.append(UI.pill("fa-gauge", GL.t("ag.effort", { n: e.effort })));
+		if (t.description) $b.append($('<p class="gc-sub"></p>').text(t.description));
+		steps($b, (t.userfields || {}).steps);
+	}
+
+	function battery(e, ctx, $b) {
+		var b = (ctx.data.batteries || []).filter(function (x) { return +x.battery_id === e.id; })[0] || {};
+		var $g = $('<div class="gc-ag-stats"></div>').appendTo($b);
+		stat($g, GL.t("cd.last"), when(e.lastDone, ctx.data.now));
+		if (e.due != null) stat($g, GL.t("cd.next"), UI.dayLabel(e.due, ctx.data.now));
+		if (b.battery && +b.battery.charge_interval_days) stat($g, GL.t("cd.rule"), GL.t("cd.everyDays", { n: b.battery.charge_interval_days }));
+	}
+
+	GC.agendaDetail = function (e, ctx) {
+		var $b = $('<div class="gc-ag-detail"></div>'), sheet = null;
+		function close() { if (sheet) sheet.close(); }
+		if (e.kind === "chore") chore(e, ctx, $b, close); else if (e.kind === "task") task(e, ctx, $b); else battery(e, ctx, $b);
+		var full = ctx.data.entries.filter(function (x) { return x.key === e.kind + ":" + e.id; })[0];
+		var buttons = [{ label: GL.t("ag.edit"), onClick: function () { location.href = GC.url("/" + e.kind + "/" + e.id); } }];
+		if (full) {
+			buttons.push({ label: e.kind === "battery" ? GL.t("ag.changed") : GL.t("ag.done"), primary: true, onClick: function (c) {
+				c();
+				ctx.run(GC.agenda.done(full), GL.t("ag.didDone", { name: full.name }));
+			} });
+		}
+		sheet = GC.sheet(e.name, $b, buttons);
+	};
+})();
+</script>
