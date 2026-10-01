@@ -7,6 +7,9 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const OUT = join(SRC, "..", "templates");
 const read = (...p) => readFileSync(join(SRC, ...p), "utf8");
 const OPENROUTER_CRED = { openRouterApi: { id: "l86vEWp9ZQt60YHZ", name: "OpenRouter account 2" } };
+// Twins never use the app OpenRouter key: test key credential (n8n/create-test-credential.sh) and one :free model.
+const OPENROUTER_TEST_CRED = { openRouterApi: { id: "orTestKey0000001", name: "OpenRouter test" } };
+const TEST_FREE_MODEL = "nvidia/nemotron-3-super-120b-a12b:free";
 
 const webhook = (path, x = 0) => ({ id: path + "-hook", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2,
   position: [x, 0], webhookId: path, parameters: { httpMethod: "POST", path, responseMode: "responseNode", options: {} } });
@@ -47,8 +50,13 @@ const toTest = (wf, id) => {
     if (n.parameters.jsCode) n.parameters.jsCode = n.parameters.jsCode.replaceAll("http://grocy/api", "http://grocy-test/api")
       .replace(/(localhost:5678\/webhook\/[a-z-]+)"/g, '$1-test"');
     if (typeof n.parameters.url === "string") n.parameters.url = n.parameters.url.replaceAll("http://grocy/api", "http://grocy-test/api");
+    if (n.parameters.jsCode) n.parameters.jsCode = n.parameters.jsCode.replace("const TWIN = false;", "const TWIN = true;")
+      .replace(/"[a-z0-9-]+\/[a-zA-Z0-9.:_-]+:free"/g, JSON.stringify(TEST_FREE_MODEL));
+    if (n.credentials && n.credentials.openRouterApi) n.credentials = structuredClone(OPENROUTER_TEST_CRED);
   }
-  if (JSON.stringify(twin).includes("http://grocy/")) throw new Error(id + " still points at the real Grocy");
+  const text = JSON.stringify(twin);
+  if (text.includes("http://grocy/")) throw new Error(id + " still points at the real Grocy");
+  if (text.includes(OPENROUTER_CRED.openRouterApi.id)) throw new Error(id + " still uses the app OpenRouter credential");
   return twin;
 };
 const saveWithTest = (file, wf, testId) => {
@@ -105,6 +113,20 @@ saveWithTest("receipt-commit.json", workflow("receiptCommit0001", "Kitchen: rece
   code("Commit", matchLib + read("receipts", "commit.js"), 220),
   respond(440),
 ], [["Webhook", "Commit"], ["Commit", "Respond"]]), "receiptCommitTest0001");
+
+// The shopping inbox reader (17-33): texts the inbox rules cannot read become items; it never writes Grocy.
+const inboxRespond = { ...respond(880), id: "respond-inbox" };
+saveWithTest("shopping-inbox.json", { ...workflow("shoppingInbox0001", "Kitchen: shopping inbox", [
+  webhook("shopping-inbox"),
+  code("Prepare", read("shopping-inbox", "prepare.js"), 220),
+  ifTrue("Needs model?", "needs_model", 440),
+  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 20000, 660, -120),
+  code("Reply", read("shopping-inbox", "reply.js"), 880, -120),
+  inboxRespond,
+], [
+  ["Webhook", "Prepare"], ["Prepare", "Needs model?"], ["Needs model?", "OpenRouter", 0], ["Needs model?", "Respond", 1],
+  ["OpenRouter", "Reply"], ["Reply", "Respond"],
+]), active: false }, "shoppingInboxTest0001");
 
 // Accepts the older TikTok secret and webhook.secret (what the iOS share extension sends).
 const tiktok = { ...workflow("tiktokRecipe0001", "TikTok -> Grocy recipe", [
