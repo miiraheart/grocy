@@ -1,0 +1,419 @@
+{
+ "about": "Recipe diet verdicts and Cook with swaps, shared by the web (companion/recipe-rules.js.html) and the app (RecipeDiet, RecipeSwapView). Lines are free lines of the description.",
+ "rulesVersion": "2026-09-27.2",
+ "cases": [
+  {
+   "name": "crepes, every swap kind (FR source)",
+   "servings": 1,
+   "lines": [
+    "250 g farine de blé",
+    "500 ml lait",
+    "50 g beurre fondu",
+    "4 œufs entiers",
+    "1 càs sucre vanillé (optionnel)"
+   ],
+   "steps": [
+    "Commence par verser la farine tamisée dans un bol et creuse un puits.",
+    "Dans le puits, verse les oeufs et le beurre fondu.",
+    "Ajoute petit à petit le lait en fouettant.",
+    "Laisse cuire 2 minutes sur feu vif."
+   ],
+   "expect": {
+    "verdict": "avoid",
+    "hardBlocked": false,
+    "summary": "avoid:farine blé; avoid:lait; avoid:beurre; avoid:œufs; avoid:sucre vanillé",
+    "boosts": [],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "swapped",
+      "text": "250 g rice flour (swap)"
+     },
+     {
+      "key": "free:1",
+      "action": "swapped",
+      "text": "500 ml coconut milk (swap)"
+     },
+     {
+      "key": "free:2",
+      "action": "swapped",
+      "text": "40 g olive oil (swap)"
+     },
+     {
+      "key": "free:3",
+      "action": "swapped",
+      "text": "4 ground flaxseed and water (swap)"
+     },
+     {
+      "key": "free:4",
+      "action": "omit",
+      "text": "1 càs sucre vanillé (optionnel) (omit or reduce)"
+     }
+    ],
+    "steps_en": [
+     "Commence par verser la farine tamisée dans un bol et creuse un puits.",
+     "Dans le puits, verse les oeufs et le olive oil fondu.",
+     "Ajoute petit à petit le coconut milk en fouettant.",
+     "Laisse cuire 2 minutes sur feu vif."
+    ],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "swapped",
+      "text": "250 g farine de riz (substitution)"
+     },
+     {
+      "key": "free:1",
+      "action": "swapped",
+      "text": "500 ml lait de coco (substitution)"
+     },
+     {
+      "key": "free:2",
+      "action": "swapped",
+      "text": "40 g huile d'olive (substitution)"
+     },
+     {
+      "key": "free:3",
+      "action": "swapped",
+      "text": "4 lin moulu et eau (substitution)"
+     },
+     {
+      "key": "free:4",
+      "action": "omit",
+      "text": "1 càs sucre vanillé (optionnel) (à omettre ou réduire)"
+     }
+    ],
+    "steps_fr": [
+     "Commence par verser la farine tamisée dans un bol et creuse un puits.",
+     "Dans le puits, verse les oeufs et le huile d'olive fondu.",
+     "Ajoute petit à petit le lait de coco en fouettant.",
+     "Laisse cuire 2 minutes sur feu vif."
+    ]
+   }
+  },
+  {
+   "name": "porridge with oats is danger and blocked",
+   "servings": 2,
+   "lines": [
+    "50 g de flocons d'avoine",
+    "1 banane",
+    "200 ml de lait de coco"
+   ],
+   "steps": [
+    "Cuire les flocons dans le lait de coco."
+   ],
+   "expect": {
+    "verdict": "danger",
+    "hardBlocked": true,
+    "summary": "danger:avoine",
+    "boosts": [],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "remove",
+      "text": "50 g de flocons d'avoine"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "1 banane"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "200 ml de lait de coco"
+     }
+    ],
+    "steps_en": [
+     "Cuire les flocons dans le lait de coco."
+    ],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "remove",
+      "text": "50 g de flocons d'avoine"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "1 banane"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "200 ml de lait de coco"
+     }
+    ],
+    "steps_fr": [
+     "Cuire les flocons dans le lait de coco."
+    ]
+   }
+  },
+  {
+   "name": "checked by hand lifts the block, not the verdict",
+   "servings": 2,
+   "override": true,
+   "lines": [
+    "50 g de flocons d'avoine"
+   ],
+   "steps": [],
+   "expect": {
+    "verdict": "danger",
+    "hardBlocked": false,
+    "summary": "danger:avoine",
+    "boosts": [],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "remove",
+      "text": "50 g de flocons d'avoine"
+     }
+    ],
+    "steps_en": [],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "remove",
+      "text": "50 g de flocons d'avoine"
+     }
+    ],
+    "steps_fr": []
+   }
+  },
+  {
+   "name": "a clean recipe is fine",
+   "servings": 2,
+   "lines": [
+    "200 g de riz",
+    "1 courgette",
+    "1 c. à s. d'huile d'olive"
+   ],
+   "steps": [
+    "Cuire le riz 12 minutes."
+   ],
+   "expect": {
+    "verdict": "ok",
+    "hardBlocked": false,
+    "summary": "",
+    "boosts": [],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "200 g de riz"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "1 courgette"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "1 c. à s. d'huile d'olive"
+     }
+    ],
+    "steps_en": [
+     "Cuire le riz 12 minutes."
+    ],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "200 g de riz"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "1 courgette"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "1 c. à s. d'huile d'olive"
+     }
+    ],
+    "steps_fr": [
+     "Cuire le riz 12 minutes."
+    ]
+   }
+  },
+  {
+   "name": "raw cruciferous in a line and a step",
+   "servings": 2,
+   "lines": [
+    "1 brocoli cru râpé",
+    "2 carottes"
+   ],
+   "steps": [
+    "Servir le chou cru en salade."
+   ],
+   "expect": {
+    "verdict": "info",
+    "hardBlocked": false,
+    "summary": "thyroid:brocoli; thyroid:chou",
+    "boosts": [
+     "vitamin_a"
+    ],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "1 brocoli cru râpé"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "2 carottes"
+     }
+    ],
+    "steps_en": [
+     "Servir le chou cru en salade."
+    ],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "1 brocoli cru râpé"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "2 carottes"
+     }
+    ],
+    "steps_fr": [
+     "Servir le chou cru en salade."
+    ]
+   }
+  },
+  {
+   "name": "starch over half a cup a serving, boosts",
+   "servings": 1,
+   "lines": [
+    "300 g de quinoa",
+    "4 sardines",
+    "2 patates douces"
+   ],
+   "steps": [],
+   "expect": {
+    "verdict": "info",
+    "hardBlocked": false,
+    "summary": "starch",
+    "boosts": [
+     "iron",
+     "vitamin_a",
+     "vitamin_b"
+    ],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "300 g de quinoa"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "4 sardines"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "2 patates douces"
+     }
+    ],
+    "steps_en": [],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "none",
+      "text": "300 g de quinoa"
+     },
+     {
+      "key": "free:1",
+      "action": "none",
+      "text": "4 sardines"
+     },
+     {
+      "key": "free:2",
+      "action": "none",
+      "text": "2 patates douces"
+     }
+    ],
+    "steps_fr": []
+   }
+  },
+  {
+   "name": "english recipe with soy, dairy and eggs",
+   "servings": 4,
+   "lines": [
+    "2 tbsp soy sauce",
+    "1 cup milk",
+    "2 eggs",
+    "400 g chicken thighs"
+   ],
+   "steps": [
+    "Whisk the eggs with the milk.",
+    "Add the soy sauce and the chicken."
+   ],
+   "expect": {
+    "verdict": "avoid",
+    "hardBlocked": false,
+    "summary": "avoid:soy sauce; avoid:milk; avoid:eggs; histamine:soy sauce",
+    "boosts": [],
+    "lines_en": [
+     {
+      "key": "free:0",
+      "action": "swapped",
+      "text": "2 tbsp coconut aminos (swap)"
+     },
+     {
+      "key": "free:1",
+      "action": "swapped",
+      "text": "1 cup coconut milk (swap)"
+     },
+     {
+      "key": "free:2",
+      "action": "swapped",
+      "text": "2 ground flaxseed and water (swap)"
+     },
+     {
+      "key": "free:3",
+      "action": "none",
+      "text": "400 g chicken thighs"
+     }
+    ],
+    "steps_en": [
+     "Whisk the ground flaxseed and water with the coconut milk.",
+     "Add the coconut aminos and the chicken."
+    ],
+    "lines_fr": [
+     {
+      "key": "free:0",
+      "action": "swapped",
+      "text": "2 tbsp aminos de coco (substitution)"
+     },
+     {
+      "key": "free:1",
+      "action": "swapped",
+      "text": "1 cup lait de coco (substitution)"
+     },
+     {
+      "key": "free:2",
+      "action": "swapped",
+      "text": "2 lin moulu et eau (substitution)"
+     },
+     {
+      "key": "free:3",
+      "action": "none",
+      "text": "400 g chicken thighs"
+     }
+    ],
+    "steps_fr": [
+     "Whisk the lin moulu et eau with the lait de coco.",
+     "Add the aminos de coco and the chicken."
+    ]
+   }
+  }
+ ]
+}

@@ -1,0 +1,2377 @@
+[
+ {
+  "raw": "1 1/2 c.à.s. d'huile d'olive, finement hachée",
+  "language": "fr",
+  "expect": {
+   "quantity": 1.5,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "huile d'olive",
+   "note": "finement hachée",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1½ cup flour",
+  "language": "en",
+  "expect": {
+   "quantity": 1.5,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "flour",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 ½ tasse de riz",
+  "language": "fr",
+  "expect": {
+   "quantity": 1.5,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "riz",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "½ oignon",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": null,
+   "name": "oignon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "¼ tsp salt",
+  "language": "en",
+  "expect": {
+   "quantity": 0.25,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "salt",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "¾ cup sugar",
+  "language": "en",
+  "expect": {
+   "quantity": 0.75,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "sugar",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": ".75 oz vanilla",
+  "language": "en",
+  "expect": {
+   "quantity": 0.75,
+   "quantity_max": null,
+   "unit": "oz",
+   "name": "vanilla",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": ".75oz gin",
+  "language": "en",
+  "expect": {
+   "quantity": 0.75,
+   "quantity_max": null,
+   "unit": "oz",
+   "name": "gin",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "0,5 l de lait",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": "l",
+   "name": "lait",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "0.5 kg potatoes",
+  "language": "en",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": "kg",
+   "name": "potatoes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1/2 citron",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": null,
+   "name": "citron",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1/3 cup milk",
+  "language": "en",
+  "expect": {
+   "quantity": 0.3333333333333333,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "milk",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 1/4 cups flour",
+  "language": "en",
+  "expect": {
+   "quantity": 2.25,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "flour",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1,5 kg de boeuf",
+  "language": "fr",
+  "expect": {
+   "quantity": 1.5,
+   "quantity_max": null,
+   "unit": "kg",
+   "name": "boeuf",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2.5 dl crème",
+  "language": "fr",
+  "expect": {
+   "quantity": 2.5,
+   "quantity_max": null,
+   "unit": "dl",
+   "name": "crème",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "⅓ tasse d'eau",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.3333333333333333,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "eau",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1⅔ cups water",
+  "language": "en",
+  "expect": {
+   "quantity": 1.6666666666666667,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "water",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "⅛ c.à.c. de muscade",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.125,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "muscade",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2-3 gousses d'ail (facultatif)",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": 3,
+   "unit": "clove",
+   "name": "ail",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 à 3 carottes",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": 3,
+   "unit": null,
+   "name": "carottes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 to 3 tbsp honey",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": 3,
+   "unit": "tbsp",
+   "name": "honey",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1-2 c.à.s. de sirop d'érable",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": 2,
+   "unit": "tbsp",
+   "name": "sirop d'érable",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 - 4 pommes",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": 4,
+   "unit": null,
+   "name": "pommes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 ou 2 piments",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": 2,
+   "unit": null,
+   "name": "piments",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 or 2 chillies",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": 2,
+   "unit": null,
+   "name": "chillies",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "100-150 g de riz",
+  "language": "fr",
+  "expect": {
+   "quantity": 100,
+   "quantity_max": 150,
+   "unit": "g",
+   "name": "riz",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1/2-1 tsp chili flakes",
+  "language": "en",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": 1,
+   "unit": "tsp",
+   "name": "chili flakes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 à 3 c. à s. de sauce soja",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": 3,
+   "unit": "tbsp",
+   "name": "sauce soja",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 càs de coconut aminos",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "coconut aminos",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 c.à.s. de coconut aminos",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "coconut aminos",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 cs d'huile",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "huile",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 cuillères à soupe de miel",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "miel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cuillère à soupe de moutarde",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "moutarde",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 CAS de vinaigre",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "vinaigre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tbsp olive oil",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "olive oil",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 tablespoons butter",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "butter",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tablespoon soy sauce",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "soy sauce",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 c. à s. de farine",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "farine",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 c.a.s de sucre",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "sucre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 tbs lemon juice",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "lemon juice",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cuil. à soupe de câpres",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "câpres",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 càc de cumin",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "cumin",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 c.à.c. de curcuma",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "curcuma",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cc de sel",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "sel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 cuillères à café de paprika",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "paprika",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tsp baking soda",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "baking soda",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 teaspoons cinnamon",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "cinnamon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "½ c. à c. de gingembre",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "gingembre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cup (240 ml) rice",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "rice",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": [
+    {
+     "quantity": 240,
+     "unit": "ml"
+    }
+   ]
+  }
+ },
+ {
+  "raw": "2 cups (480 ml) broth",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "broth",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": [
+    {
+     "quantity": 480,
+     "unit": "ml"
+    }
+   ]
+  }
+ },
+ {
+  "raw": "1 tasse de lait d'amande",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "lait d'amande",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 cups spinach",
+  "language": "en",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "spinach",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cup of oats",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "oats",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "250 g farine de riz",
+  "language": "fr",
+  "expect": {
+   "quantity": 250,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "farine de riz",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "200g de chocolat noir",
+  "language": "fr",
+  "expect": {
+   "quantity": 200,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "chocolat noir",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "500 gr de pâtes",
+  "language": "fr",
+  "expect": {
+   "quantity": 500,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "pâtes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "100 grammes de sucre",
+  "language": "fr",
+  "expect": {
+   "quantity": 100,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "sucre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 kg de tomates",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "kg",
+   "name": "tomates",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 kilos de pommes de terre",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "kg",
+   "name": "pommes de terre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "200 ml de crème de coco",
+  "language": "fr",
+  "expect": {
+   "quantity": 200,
+   "quantity_max": null,
+   "unit": "ml",
+   "name": "crème de coco",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "50 cl lait de riz (ou lait de coco)",
+  "language": "fr",
+  "expect": {
+   "quantity": 50,
+   "quantity_max": null,
+   "unit": "cl",
+   "name": "lait de riz",
+   "note": "ou lait de coco",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "25 cl d'eau",
+  "language": "fr",
+  "expect": {
+   "quantity": 25,
+   "quantity_max": null,
+   "unit": "cl",
+   "name": "eau",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 dl de vin blanc",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "dl",
+   "name": "vin blanc",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 l de bouillon",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "l",
+   "name": "bouillon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 litre de lait",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "l",
+   "name": "lait",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 litres d'eau",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "l",
+   "name": "eau",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 liter water",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "l",
+   "name": "water",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "300 g chicken breast",
+  "language": "en",
+  "expect": {
+   "quantity": 300,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "chicken breast",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "400ml coconut milk",
+  "language": "en",
+  "expect": {
+   "quantity": 400,
+   "quantity_max": null,
+   "unit": "ml",
+   "name": "coconut milk",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "150 g de beurre, mou",
+  "language": "fr",
+  "expect": {
+   "quantity": 150,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "beurre",
+   "note": "mou",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "30 g beurre fondu",
+  "language": "fr",
+  "expect": {
+   "quantity": 30,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "beurre fondu",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "8 oz cream cheese",
+  "language": "en",
+  "expect": {
+   "quantity": 8,
+   "quantity_max": null,
+   "unit": "oz",
+   "name": "cream cheese",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 lb ground beef",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "lb",
+   "name": "ground beef",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 lbs chicken thighs",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "lb",
+   "name": "chicken thighs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 pound carrots",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "lb",
+   "name": "carrots",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "4 ounces cheddar, grated",
+  "language": "en",
+  "expect": {
+   "quantity": 4,
+   "quantity_max": null,
+   "unit": "oz",
+   "name": "cheddar",
+   "note": "grated",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "6 fl oz orange juice",
+  "language": "en",
+  "expect": {
+   "quantity": 6,
+   "quantity_max": null,
+   "unit": "fl_oz",
+   "name": "orange juice",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 fl. oz rum",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "fl_oz",
+   "name": "rum",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 lb (450 g) salmon",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "lb",
+   "name": "salmon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": [
+    {
+     "quantity": 450,
+     "unit": "g"
+    }
+   ]
+  }
+ },
+ {
+  "raw": "200 g / 7 oz feta",
+  "language": "en",
+  "expect": {
+   "quantity": 200,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "feta",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": [
+    {
+     "quantity": 7,
+     "unit": "oz"
+    }
+   ]
+  }
+ },
+ {
+  "raw": "1 pincée de sel",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "sel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 pincée sel",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "sel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "une pincée de poivre",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "poivre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 pincées de piment",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "piment",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "a pinch of nutmeg",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "nutmeg",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 pinch salt",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "pinch",
+   "name": "salt",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 gousse d'ail, écrasée",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "ail",
+   "note": "écrasée",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 gousses d'ail",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "ail",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "une gousse d'ail",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "ail",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 cloves garlic, minced",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "garlic",
+   "note": "minced",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 clove of garlic",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "garlic",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 botte de radis",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "bunch",
+   "name": "radis",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1/2 botte de coriandre",
+  "language": "fr",
+  "expect": {
+   "quantity": 0.5,
+   "quantity_max": null,
+   "unit": "bunch",
+   "name": "coriandre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 bouquet de persil",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "bunch",
+   "name": "persil",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 bunch cilantro",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "bunch",
+   "name": "cilantro",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 boîtes de 400 g de lait de coco",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "lait de coco",
+   "note": null,
+   "optional": false,
+   "size": {
+    "quantity": 400,
+    "unit": "g"
+   },
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 boîte de tomates concassées",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "tomates concassées",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 boite de pois chiches",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "pois chiches",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 boîte de 400 ml de lait de coco",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "lait de coco",
+   "note": null,
+   "optional": false,
+   "size": {
+    "quantity": 400,
+    "unit": "ml"
+   },
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 cans of 15 oz black beans",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "black beans",
+   "note": null,
+   "optional": false,
+   "size": {
+    "quantity": 15,
+    "unit": "oz"
+   },
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 can chickpeas, drained",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "chickpeas",
+   "note": "drained",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 can (400 g) tomatoes",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "can",
+   "name": "tomatoes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": [
+    {
+     "quantity": 400,
+     "unit": "g"
+    }
+   ]
+  }
+ },
+ {
+  "raw": "1 sachet de levure",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "sachet",
+   "name": "levure",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 sachets de sucre vanillé",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "sachet",
+   "name": "sucre vanillé",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 sachet de 11 g de levure de boulanger",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "sachet",
+   "name": "levure de boulanger",
+   "note": null,
+   "optional": false,
+   "size": {
+    "quantity": 11,
+    "unit": "g"
+   },
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 packet yeast",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "sachet",
+   "name": "yeast",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "4 tranches de jambon",
+  "language": "fr",
+  "expect": {
+   "quantity": 4,
+   "quantity_max": null,
+   "unit": "slice",
+   "name": "jambon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tranche de pain",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "slice",
+   "name": "pain",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 slices bacon",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "slice",
+   "name": "bacon",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 pièces de poulet",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "piece",
+   "name": "poulet",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 pièce de boeuf",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "piece",
+   "name": "boeuf",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 pieces ginger",
+  "language": "en",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": "piece",
+   "name": "ginger",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 oeufs",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": null,
+   "name": "oeufs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 eggs",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "eggs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 oignon rouge, émincé",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "oignon rouge",
+   "note": "émincé",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "4 carrots, peeled and sliced",
+  "language": "en",
+  "expect": {
+   "quantity": 4,
+   "quantity_max": null,
+   "unit": null,
+   "name": "carrots",
+   "note": "peeled and sliced",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 avocats mûrs",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "avocats mûrs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 citron vert (jus et zeste)",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "citron vert",
+   "note": "jus et zeste",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "une orange",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "orange",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 courgette",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "courgette",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "12 crevettes",
+  "language": "fr",
+  "expect": {
+   "quantity": 12,
+   "quantity_max": null,
+   "unit": null,
+   "name": "crevettes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "deux tomates",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "tomates",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "two onions",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "onions",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 large potatoes (about 600 g)",
+  "language": "en",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": null,
+   "name": "large potatoes",
+   "note": "about 600 g",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 c.à.s. de sésame (optionnel)",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "sésame",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tbsp sesame seeds (optional)",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "sesame seeds",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "coriandre fraîche, facultatif",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "coriandre fraîche",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "chili flakes, optional",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "chili flakes",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 piment (facultatif)",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "piment",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "50 g de noix, optionnel",
+  "language": "fr",
+  "expect": {
+   "quantity": 50,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "noix",
+   "note": null,
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "fresh basil (optional, for garnish)",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "fresh basil",
+   "note": "for garnish",
+   "optional": true,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "sel, poivre",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "sel, poivre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "sel",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "sel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "poivre au goût",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "poivre",
+   "note": "au goût",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "sel et poivre, au goût",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "sel et poivre",
+   "note": "au goût",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "salt to taste",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "salt",
+   "note": "to taste",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "salt and pepper, to taste",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "salt and pepper",
+   "note": "to taste",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "huile d'olive",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "huile d'olive",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "persil à volonté",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "persil",
+   "note": "à volonté",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "water as needed",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "water",
+   "note": "as needed",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "olive oil",
+  "language": "en",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "olive oil",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "zeste d'un citron",
+  "language": "fr",
+  "expect": {
+   "quantity": null,
+   "quantity_max": null,
+   "unit": null,
+   "name": "zeste d'un citron",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "⁣2 càs de miel",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "miel",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "200 g de farine",
+  "language": "fr",
+  "expect": {
+   "quantity": 200,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "farine",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 c.à.s. d'huile",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "huile",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "⁣⁣ 3 oeufs",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": null,
+   "name": "oeufs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "- 2 carottes",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "carottes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "• 100 g de riz",
+  "language": "fr",
+  "expect": {
+   "quantity": 100,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "riz",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "* 1 cup milk",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "milk",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "  2   tomates  ",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "tomates",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 tsp salt",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tsp",
+   "name": "salt",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "250 g sucre",
+  "language": "fr",
+  "expect": {
+   "quantity": 250,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "sucre",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 c.à.s. de lait",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "lait",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 verre d'eau",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "verre d'eau",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 tbsp of honey",
+  "language": "en",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "honey",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "100 g d'amandes effilées",
+  "language": "fr",
+  "expect": {
+   "quantity": 100,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "amandes effilées",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "100 g d’amandes",
+  "language": "fr",
+  "expect": {
+   "quantity": 100,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "amandes",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 gousse d’ail",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "clove",
+   "name": "ail",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "50 g de farine de maïs",
+  "language": "fr",
+  "expect": {
+   "quantity": 50,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "farine de maïs",
+   "note": null,
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 oignon (émincé)",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": null,
+   "name": "oignon",
+   "note": "émincé",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "200 g de poulet, coupé en dés",
+  "language": "fr",
+  "expect": {
+   "quantity": 200,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "poulet",
+   "note": "coupé en dés",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 cup parsley, chopped, packed",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "cup",
+   "name": "parsley",
+   "note": "chopped, packed",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "2 carottes (environ 200 g), râpées",
+  "language": "fr",
+  "expect": {
+   "quantity": 2,
+   "quantity_max": null,
+   "unit": null,
+   "name": "carottes",
+   "note": "environ 200 g, râpées",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "3 c.à.s. d'huile de coco (fondue)",
+  "language": "fr",
+  "expect": {
+   "quantity": 3,
+   "quantity_max": null,
+   "unit": "tbsp",
+   "name": "huile de coco",
+   "note": "fondue",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 kg de moules, nettoyées",
+  "language": "fr",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "kg",
+   "name": "moules",
+   "note": "nettoyées",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "1 lb shrimp (peeled, deveined)",
+  "language": "en",
+  "expect": {
+   "quantity": 1,
+   "quantity_max": null,
+   "unit": "lb",
+   "name": "shrimp",
+   "note": "peeled, deveined",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ },
+ {
+  "raw": "500 g de pâtes sans gluten (type penne)",
+  "language": "fr",
+  "expect": {
+   "quantity": 500,
+   "quantity_max": null,
+   "unit": "g",
+   "name": "pâtes sans gluten",
+   "note": "type penne",
+   "optional": false,
+   "size": null,
+   "alt": []
+  }
+ }
+]

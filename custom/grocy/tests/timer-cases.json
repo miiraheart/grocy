@@ -1,0 +1,122 @@
+{
+ "about": "Step timers shared by the web (GCT.timers in companion/recipe-text.js.html) and the app (TimerDetector).",
+ "cases": [
+  {
+   "text": "Laisse cuire 2 minutes sur feu vif.",
+   "expect": [
+    {
+     "match": "2 minutes",
+     "seconds": 120,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Enfourner 1 h 30 puis laisser reposer 10 min.",
+   "expect": [
+    {
+     "match": "1 h 30",
+     "seconds": 5400,
+     "maxSeconds": null
+    },
+    {
+     "match": "10 min",
+     "seconds": 600,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Cuire 1h30 à 180 degrés.",
+   "expect": [
+    {
+     "match": "1h30",
+     "seconds": 5400,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Simmer for 15 to 20 minutes.",
+   "expect": [
+    {
+     "match": "15 to 20 minutes",
+     "seconds": 900,
+     "maxSeconds": 1200
+    }
+   ]
+  },
+  {
+   "text": "Cuire 15 à 20 min.",
+   "expect": [
+    {
+     "match": "15 à 20 min",
+     "seconds": 900,
+     "maxSeconds": 1200
+    }
+   ]
+  },
+  {
+   "text": "Faire mariner 12 h au frais.",
+   "expect": []
+  },
+  {
+   "text": "Laisser reposer une heure.",
+   "expect": [
+    {
+     "match": "une heure",
+     "seconds": 3600,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Bake for 45 mins, then rest 5 min.",
+   "expect": [
+    {
+     "match": "45 mins",
+     "seconds": 2700,
+     "maxSeconds": null
+    },
+    {
+     "match": "5 min",
+     "seconds": 300,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Mariner 30 min, puis cuire 8-10 minutes.",
+   "expect": [
+    {
+     "match": "30 min",
+     "seconds": 1800,
+     "maxSeconds": null
+    },
+    {
+     "match": "8-10 minutes",
+     "seconds": 480,
+     "maxSeconds": 600
+    }
+   ]
+  },
+  {
+   "text": "Laisser lever toute la nuit, 8 h.",
+   "expect": []
+  },
+  {
+   "text": "Cuire 90 secondes.",
+   "expect": [
+    {
+     "match": "90 secondes",
+     "seconds": 90,
+     "maxSeconds": null
+    }
+   ]
+  },
+  {
+   "text": "Ajouter 2 oeufs et 200 g de farine.",
+   "expect": []
+  }
+ ]
+}
