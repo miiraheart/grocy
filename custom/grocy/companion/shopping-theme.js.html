@@ -1,0 +1,67 @@
+<script>
+(function (root) {
+	/// ThemeCatalog of 17-21: grocy first and default (a soft tint in the web's own colours), AnyList's 9 basic colours
+	/// offered as an opt in, the earlier basic and premium themes kept so lists using them still render, and the
+	/// WCAG check every custom theme passes. Passcodes are `sha256:<salt>:<hex>` of the salt then the 4 digits.
+	var MIN_CONTRAST = 4.5, WHITE = "#FFFFFF";
+	function t(key, name, light, dark, premium) { return { id: (premium ? "premium." : "basic.") + key, name: name, light: light, dark: dark, text: WHITE }; }
+	var GROCY = { id: "basic.grocy", name: "grocy", soft: true };
+	var ANYLIST = [t("aqua", "Aqua", "#147BAE", "#0F5E85"), t("purple", "Purple", "#8E5BD0", "#7136BD"), t("blue", "Blue", "#3B6FD6", "#2554B1"),
+		t("green", "Green", "#33843E", "#27642F"), t("yellow", "Yellow", "#8E7000", "#6D5600"), t("orange", "Orange", "#B15F0C", "#864809"),
+		t("red", "Red", "#DD3226", "#AB241B"), t("pink", "Pink", "#D82E74", "#A81F57"), t("grey", "Grey", "#74747A", "#58585C")];
+	var OLDER = [t("mint", "Mint", "#0B7A68", "#0A5C4E"), t("ocean", "Ocean", "#0E6BA8", "#0B4F7C"), t("sky", "Sky", "#1D6FC2", "#154F8A"),
+		t("lavender", "Lavender", "#6B5BB5", "#4E4291"), t("grape", "Grape", "#7A3E9D", "#5A2D75"), t("rose", "Rose", "#B8336A", "#8C2750"),
+		t("cherry", "Cherry", "#B3261E", "#8A1C16"), t("coral", "Coral", "#B5452C", "#8A3522"), t("amber", "Amber", "#955800", "#6E4100"),
+		t("olive", "Olive", "#5F6B1E", "#454E15"), t("forest", "Forest", "#2E6B34", "#214D25"), t("slate", "Slate", "#4A5568", "#343B48"),
+		t("linen", "Linen", "#7A6A55", "#5A4E3F", true), t("paper", "Paper", "#5B6770", "#414A51", true), t("chalkboard", "Chalkboard", "#2F4F3F", "#223A2E", true),
+		t("garden", "Garden", "#3E7D4F", "#2D5C3A", true), t("midnight", "Midnight", "#283A6B", "#1C2A4D", true), t("kraft", "Kraft", "#8A5A2B", "#664220", true)];
+	var ALL = [GROCY].concat(ANYLIST, OLDER);
+
+	function spec(id) { return ALL.filter(function (s) { return s.id === id; })[0] || null; }
+	/// The al_theme document as read by the list: an unknown or empty id is grocy.
+	function read(theme) {
+		theme = theme || {};
+		if (theme.id === "custom") return { id: "custom", custom: true, banner: theme.banner || ANYLIST[0].light, text: theme.bannerText || WHITE, item: theme.text || null };
+		var s = spec(theme.id) || GROCY;
+		if (s.soft) return { id: s.id, soft: true };
+		return { id: s.id, banner: s.light, bannerDark: s.dark, text: s.text };
+	}
+	/// CSS variables for one list in light or dark mode.
+	function style(theme, dark) {
+		var r = read(theme);
+		if (r.soft) return { "--gc-shop-banner": "var(--g-accent-soft)", "--gc-shop-banner-fg": "var(--g-fg-strong)", "--gc-shop-banner-line": "var(--g-accent)" };
+		var item = r.item && (!dark || (contrast(r.item, "#1C1C1E") || 0) >= MIN_CONTRAST) ? r.item : null;
+		return { "--gc-shop-banner": dark && r.bannerDark ? r.bannerDark : r.banner, "--gc-shop-banner-fg": r.text, "--gc-shop-banner-line": "transparent",
+			"--gc-shop-item": item || "var(--g-fg-strong)" };
+	}
+	function luminance(hex) {
+		var m = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+		if (!m) return null;
+		var v = parseInt(m[1], 16), ch = [v >> 16 & 255, v >> 8 & 255, v & 255].map(function (c) { c /= 255; return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); });
+		return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+	}
+	function contrast(a, b) { var x = luminance(a), y = luminance(b); return x === null || y === null ? null : (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+	/// What makes a custom theme unreadable: banner text on the banner, item text on white rows.
+	function problems(theme) {
+		var out = [];
+		if ((contrast(theme.banner || ANYLIST[0].light, theme.bannerText || WHITE) || 0) < MIN_CONTRAST) out.push("banner");
+		if (theme.text && (contrast(theme.text, WHITE) || 0) < MIN_CONTRAST) out.push("text");
+		return out;
+	}
+	function hex(buffer) { return Array.from(new Uint8Array(buffer)).map(function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join(""); }
+	function hash(code, salt, subtle) {
+		return subtle.digest("SHA-256", new TextEncoder().encode(salt + code)).then(function (d) { return "sha256:" + salt + ":" + hex(d); });
+	}
+	function matches(code, stored, subtle) {
+		var parts = String(stored || "").split(":");
+		if (parts.length !== 3 || parts[0] !== "sha256") return Promise.resolve(false);
+		return hash(code, parts[1], subtle).then(function (h) { return h === stored; });
+	}
+	function salt(random) { return hex(random(new Uint8Array(8))); }
+
+	var T = { GROCY: GROCY, ANYLIST: ANYLIST, OFFERED: [GROCY].concat(ANYLIST), spec: spec, read: read, style: style, contrast: contrast, problems: problems,
+		hash: hash, matches: matches, salt: salt };
+	if (typeof module !== "undefined" && module.exports) module.exports = T;
+	else if (root.GC && root.GC.shop) root.GC.shop.theme = T;
+})(this);
+</script>
