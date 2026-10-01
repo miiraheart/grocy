@@ -76,8 +76,8 @@
    ],
    "credentials": {
     "openRouterApi": {
-     "id": "l86vEWp9ZQt60YHZ",
-     "name": "OpenRouter account 2"
+     "id": "orTestKey0000001",
+     "name": "OpenRouter test"
     }
    },
    "onError": "continueRegularOutput",
@@ -160,8 +160,8 @@
    ],
    "credentials": {
     "openRouterApi": {
-     "id": "l86vEWp9ZQt60YHZ",
-     "name": "OpenRouter account 2"
+     "id": "orTestKey0000001",
+     "name": "OpenRouter test"
     }
    },
    "onError": "continueRegularOutput",
