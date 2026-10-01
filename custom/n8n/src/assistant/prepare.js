@@ -45,14 +45,14 @@ const system = CONTRACT.rules + "\n" + CONTRACT.stock_detail_rules + "\n\n"
   + "\n\nToday: " + body.today + " " + weekday + " (" + clean(body.timezone || "Europe/Paris", 40) + ")";
 
 const section = (title, lines) => "\n" + title + ":\n" + (lines.length ? lines.join("\n") : "none") + "\n";
-const onScreen = [];
-if (screen.product && +screen.product.id) onScreen.push("product " + +screen.product.id + "|" + clean(screen.product.name) + "  (it, this, ça, le, la, this product)");
+const onStock = [], onScreen = [];
+if (screen.product && +screen.product.id) onStock.push("product " + +screen.product.id + "|" + clean(screen.product.name) + "  (it, this, ça, le, la, this product)");
 if (screen.entry && +screen.entry.id) {
   const e = screen.entry;
-  onScreen.push(["batch " + +e.id + " of product " + +e.product_id, "amount " + (+e.amount || 0), "location " + (+e.location_id || "none"),
+  onStock.push(["batch " + +e.id + " of product " + +e.product_id, "amount " + (+e.amount || 0), "location " + (+e.location_id || "none"),
     "best_before " + (clean(e.best_before, 10) || "none"), e.opened ? "opened" : "closed"].join("|") + "  (this one, this batch, it, celui-ci)");
 }
-if (Array.isArray(screen.location_ids) && screen.location_ids.length) onScreen.push("stock tab filtered to location " + screen.location_ids.map(Number).join(", ") + "  (here, ici, in there)");
+if (Array.isArray(screen.location_ids) && screen.location_ids.length) onStock.push("stock tab filtered to location " + screen.location_ids.map(Number).join(", ") + "  (here, ici, in there)");
 if (screen.list && +screen.list.id) onScreen.push("shopping list " + +screen.list.id + "|" + clean(screen.list.name) + "  (this list, cette liste)");
 if (screen.recipe && +screen.recipe.id) onScreen.push("recipe " + +screen.recipe.id + "|" + clean(screen.recipe.name) + "  (this recipe, cette recette, it, la)");
 if (screen.task && +screen.task.id) onScreen.push("task " + +screen.task.id + "|" + clean(screen.task.name) + "  (this task, cette tâche, it)");
@@ -62,6 +62,7 @@ const user = "Recent rows (" + recent.length + " of " + recent.length + "):\n"
   + (recent.length ? recent.map((r) => JSON.stringify(r)).join("\n") : "none") + "\n\n"
   + "Shortlist (id|name):\n" + (shortlist.length ? shortlist.map((p) => p.id + "|" + clean(p.name)).join("\n") : "none") + "\n"
   + (answered.length ? "\nLast answer (product_id|name|amount|best_before):\n" + answered.map((a) => [+a.product_id, clean(a.name), a.amount == null ? "" : +a.amount, clean(a.best_before, 10)].join("|")).join("\n") + "\n" : "")
+  + (onStock.length ? "\nOn screen (stock):\n" + onStock.join("\n") + "\n" : "")
   + (onScreen.length ? section("On screen", onScreen) : "")
   + section("Tasks (id|name|due)", tasks.map((t) => [t.id, clean(t.name), clean(t.due, 16) || "none"].join("|")))
   + section("Chores (id|name|next day|rule|room)", chores.map((c) => [c.id, clean(c.name), clean(c.next, 16) || "none", clean(c.rule, 30) || "none", clean(c.room, 20) || "none"].join("|")))

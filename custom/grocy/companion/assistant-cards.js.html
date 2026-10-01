@@ -13,11 +13,11 @@
 		return $c.append(document.createTextNode(text));
 	}
 
-	function details(op, ctx) {
+	function details(op, ctx, editing) {
 		var $d = $('<div class="gc-as-chips"></div>');
 		var place = function (id) { return ctx.locations[id] ? ctx.locations[id].name : null; };
 		if (op.whole) $d.append(chip(GL.t("as.all"), "fa-solid fa-layer-group"));
-		if (op.location_id && place(op.location_id)) $d.append(chip(place(op.location_id), "fa-solid fa-location-dot"));
+		if (op.location_id && place(op.location_id) && !(editing && op.op === "add")) $d.append(chip(place(op.location_id), "fa-solid fa-location-dot"));
 		if (op.target_location_id && place(op.target_location_id)) $d.append(chip("→ " + place(op.target_location_id), "fa-solid fa-right-left"));
 		if (op.best_before && DATE_OPS.indexOf(op.op) === -1) $d.append(chip(GC.fmtDate(op.best_before), "fa-regular fa-calendar"));
 		if (op.day) $d.append(chip(GC.fmtDate(op.day), "fa-regular fa-calendar"));
@@ -57,7 +57,7 @@
 		$('<span class="gc-as-verb"></span>').text(verb).appendTo($hd);
 		$('<b class="gc-as-name"></b>').text(row.status === "applied" && row.summary ? row.summary : row.label || "").appendTo($hd);
 		if (AMOUNT_OPS.indexOf(op.op) !== -1 && row.status !== "draft" && op.amount && row.status !== "applied") $('<span class="gc-as-n"></span>').text("× " + op.amount).appendTo($hd);
-		$c.append(details(op, ctx));
+		$c.append(details(op, ctx, row.status === "draft" || row.status === "failed"));
 		if (row.status === "unsupported") $('<div class="gc-as-msg"></div>').text(GL.t("as.appOnly")).appendTo($c);
 		var need = row.status === "draft" && op.op !== "undo" ? A.missing(op) : null;
 		if (need) $('<div class="gc-as-msg gc-as-warn"></div>').text(GL.t("as.need." + need)).appendTo($c);

@@ -6,6 +6,7 @@
 	if (!window.GC || !GC.assist || !GC.assist.session || Grocy.UserId < 1 || $("body").hasClass("embedded")) return;
 	var GA = GC.assist, S = GA.session, busy = false, ctx = null;
 	var Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+	GA.timeoutMs = 60000;
 
 	var $pill = $('<button type="button" class="gc-as-pill"><i class="fa-solid fa-comment-dots"></i><span></span></button>');
 	$pill.find("span").text(GL.t("as.title"));
@@ -68,7 +69,7 @@
 		render();
 		GA.context().then(function (c) {
 			ctx = c;
-			return GC.hook("assistant-intake", GA.request(c, text, S.recentRows(), S.state.answered), 45000).then(function (reply) {
+			return GC.hook("assistant-intake", GA.request(c, text, S.recentRows(), S.state.answered), GA.timeoutMs).then(function (reply) {
 				if (!reply || !reply.ok) throw new Error((reply && reply.error) || GL.t("as.failed"));
 				return S.take(text, reply, c, source);
 			});

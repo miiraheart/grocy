@@ -135,7 +135,7 @@ saveWithTest("assistant-intake.json", { ...workflow("assistantIntake0001", "Kitc
   webhook("assistant-intake"),
   code("Prepare", read("assistant", "prepare.js").replace("/*@CONTRACT@*/null", () => contract), 220),
   ifTrue("Needs model?", "needs_model", 440),
-  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 30000, 660, -120),
+  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 45000, 660, -120),
   code("Reply", read("assistant", "reply.js"), 880, -120),
   assistantRespond,
 ], [

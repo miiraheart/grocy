@@ -86,7 +86,7 @@
 	}
 	function stamp(date) {
 		var d = date || new Date(), off = -d.getTimezoneOffset(), pad = function (n) { return (n < 10 ? "0" : "") + n; };
-		var local = new Date(d.getTime() + off * 60000).toISOString().slice(0, 19);
+		var local = new Date(d.getTime() + off * 60000).toISOString().slice(0, 23);
 		return local + (off >= 0 ? "+" : "-") + pad(Math.floor(Math.abs(off) / 60)) + ":" + pad(Math.abs(off) % 60);
 	}
 
@@ -104,14 +104,16 @@
 		rec.record = body && typeof body === "object" ? body : {};
 		return rec.action_id ? rec : null;
 	}
-	function newest(a, b) { return String(b.created || "").localeCompare(String(a.created || "")); }
+	/// Entries from both devices carry their own offset: order them by instant, never by text.
+	function when(r) { var t = Date.parse(String(r.created || "").replace(" ", "T")); return isNaN(t) ? 0 : t; }
+	function newest(a, b) { return when(b) - when(a); }
 
 	function canUndo(rec) { return UNDOABLE.indexOf(rec.status) !== -1 && Array.isArray(rec.record.undo) && rec.record.undo.length > 0; }
 	function canReplay(rec) { var op = rec.record.op; return !!(op && KINDS[op.op] && !missing(op)); }
 	/// The undoable entries of the same session written at or after this one, newest first ("Undo from here").
 	function fromHere(rec, all) {
 		if (!rec.session_id) return [rec].filter(canUndo);
-		return all.filter(function (r) { return r.session_id === rec.session_id && String(r.created) >= String(rec.created) && canUndo(r); }).sort(newest);
+		return all.filter(function (r) { return r.session_id === rec.session_id && when(r) >= when(rec) && canUndo(r); }).sort(newest);
 	}
 
 	/// The app's action menu (ActionMenuModel.items) for one entry: Inspect, Undo, Redo, Duplicate, Undo from here, Open.
@@ -142,7 +144,7 @@
 	}
 
 	var R = { KINDS: KINDS, FIELDS: FIELDS, fold: fold, words: words, shortlist: shortlist, screenIds: screenIds, kindOf: kindOf, supported: supported,
-		missing: missing, merge: merge, uuid: uuid, stamp: stamp, toFields: toFields, fromRow: fromRow, newest: newest, canUndo: canUndo,
+		missing: missing, merge: merge, uuid: uuid, stamp: stamp, toFields: toFields, fromRow: fromRow, when: when, newest: newest, canUndo: canUndo,
 		canReplay: canReplay, fromHere: fromHere, menu: menu, link: link };
 	if (typeof module !== "undefined" && module.exports) module.exports = R; else root.GCAR = R;
 })(typeof window !== "undefined" ? window : globalThis);

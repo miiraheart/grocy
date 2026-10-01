@@ -38,7 +38,9 @@ body.fixed-nav .gc-as-form { display: flex; align-items: flex-end; gap: 8px; pad
 body.fixed-nav .gc-as-form textarea { flex: 1 1 auto; resize: none; min-height: 44px; }
 body.fixed-nav .gc-as-form .btn { height: 44px; min-width: 44px; }
 body.fixed-nav .gc-as-mic.gc-as-listening { color: var(--g-danger); border-color: var(--g-danger-line); background: var(--g-danger-soft); }
-body.fixed-nav .gc-as-act { align-items: center; }
+body.fixed-nav .gc-as-act { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 12px; text-align: left; }
+body.fixed-nav .gc-as-act .gc-row-main { flex: 1 1 auto; min-width: 0; margin: 0; }
+body.fixed-nav .gc-as-act .gc-row-act { flex: 0 0 auto; margin: 0; }
 body.fixed-nav .gc-as-act .gc-row-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
 body.fixed-nav .gc-as-sentence { margin-top: 4px; font-style: italic; }
 body.fixed-nav .gc-as-inspect dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0 0 12px; font-size: 13px; }
