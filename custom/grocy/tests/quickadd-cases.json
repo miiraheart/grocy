@@ -1,0 +1,691 @@
+{
+ "about": "Quick add grammar cases shared by the web (node --test custom/grocy/tests) and the app (QuickAddCasesFixtureTests). Only the keys under expect are checked; day is YYYY-MM-DD, schedule compares the Grocy period columns and startDate.",
+ "now": "2026-09-27 14:00:00",
+ "timezone": "Europe/Paris",
+ "cases": [
+  {
+   "text": "Call mom tomorrow at 10",
+   "expect": {
+    "name": "Call mom",
+    "day": "2026-09-28",
+    "time": "10:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Appeler maman demain à 10 h",
+   "expect": {
+    "name": "Appeler maman",
+    "day": "2026-09-28",
+    "time": "10:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Pay rent friday",
+   "expect": {
+    "name": "Pay rent",
+    "day": "2026-10-02",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Payer le loyer vendredi",
+   "expect": {
+    "name": "Payer le loyer",
+    "day": "2026-10-02",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Dentist 30 nov",
+   "expect": {
+    "name": "Dentist",
+    "day": "2026-11-30",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Dentiste le 30 novembre",
+   "expect": {
+    "name": "Dentiste",
+    "day": "2026-11-30",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Taxes in 3 days",
+   "expect": {
+    "name": "Taxes",
+    "day": "2026-09-30",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Impôts dans 3 jours",
+   "expect": {
+    "name": "Impôts",
+    "day": "2026-09-30",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Plan the trip next week",
+   "expect": {
+    "name": "Plan the trip",
+    "day": "2026-09-28",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Préparer le voyage la semaine prochaine",
+   "expect": {
+    "name": "Préparer le voyage",
+    "day": "2026-09-28",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Meeting 10am",
+   "expect": {
+    "name": "Meeting",
+    "day": "2026-09-27",
+    "time": "10:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Call the bank 18:30",
+   "expect": {
+    "name": "Call the bank",
+    "day": "2026-09-27",
+    "time": "18:30",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Rendez-vous 10h30",
+   "expect": {
+    "name": "Rendez-vous",
+    "day": "2026-09-27",
+    "time": "10:30",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Watch the film tonight",
+   "expect": {
+    "name": "Watch the film",
+    "day": "2026-09-27",
+    "time": "19:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Regarder le film ce soir",
+   "expect": {
+    "name": "Regarder le film",
+    "day": "2026-09-27",
+    "time": "19:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Run this morning",
+   "expect": {
+    "name": "Run",
+    "day": "2026-09-27",
+    "time": "09:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Courir ce matin",
+   "expect": {
+    "name": "Courir",
+    "day": "2026-09-27",
+    "time": "09:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Buy stamps today",
+   "expect": {
+    "name": "Buy stamps",
+    "day": "2026-09-27",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Sort the papers",
+   "expect": {
+    "name": "Sort the papers",
+    "day": null,
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Call Jo at 9pm tomorrow",
+   "expect": {
+    "name": "Call Jo",
+    "day": "2026-09-28",
+    "time": "21:00",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Rendez-vous à 10h30",
+   "expect": {
+    "name": "Rendez-vous",
+    "day": "2026-09-27",
+    "time": "10:30",
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Fête le 3 déc.",
+   "expect": {
+    "name": "Fête",
+    "day": "2026-12-03",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Rappeler la mairie aujourd'hui",
+   "expect": {
+    "name": "Rappeler la mairie",
+    "day": "2026-09-27",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Arroser mercredi prochain",
+   "expect": {
+    "name": "Arroser",
+    "day": "2026-09-30",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Birthday march 2",
+   "expect": {
+    "name": "Birthday",
+    "day": "2027-03-02",
+    "time": null,
+    "schedule": null,
+    "handOff": false
+   }
+  },
+  {
+   "text": "Vacuum every 3 days",
+   "expect": {
+    "name": "Vacuum",
+    "schedule": {
+     "period": "daily",
+     "interval": 3,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Passer l'aspirateur tous les 3 jours",
+   "expect": {
+    "name": "Passer l'aspirateur",
+    "schedule": {
+     "period": "daily",
+     "interval": 3,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Water the plants every day",
+   "expect": {
+    "name": "Water the plants",
+    "schedule": {
+     "period": "daily",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Arroser tous les jours",
+   "expect": {
+    "name": "Arroser",
+    "schedule": {
+     "period": "daily",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Arroser chaque jour",
+   "expect": {
+    "name": "Arroser",
+    "schedule": {
+     "period": "daily",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Clean the fridge every 2 weeks",
+   "expect": {
+    "name": "Clean the fridge",
+    "schedule": {
+     "period": "daily",
+     "interval": 14,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Gym every monday and thursday",
+   "expect": {
+    "name": "Gym",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday",
+      "thursday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Sport chaque lundi et jeudi",
+   "expect": {
+    "name": "Sport",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday",
+      "thursday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Sortir les poubelles tous les lundis",
+   "expect": {
+    "name": "Sortir les poubelles",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Standup every weekday",
+   "expect": {
+    "name": "Standup",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Réunion en semaine",
+   "expect": {
+    "name": "Réunion",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Bins every other friday",
+   "expect": {
+    "name": "Bins",
+    "schedule": {
+     "period": "weekly",
+     "interval": 2,
+     "weekdays": [
+      "friday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Poubelles un vendredi sur deux",
+   "expect": {
+    "name": "Poubelles",
+    "schedule": {
+     "period": "weekly",
+     "interval": 2,
+     "weekdays": [
+      "friday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Pay rent on the 5th of every month",
+   "expect": {
+    "name": "Pay rent",
+    "schedule": {
+     "period": "monthly",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 5
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Payer le loyer le 5 de chaque mois",
+   "expect": {
+    "name": "Payer le loyer",
+    "schedule": {
+     "period": "monthly",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 5
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Change the filter every 2 months",
+   "expect": {
+    "name": "Change the filter",
+    "schedule": {
+     "period": "monthly",
+     "interval": 2,
+     "weekdays": [],
+     "dayOfMonth": 27
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Changer le filtre tous les 2 mois",
+   "expect": {
+    "name": "Changer le filtre",
+    "schedule": {
+     "period": "monthly",
+     "interval": 2,
+     "weekdays": [],
+     "dayOfMonth": 27
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Check the smoke alarm every year",
+   "expect": {
+    "name": "Check the smoke alarm",
+    "schedule": {
+     "period": "yearly",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Contrôler le détecteur chaque année",
+   "expect": {
+    "name": "Contrôler le détecteur",
+    "schedule": {
+     "period": "yearly",
+     "interval": 1,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Medicine every 6 hours",
+   "expect": {
+    "name": "Medicine",
+    "schedule": {
+     "period": "hourly",
+     "interval": 6,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Médicament toutes les 6 heures",
+   "expect": {
+    "name": "Médicament",
+    "schedule": {
+     "period": "hourly",
+     "interval": 6,
+     "weekdays": [],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Water every week",
+   "expect": {
+    "name": "Water",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "sunday"
+     ],
+     "dayOfMonth": 1
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Ménage tous les lundis demain",
+   "expect": {
+    "name": "Ménage",
+    "day": "2026-09-28",
+    "schedule": {
+     "period": "weekly",
+     "interval": 1,
+     "weekdays": [
+      "monday"
+     ],
+     "dayOfMonth": 1,
+     "startDate": "2026-09-28 00:00:00"
+    },
+    "handOff": false
+   }
+  },
+  {
+   "text": "Vacuum every 3 days #salon ~2",
+   "expect": {
+    "name": "Vacuum",
+    "room": "living_room",
+    "effort": 2
+   }
+  },
+  {
+   "text": "Nettoyer #Cuisine",
+   "expect": {
+    "room": "kitchen"
+   }
+  },
+  {
+   "text": "Clean #sdb",
+   "expect": {
+    "room": "bathroom"
+   }
+  },
+  {
+   "text": "Pay the bill !1 #admin",
+   "categories": [
+    "Admin"
+   ],
+   "expect": {
+    "priority": "urgent",
+    "category": "Admin",
+    "newCategory": false
+   }
+  },
+  {
+   "text": "File them #papers",
+   "expect": {
+    "category": "papers",
+    "newCategory": true
+   }
+  },
+  {
+   "text": "Thing ~5",
+   "expect": {
+    "effort": null,
+    "name": "Thing ~5"
+   }
+  },
+  {
+   "text": "Ranger #Salle-de-bain !2 ~3",
+   "expect": {
+    "name": "Ranger",
+    "room": "bathroom",
+    "priority": "high",
+    "effort": 3
+   }
+  },
+  {
+   "text": "Vacuum every 3 days !1",
+   "expect": {
+    "priority": null,
+    "warnings": [
+     "priorityOnChore"
+    ]
+   }
+  },
+  {
+   "text": "Vacuum twice a week",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Aspirer deux fois par semaine",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Is the bin out?",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Buy milk and call mom",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Acheter du lait et appeler maman",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Buy milk, eggs, bread",
+   "expect": {
+    "handOff": true
+   }
+  },
+  {
+   "text": "Water the plants every day every week",
+   "expect": {
+    "handOff": true
+   }
+  }
+ ]
+}
