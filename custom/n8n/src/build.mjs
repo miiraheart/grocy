@@ -128,6 +128,21 @@ saveWithTest("shopping-inbox.json", { ...workflow("shoppingInbox0001", "Kitchen:
   ["OpenRouter", "Reply"], ["Reply", "Respond"],
 ]), active: false }, "shoppingInboxTest0001");
 
+// The web assistant (WP5): the app's intake contract (assistant/contract.json) on OpenRouter; it never writes Grocy.
+const contract = JSON.stringify(JSON.parse(read("assistant", "contract.json")));
+const assistantRespond = { ...respond(880), id: "respond-assistant" };
+saveWithTest("assistant-intake.json", { ...workflow("assistantIntake0001", "Kitchen: assistant intake", [
+  webhook("assistant-intake"),
+  code("Prepare", read("assistant", "prepare.js").replace("/*@CONTRACT@*/null", () => contract), 220),
+  ifTrue("Needs model?", "needs_model", 440),
+  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 30000, 660, -120),
+  code("Reply", read("assistant", "reply.js"), 880, -120),
+  assistantRespond,
+], [
+  ["Webhook", "Prepare"], ["Prepare", "Needs model?"], ["Needs model?", "OpenRouter", 0], ["Needs model?", "Respond", 1],
+  ["OpenRouter", "Reply"], ["Reply", "Respond"],
+]), active: false }, "assistantIntakeTest0001");
+
 // Accepts the older TikTok secret and webhook.secret (what the iOS share extension sends).
 const tiktok = { ...workflow("tiktokRecipe0001", "TikTok -> Grocy recipe", [
   { id: "a1", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2, position: [0, 0], webhookId: "tiktok-recipe",
