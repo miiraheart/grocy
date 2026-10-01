@@ -165,14 +165,24 @@
 	/// SPEC 6.2 step 3: an active row with the same key and category is flashed, a crossed one uncrossed in place,
 	/// else a new row (product_id, or note for free text) then its userfields. Never Grocy's stock add to list endpoint.
 	function addItem(ctx, draft) {
+		if (!draft.product_id && GC.shop.inbox) {
+			var match = GC.shop.inbox.matchProduct(draft.name, Object.keys(ctx.products).map(function (id) { return ctx.products[id]; }));
+			if (match) { draft.product_id = match; draft.name = ctx.products[match].name; }
+		}
 		var cfg = ctx.config, key = draft.product_id ? "p:" + draft.product_id : "t:" + fold(draft.name);
 		var probe = { product_id: draft.product_id || null, note: draft.product_id ? null : draft.name, userfields: {} };
 		var cat = categoryOf(probe, cfg, ctx.products, ctx.groups).id;
 		var same = ctx.rows.filter(function (r) { return keyOf(r) === key && categoryOf(r, cfg, ctx.products, ctx.groups).id === cat; });
 		var active = same.filter(function (r) { return +r.done !== 1; })[0];
-		if (active) return Promise.resolve({ kind: "highlighted", id: +active.id });
+		if (active) return Promise.resolve(duplicate(ctx, draft, active));
 		if (same.length) return cross(same[0].id, false).then(function () { return { kind: "uncrossed", id: +same[0].id }; });
-		var positions = ctx.rows.map(function (r) { return num((r.userfields || {})[UF.position]); }).filter(function (n) { return n !== null; });
+		return createRow(ctx, draft);
+	}
+
+	/// A new row with Grocy's own columns first, then the phase 17 details as a best effort (a server without them still
+	/// gets the item). `draft.source` is al_source ("web", or "inbox:<entry id>").
+	function createRow(ctx, draft) {
+		var cfg = ctx.config, positions = ctx.rows.map(function (r) { return num((r.userfields || {})[UF.position]); }).filter(function (n) { return n !== null; });
 		var position = !positions.length ? 0 : cfg.insert === "top" ? Math.min.apply(null, positions) - 1 : Math.max.apply(null, positions) + 1;
 		var row = { shopping_list_id: cfg.id, amount: draft.amount || 1 };
 		if (draft.product_id) { row.product_id = +draft.product_id; if (draft.qu_id) row.qu_id = +draft.qu_id; if (draft.note) row.note = draft.note; }
@@ -180,7 +190,7 @@
 		return GC.api("POST", "objects/shopping_list", row).then(function (created) {
 			var id = +created.created_object_id, uf = {};
 			uf[UF.position] = String(position);
-			uf[UF.source] = "web";
+			uf[UF.source] = draft.source || "web";
 			if (root.Grocy && Grocy.UserId > 0) uf[UF.addedBy] = String(Grocy.UserId);
 			if (!draft.product_id && draft.note) uf[UF.note] = draft.note;
 			if (draft.unit && !draft.qu_id) uf[UF.qtyText] = draft.unit;
@@ -189,12 +199,49 @@
 			if (draft.guest) uf.al_flags = "guest";
 			if (draft.qtyText) uf[UF.qtyText] = draft.qtyText;
 			if (draft.pkg) uf[UF.pkg] = draft.pkg;
-			return GC.api("PUT", "userfields/shopping_list/" + id, uf).then(function () { return { kind: "created", id: id }; });
+			var done = function () { return { kind: "created", id: id, position: position }; };
+			return GC.api("PUT", "userfields/shopping_list/" + id, uf).then(done, done);
 		});
 	}
 
+	/// 17-32: with a quantity typed the confirm card asks (Add, Keep current, Set amount); with none the row is flashed.
+	function duplicate(ctx, draft, row) {
+		var flash = { kind: "highlighted", id: +row.id };
+		if ((draft.amount == null && !draft.qtyText) || draft.many || !GC.shop.merge) return flash;
+		var unit = draft.qu_id && ctx.units && ctx.units[draft.qu_id] ? { grocy: { id: +draft.qu_id, name: ctx.units[draft.qu_id].name } } : null;
+		var rowUnit = row.qu_id && ctx.units && ctx.units[row.qu_id] ? { grocy: { id: +row.qu_id, name: ctx.units[row.qu_id].name } } : null;
+		var shares = json((row.userfields || {}).al_recipes);
+		var d = GC.shop.merge.decide({ id: +row.id, amount: +row.amount, unit: rowUnit, qtyText: (row.userfields || {})[UF.qtyText] || null, done: false,
+			shares: Array.isArray(shares) ? shares : [], inboxIds: [] },
+			{ source: { kind: "manual" }, amount: draft.amount == null ? 1 : draft.amount, unit: unit, qtyText: draft.qtyText || null,
+				productId: row.product_id ? +row.product_id : null, productName: nameOf(row, ctx.products) }, ctx.conversions);
+		return GC.shop.merge.asks(d) ? { kind: "confirm", id: +row.id, decision: d, row: row } : flash;
+	}
+
+	/// What Add or Set amount writes on the confirm card: the row amount, and a note (a product's note, a text row's al_note).
+	function resolveDuplicate(result, choice) {
+		var r = GC.shop.merge.resolve(result.decision, choice), row = result.row;
+		if (!r) return Promise.resolve(null);
+		return GC.api("PUT", "objects/shopping_list/" + row.id, row.product_id && r.note ? { amount: r.amount, note: [row.note, r.note].filter(Boolean).join(", ") } : { amount: r.amount })
+			.then(function () {
+				if (row.product_id || !r.note) return null;
+				var uf = {};
+				uf[UF.note] = r.note;
+				return GC.api("PUT", "userfields/shopping_list/" + row.id, uf);
+			});
+	}
+
+	/// Optional parts of the shopping page register here: head buttons, the top tray, the totals bar, a gate before
+	/// the list (passcode), the section order (trip aisles) and the page after render.
+	var hooks = { head: [], top: [], totals: [], gate: [], page: [], order: [] };
+	GC.shopHooks = {
+		on: function (name, fn) { hooks[name].push(fn); },
+		run: function (name, $el, state) { var stop = false; hooks[name].forEach(function (fn) { if (fn($el, state)) stop = true; }); return stop; },
+		order: function (sections, state) { return hooks.order.reduce(function (acc, fn) { return fn(acc, state) || acc; }, sections); }
+	};
+
 	GC.shop = { UF: UF, fold: fold, json: json, num: num, ids: ids, flag: flag, stamp: stamp, keyOf: keyOf, parseQty: parseQty,
 		config: config, activeSet: activeSet, categoryOf: categoryOf, nameOf: nameOf, sections: sections, matches: matches, totals: totals,
-		docs: { read: docRead, merge: docMerge }, cross: cross, addItem: addItem };
+		docs: { read: docRead, merge: docMerge }, cross: cross, addItem: addItem, createRow: createRow, resolveDuplicate: resolveDuplicate };
 })(window);
 </script>

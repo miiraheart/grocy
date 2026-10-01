@@ -1,0 +1,97 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop;
+
+	function qty(line, state) {
+		var u = line.quId != null && state.units[line.quId] ? state.units[line.quId].name : line.qtyText ? "" : line.unitKey || "";
+		var n = line.qtyText ? line.qtyText : S.merge.number(line.amount, GL.lang) + (u ? " " + u : "");
+		return line.qtyText && line.amount !== 1 ? S.merge.number(line.amount, GL.lang) + " × " + n : n;
+	}
+	function what(line) {
+		var d = line.decision;
+		if (d.kind === "create") return GL.t("inbox.new");
+		if (d.kind === "noChange") return GL.t("inbox.already");
+		if (d.kind === "reopen") return GL.t("inbox.reopen");
+		if (d.kind === "confirm") return GL.t("inbox.onList", { n: S.merge.number(d.current, GL.lang) });
+		if (d.kind === "confirmUnconvertible") return GL.t("shop.dup.unconvertible", { q: d.incoming });
+		return "";
+	}
+
+	/// The review of one text (17-32 review sheet): lines grouped by destination list, each editable, the confirm card
+	/// choices on rows already on a list, and "Add N items". Nothing is written before Add.
+	function open(text, entryId, state) {
+		var $body = $('<div class="gc-inbox-review"><p class="gc-loading"></p></div>');
+		$body.find(".gc-loading").text(GL.t("loading"));
+		var dlg = bootbox.dialog({ title: GL.t("inbox.reviewTitle"), message: $body, size: "large", onEscape: true, backdrop: true, className: "gc-panel-dialog",
+			buttons: { cancel: { label: GL.t("cancel"), className: "btn-secondary" }, add: { label: GL.t("inbox.addN", { n: 0 }), className: "btn-primary gc-inbox-add", callback: function () { commit(); return false; } } } });
+		var lines = [], snap = null, busy = false;
+
+		function relabel() {
+			var n = lines.filter(S.inbox.adds).length;
+			dlg.find(".gc-inbox-add").text(GL.t("inbox.addN", { n: n })).prop("disabled", !lines.some(function (l) { return S.inbox.applyLine(l); }));
+		}
+		function lineView(line, i) {
+			var $r = $('<div class="gc-inbox-line"></div>').toggleClass("is-off", !line.included);
+			$('<input type="checkbox">').prop("checked", line.included).attr("aria-label", GL.t("inbox.include", { name: line.name }))
+				.on("change", function () { line.included = this.checked; draw(); }).appendTo($r);
+			var $main = $('<div class="gc-inbox-main"></div>').appendTo($r);
+			$('<input class="form-control form-control-sm gc-inbox-name">').val(line.name).attr("aria-label", GL.t("shop.name")).on("change", function () {
+				var name = this.value.trim();
+				if (!name) return;
+				var again = S.inbox.plan([{ name: name, amount: line.amount, unit: line.unitKey, qtyText: line.qtyText }], entryId, snap)[0];
+				lines[i] = S.inbox.moved(Object.assign(again, { id: line.id, explicit: line.explicit }), line.listId, entryId, snap);
+				draw();
+			}).appendTo($main);
+			$('<small class="gc-inbox-what"></small>').text(qty(line, state) + " · " + what(line)).appendTo($main);
+			var $list = $('<select class="custom-select custom-select-sm"></select>').attr("aria-label", GL.t("inbox.list")).appendTo($r);
+			snap.route.lists.filter(function (l) { return !l.locked || l.id === line.listId; }).forEach(function (l) { $("<option></option>").val(l.id).text(l.name).prop("selected", l.id === line.listId).appendTo($list); });
+			$list.on("change", function () { lines[i] = S.inbox.moved(line, +this.value, entryId, snap); draw(); });
+			if (S.merge.asks(line.decision)) {
+				var d = line.decision, $c = $('<div class="btn-group btn-group-sm gc-inbox-choice" role="group"></div>').appendTo($main);
+				var pick = function (choice) { line.choice = choice; draw(); };
+				if (d.kind === "confirm") $('<button type="button" class="btn"></button>').text(GL.t("shop.dup.addShort", { n: S.merge.number(d.sum, GL.lang) }))
+					.toggleClass("btn-primary", line.choice.kind === "add").toggleClass("btn-outline-primary", line.choice.kind !== "add").on("click", function () { pick({ kind: "add" }); }).appendTo($c);
+				$('<button type="button" class="btn"></button>').text(GL.t("shop.dup.keep"))
+					.toggleClass("btn-primary", line.choice.kind === "keep").toggleClass("btn-outline-primary", line.choice.kind !== "keep").on("click", function () { pick({ kind: "keep" }); }).appendTo($c);
+				var $set = $('<input type="number" step="any" min="0" class="form-control form-control-sm gc-inbox-set">').attr("aria-label", GL.t("shop.dup.set"))
+					.val(line.choice.kind === "set" ? line.choice.amount : d.kind === "confirm" ? d.sum : d.current)
+					.on("change", function () { var v = S.num(this.value); if (v > 0) pick({ kind: "set", amount: v, note: d.kind === "confirmUnconvertible" ? d.incoming : null }); });
+				$('<span class="gc-inbox-setbox"></span>').toggleClass("is-on", line.choice.kind === "set").append($("<span></span>").text(GL.t("shop.dup.set"))).append($set).appendTo($c);
+			}
+			return $r;
+		}
+		function draw() {
+			$body.empty();
+			if (!lines.length) { $('<p class="gc-shop-empty"></p>').text(GL.t("inbox.noItems")).appendTo($body); relabel(); return; }
+			snap.route.lists.forEach(function (l) {
+				var mine = lines.map(function (x, i) { return [x, i]; }).filter(function (p) { return p[0].listId === l.id; });
+				if (!mine.length) return;
+				$('<h3 class="gc-shop-banner"></h3>').text(l.name).appendTo($body);
+				var $g = $('<div class="gc-inbox-group"></div>').appendTo($body);
+				mine.forEach(function (p) { $g.append(lineView(p[0], p[1])); });
+			});
+			relabel();
+		}
+		function commit() {
+			if (busy) return;
+			busy = true;
+			GC.shopInbox.apply(lines, entryId, state).then(function (res) {
+				dlg.modal("hide");
+				if (!res) { toastr.info(GL.t("inbox.alreadyDone")); GC.shopPage.refresh(); return; }
+				GC.agendaUI.undoBar(GL.t("inbox.added", { n: res.count }), res.undo, GC.shopPage.refresh);
+				GC.shopPage.refresh();
+			}, function (e) { busy = false; toastr.error(e.message); });
+		}
+
+		Promise.all([GC.shopInbox.readDoc(), GC.shopInbox.items(text, state)]).then(function (r) {
+			snap = GC.shopInbox.snapshot(state, r[0]);
+			lines = S.inbox.plan(r[1].items, entryId, snap);
+			draw();
+			if (r[1].warning) $('<p class="gc-note gc-note-warn"></p>').text(GL.t("inbox.rulesOnly", { msg: r[1].warning })).prependTo($body);
+		}, function (e) { $body.empty().append($('<p class="gc-note gc-note-err"></p>').text(e.message)); });
+	}
+
+	GC.shopInboxReview = { open: open };
+})();
+</script>

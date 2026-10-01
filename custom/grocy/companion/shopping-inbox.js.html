@@ -1,0 +1,157 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, SETTING = "user/settings/al_inbox";
+
+	/// al_inbox, the user setting shared with the app (17-32): fresh read, entry level change, write, read back, 3 tries.
+	function readDoc() {
+		return GC.api("GET", SETTING).then(function (r) { var d = S.json(r && r.value) || {}; d.v = d.v || 1; d.entries = d.entries || []; return d; },
+			function () { return { v: 1, entries: [] }; });
+	}
+	function mergeDoc(mutate, tries) {
+		tries = tries || 1;
+		return readDoc().then(function (doc) {
+			mutate(doc);
+			var text = JSON.stringify(doc);
+			return GC.api("PUT", SETTING, { value: text }).then(readDoc).then(function (back) {
+				return JSON.stringify(back) === text || tries >= 3 ? back : mergeDoc(mutate, tries + 1);
+			});
+		});
+	}
+	function newId() { return "i" + Array.from(crypto.getRandomValues(new Uint8Array(4))).map(function (b) { return (b < 16 ? "0" : "") + b.toString(16); }).join(""); }
+	function save(text) {
+		var entry = { id: newId(), text: text, source: "web", created: S.stamp(), by: Grocy.UserId > 0 ? Grocy.UserId : null, status: "new", processed: [] };
+		return mergeDoc(function (doc) { S.inbox.insert(doc, entry); }).then(function () { return entry; });
+	}
+	function setStatus(id, status, processed) {
+		var before = null;
+		return mergeDoc(function (doc) {
+			var e = doc.entries.filter(function (x) { return x.id === id; })[0];
+			if (!e) return;
+			before = before || { status: e.status, processed: (e.processed || []).slice() };
+			e.status = status;
+			if (processed) e.processed = Array.from(new Set((e.processed || []).concat(processed))).sort(function (a, b) { return a - b; });
+		}).then(function () {
+			return function () { return before ? mergeDoc(function (doc) { doc.entries.forEach(function (e) { if (e.id === id) { e.status = before.status; e.processed = before.processed; } }); }) : null; };
+		});
+	}
+
+	/// The model reading for texts the rules cannot read (the n8n shopping-inbox workflow); the rules items when it fails.
+	function items(text, state) {
+		var r = S.inbox.rules(text);
+		if (r.confidence >= S.inbox.MIN_CONFIDENCE || !text.trim()) return Promise.resolve({ items: r.items });
+		return GC.hook("shopping-inbox", { text: text, lists: state.lists.map(function (l) { return l.name; }), language_hint: GL.lang }, 25000).then(function (reply) {
+			if (!reply || !reply.ok || !Array.isArray(reply.items)) throw new Error(GL.t("inbox.modelFailed"));
+			return { items: reply.items.map(function (x) {
+				var unit = x.unit ? S.merge.canonical(x.unit) || (S.merge.KITCHEN[x.unit] ? x.unit : null) : null;
+				return { name: String(x.name || "").trim(), amount: x.amount == null ? null : +x.amount, unit: unit, qtyText: null, listHint: x.list_hint || x.list || null };
+			}).filter(function (x) { return x.name; }), parser: reply.parser };
+		}).catch(function (e) { return { items: r.items, warning: e.message }; });
+	}
+
+	/// What InboxPlan reads: every row, the catalog, routing from every list's own settings, the rows entries already fed.
+	function snapshot(state, doc) {
+		var products = Object.keys(state.products).map(function (id) { return state.products[id]; });
+		var memory = {}, groups = {};
+		products.forEach(function (p) { var m = S.json((p.userfields || {}).al_memory); if (m) memory[p.id] = m; if (p.product_group_id) groups[p.id] = +p.product_group_id; });
+		return { products: products, units: Object.keys(state.units).map(function (id) { return state.units[id]; }), conversions: state.conversions, rows: state.allRows,
+			processed: S.inbox.processedRows(doc), route: { lists: state.lists.map(function (l) { var c = S.config(l); return { id: +l.id, name: l.name, type: c.type, locked: c.locked, memory: c.memory }; }),
+				productMemory: memory, productGroup: groups, currentListId: state.config.id } };
+	}
+
+	/// Writes the reviewed lines across lists, then marks the entry done with the rows it fed; returns one undo.
+	function apply(lines, entryId, state) {
+		var applies = lines.map(S.inbox.applyLine).filter(Boolean), created = [], changed = [], processed = [];
+		var gate = entryId ? readDoc().then(function (doc) { var e = doc.entries.filter(function (x) { return x.id === entryId; })[0]; return !e || e.status !== "done"; }) : Promise.resolve(true);
+		return gate.then(function (go) {
+			if (!go) return null;
+			return GC.api("GET", "objects/shopping_list").then(function (fresh) {
+				return applies.reduce(function (chain, a) {
+					return chain.then(function () {
+						if (a.rowId != null) {
+							var row = fresh.filter(function (r) { return +r.id === +a.rowId; })[0];
+							if (!row) return null;
+							processed.push(+row.id);
+							return change(row, a.action).then(function (undo) { if (undo) changed.push(undo); });
+						}
+						var list = state.lists.filter(function (l) { return +l.id === +a.listId; })[0];
+						var rows = fresh.filter(function (r) { return +r.shopping_list_id === +a.listId; });
+						var d = a.draft;
+						return S.createRow({ config: S.config(list), rows: rows, filter: null }, { name: d.name, product_id: d.productId, amount: d.amount, qu_id: d.quId,
+							qtyText: d.qtyText, source: entryId ? S.merge.INBOX + entryId : "web" }).then(function (res) {
+							created.push(res.id); processed.push(res.id);
+							fresh.push({ id: res.id, shopping_list_id: +a.listId, done: 0, userfields: { al_position: String(res.position) } });
+						});
+					});
+				}, Promise.resolve());
+			}).then(function () { return entryId ? setStatus(entryId, "done", processed) : null; }).then(function (undoEntry) {
+				var n = applies.filter(function (a) { return a.action.kind !== "keep"; }).length;
+				return { count: n, undo: function () {
+					return Promise.all(created.map(function (id) { return GC.api("DELETE", "objects/shopping_list/" + id); }).concat(changed.map(function (u) { return u(); })))
+						.then(function () { return undoEntry ? undoEntry() : null; });
+				} };
+			});
+		});
+	}
+	function change(row, action) {
+		var u = row.userfields || {}, cols = {}, uf = {};
+		var before = { cols: { amount: +row.amount, done: +row.done, note: row.note }, uf: { al_recipes: u.al_recipes || "", al_crossed_at: u.al_crossed_at || "", al_note: u.al_note || "" } };
+		if (action.kind === "keep") return Promise.resolve(null);
+		if (action.kind === "add") cols.amount = S.merge.round(+row.amount + action.amount);
+		if (action.kind === "set") {
+			cols.amount = action.amount;
+			if (action.note) { if (row.product_id) cols.note = [row.note, action.note].filter(Boolean).join(", "); else uf.al_note = action.note; }
+		}
+		if (action.kind === "reopen") { cols.amount = action.amount; uf.al_recipes = ""; }
+		if (+row.done === 1) { cols.done = 0; uf.al_crossed_at = ""; }
+		return GC.api("PUT", "objects/shopping_list/" + row.id, cols).then(function () {
+			return Object.keys(uf).length ? GC.api("PUT", "userfields/shopping_list/" + row.id, uf) : null;
+		}).then(function () {
+			return function () {
+				return GC.api("PUT", "objects/shopping_list/" + row.id, before.cols).then(function () { return GC.api("PUT", "userfields/shopping_list/" + row.id, before.uf); });
+			};
+		});
+	}
+
+	var SOURCES = { share: "inbox.src.share", paste: "inbox.src.paste", assistant: "inbox.src.assistant", web: "inbox.src.web" };
+	function panel(state) {
+		var $body = $('<div class="gc-inbox"></div>');
+		var $txt = $('<textarea class="form-control" rows="4"></textarea>').attr({ placeholder: GL.t("inbox.placeholder"), "aria-label": GL.t("inbox.placeholder"), maxlength: S.inbox.MAX_TEXT }).appendTo($body);
+		var $bar = $('<div class="gc-inline"></div>').appendTo($body);
+		$('<button type="button" class="btn btn-sm btn-primary"></button>').text(GL.t("inbox.review")).appendTo($bar).on("click", function () {
+			var text = $txt.val().trim();
+			if (!text) return;
+			bootbox.hideAll(); GC.shopInboxReview.open(text, null, state);
+		});
+		$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("inbox.save")).appendTo($bar).on("click", function () {
+			var text = $txt.val().trim();
+			if (!text) { toastr.warning(GL.t("inbox.empty")); return; }
+			save(text).then(function () { bootbox.hideAll(); toastr.success(GL.t("inbox.saved")); GC.shopPage.refresh(); }, function (e) { toastr.error(e.message); });
+		});
+		var entries = (state.inbox.entries || []).filter(function (e) { return e.status === "new"; }).sort(function (a, b) { return String(b.created).localeCompare(String(a.created)); });
+		var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+		if (!entries.length) $('<li class="gc-shop-empty"></li>').text(GL.t("inbox.none")).appendTo($ul);
+		entries.forEach(function (e) {
+			var $li = $('<li class="gc-panel-row"></li>').appendTo($ul);
+			var $b = $('<button type="button" class="gc-panel-item"></button>').appendTo($li).on("click", function () { bootbox.hideAll(); GC.shopInboxReview.open(e.text, e.id, state); });
+			$('<span class="gc-inbox-title"></span>').text(S.inbox.title(e.text)).appendTo($b);
+			$('<small class="gc-panel-caption"></small>').text(GL.t(SOURCES[e.source] || SOURCES.web) + " · " + String(e.created || "").slice(0, 16)).appendTo($b);
+			$('<button type="button" class="btn btn-sm btn-link"></button>').attr("title", GL.t("inbox.dismiss")).append('<i class="fa-solid fa-xmark"></i>').appendTo($li).on("click", function () {
+				setStatus(e.id, "dismissed").then(function (undo) { bootbox.hideAll(); GC.agendaUI.undoBar(GL.t("inbox.dismissed"), undo, GC.shopPage.refresh); GC.shopPage.refresh(); },
+					function (err) { toastr.error(err.message); });
+			});
+		});
+		bootbox.dialog({ title: GL.t("inbox.title"), message: $body, onEscape: true, backdrop: true, className: "gc-panel-dialog" });
+		setTimeout(function () { $txt.trigger("focus"); }, 300);
+	}
+
+	GC.shopHooks.on("head", function ($h, state) {
+		var n = (state.inbox.entries || []).filter(function (e) { return e.status === "new"; }).length;
+		var $b = $('<button type="button" class="btn btn-sm btn-outline-secondary gc-shop-inbox"></button>').attr("title", GL.t("inbox.title")).attr("data-panel", "inbox")
+			.append('<i class="fa-solid fa-inbox"></i>').on("click", function () { panel(state); }).appendTo($h);
+		if (n) $('<span class="gc-badge"></span>').text(n).attr("aria-label", GL.t("inbox.count", { n: n })).appendTo($b);
+	});
+
+	GC.shopInbox = { readDoc: readDoc, mergeDoc: mergeDoc, save: save, setStatus: setStatus, items: items, snapshot: snapshot, apply: apply, panel: panel };
+})();
+</script>

@@ -1,0 +1,90 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, KEY = "gc.shop.trip", LIMIT_MS = 8 * 3600 * 1000;
+
+	/// The running trip is this browser's state, like the app keeps it on the phone (ShoppingTrip).
+	function read() { try { return JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { return null; } }
+	function write(trip) { try { if (trip) localStorage.setItem(KEY, JSON.stringify(trip)); else localStorage.removeItem(KEY); } catch (e) { /* private mode */ } }
+	function current(state) { var t = read(); return t && +t.listId === state.config.id ? t : null; }
+	function aisles(state, storeId) { return storeId && state.stores[storeId] ? S.json((state.stores[storeId].userfields || {}).al_aisles) : null; }
+
+	/// The category of a section or row as the aisle key reads it: the set's category, else the Grocy group.
+	function catOf(state, id, name) {
+		var set = S.activeSet(state.config), hit = set ? set.cats.filter(function (c) { return c.id === id; })[0] : null;
+		return hit || { id: id, name: name || "", group: /^g\d+$/.test(id) ? +id.slice(1) : null };
+	}
+	function remainingTotal(rows) { return S.totals(rows).remaining; }
+
+	function start(state) {
+		var ids = state.config.stores.length ? state.config.stores : Object.keys(state.stores).map(Number);
+		var $s = $('<select class="custom-select"></select>').attr("aria-label", GL.t("trip.store"));
+		$("<option></option>").val("").text(GL.t("trip.noStore")).appendTo($s);
+		ids.forEach(function (id) { if (state.stores[id]) $("<option></option>").val(id).text(state.stores[id].name).prop("selected", state.filter && +state.filter.store === id).appendTo($s); });
+		var $body = $("<div></div>").append($('<p class="gc-note"></p>').text(GL.t("trip.hint"))).append($('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("trip.store"))).append($s));
+		bootbox.dialog({ title: GL.t("trip.start"), message: $body, buttons: { cancel: { label: GL.t("cancel"), className: "btn-secondary" }, go: { label: GL.t("trip.start"), className: "btn-primary", callback: function () {
+			var storeId = +$s.val() || null;
+			write({ listId: state.config.id, storeId: storeId, startedAt: S.stamp(), estimateAtStart: remainingTotal(state.rows) });
+			var f = storeId && GC.shopPanels ? GC.shopPanels.allFilters(state).filter(function (x) { return x.id === "store:" + storeId; })[0] : null;
+			if (f) GC.shopPage.choose(f); else GC.shopPage.render();
+			toastr.info(GL.t("trip.started"));
+		} } } });
+	}
+
+	/// Stop: the crossing order of 5 rows or more teaches the store's aisles (AisleLearner), then the summary.
+	function stop(state, auto) {
+		var trip = current(state);
+		if (!trip) return Promise.resolve();
+		write(null);
+		var done = state.rows.filter(function (r) { return +r.done === 1 && ((r.userfields || {}).al_crossed_at || "") >= trip.startedAt; });
+		var open = state.rows.filter(function (r) { return +r.done !== 1; });
+		var steps = S.beyond.crossedSteps(done.map(function (r) {
+			var c = S.categoryOf(r, state.config, state.products, state.groups);
+			return { cat: S.beyond.aisleKey(catOf(state, c.id, c.name)), item: S.keyOf(r), at: (r.userfields || {}).al_crossed_at };
+		}), trip.startedAt);
+		var learn = trip.storeId && steps ? S.docs.merge("shopping_locations", trip.storeId, "al_aisles", function (d) { Object.assign(d, S.beyond.learn(steps, d)); }) : Promise.resolve();
+		return learn.catch(function () { return null; }).then(function () {
+			var $b = $('<div class="gc-trip-summary"></div>');
+			var line = function (k, v) { $('<div class="gc-trip-line"></div>').append($("<span></span>").text(GL.t(k))).append($("<strong></strong>").text(v)).appendTo($b); };
+			if (trip.storeId && state.stores[trip.storeId]) line("trip.store", state.stores[trip.storeId].name);
+			line("trip.spent", GL.money(S.totals(done).crossed));
+			if (trip.estimateAtStart != null) line("trip.estimateStart", GL.money(trip.estimateAtStart));
+			line("trip.crossed", String(done.length));
+			if (open.length) $('<p class="gc-trip-missed"></p>').text(GL.t("trip.missed", { list: open.map(function (r) { return S.nameOf(r, state.products); }).join(", ") })).appendTo($b);
+			if (steps && trip.storeId) $('<p class="gc-note"></p>').text(GL.t("trip.learned")).appendTo($b);
+			bootbox.dialog({ title: GL.t(auto === "limit" ? "trip.endedLimit" : "trip.summary"), message: $b, onEscape: true, backdrop: true,
+				buttons: { ok: { label: GL.t("list.done"), className: "btn-primary" } } });
+			GC.shopPage.refresh();
+		});
+	}
+
+	GC.shopHooks.on("head", function ($h, state) {
+		var trip = current(state);
+		$('<button type="button" class="btn btn-sm gc-shop-trip-btn"></button>').toggleClass("btn-primary", !!trip).toggleClass("btn-outline-secondary", !trip)
+			.attr("title", GL.t(trip ? "trip.stop" : "trip.start")).append($('<i class="fa-solid"></i>').addClass(trip ? "fa-flag-checkered" : "fa-cart-shopping"))
+			.append($("<span></span>").text(" " + GL.t(trip ? "trip.stop" : "trip.startShort")))
+			.on("click", function () { if (trip) stop(state); else start(state); }).appendTo($h);
+	});
+	/// Shop mode: larger rows and fewer tools, the trip bar, categories in the store's learned aisle order.
+	GC.shopHooks.on("page", function ($page, state) {
+		var trip = current(state);
+		$("body").toggleClass("gc-shop-tripping", !!trip);
+		if (!trip) return;
+		if (Date.now() - new Date(trip.startedAt.replace(" ", "T")).getTime() >= LIMIT_MS) { stop(state, "limit"); return; }
+		var total = state.rows.length, left = state.rows.filter(function (r) { return +r.done !== 1; }).length;
+		if (total > 0 && left === 0) { stop(state, "done"); return; }
+		var store = trip.storeId && state.stores[trip.storeId] ? state.stores[trip.storeId].name : GL.t("trip.noStore");
+		$('<div class="gc-trip-bar" role="status"></div>').append('<i class="fa-solid fa-cart-shopping"></i>')
+			.append($("<span></span>").text(GL.t("trip.bar", { store: store, n: left, of: total })))
+			.insertAfter($page.find(".gc-shop-head"));
+	});
+	GC.shopHooks.on("order", function (sections, state) {
+		var trip = current(state), doc = trip ? aisles(state, trip.storeId) : null;
+		if (!doc) return sections;
+		var cats = S.beyond.categoryOrder(sections.map(function (s) { return catOf(state, s.id, s.name); }), doc);
+		return cats.map(function (c) { return sections.filter(function (s) { return s.id === c.id; })[0]; });
+	});
+
+	GC.shopTrip = { current: current, start: start, stop: stop };
+})();
+</script>

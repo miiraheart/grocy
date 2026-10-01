@@ -1,0 +1,135 @@
+<script>
+(function () {
+	if (!window.GC || !GC.shop || !window.Grocy || Grocy.View !== "shoppinglist") return;
+	var S = GC.shop, OPEN = "gc.shop.tray.", COLLAPSE_ABOVE = 5, ctxP = null;
+
+	function rows(list, map) { return (list || []).map(map).filter(Boolean); }
+	function day(v) { return v && String(v).length >= 10 ? String(v).slice(0, 10) : null; }
+	function log(type, days) {
+		return GC.api("GET", "objects/stock_log?query[]=transaction_type=" + type + "&query[]=row_created_timestamp>=" + S.beyond.addDays(GC.today(), -days))
+			.then(function (r) { return (r || []).filter(function (x) { return String(x.undone) !== "1"; }); });
+	}
+	/// The shopping context of the app (ShoppingContextFetch): stock, the volatile lists, 90 days of use, 180 of purchases.
+	function context() {
+		if (ctxP) return ctxP;
+		ctxP = GC.api("GET", "user/settings/stock_due_soon_days").catch(function () { return { value: 5 }; }).then(function (s) {
+			return Promise.all([GC.api("GET", "stock"), GC.api("GET", "stock/volatile?due_soon_days=" + (parseInt(s && s.value, 10) || 5)), log("consume", 90), log("purchase", 180),
+				GC.api("GET", "objects/locations")]);
+		}).then(function (r) {
+			var v = r[1] || {}, dated = function (x) { return { productId: +x.product_id, day: day(x.best_before_date) }; };
+			return { levels: rows(r[0], function (x) { return { productId: +x.product_id, amount: +x.amount }; }),
+				missing: rows(v.missing_products, function (x) { return { productId: +x.id, amount: +x.amount_missing || 0 }; }),
+				due: rows(v.due_products, dated), overdue: rows(v.overdue_products, dated), expired: rows(v.expired_products, dated),
+				consumes: rows(r[2], function (x) { var d = day(x.used_date || x.row_created_timestamp); return d && x.product_id ? { productId: +x.product_id, amount: Math.abs(+x.amount || 0), day: d, spoiled: String(x.spoiled) === "1" } : null; }),
+				purchases: rows(r[3], function (x) { var d = day(x.purchased_date || x.row_created_timestamp); return d && x.product_id ? { productId: +x.product_id, amount: Math.abs(+x.amount || 0), day: d, price: x.price == null ? null : +x.price, storeId: x.shopping_location_id ? +x.shopping_location_id : null } : null; }),
+				receipts: [], locations: r[4] || [] };
+		}, function (e) { ctxP = null; throw e; });
+		return ctxP;
+	}
+	function catalog(state, ctx) {
+		return { products: Object.keys(state.products).map(function (id) { return state.products[id]; }), byId: state.products, groups: state.groups, locations: ctx.locations, conversions: state.conversions };
+	}
+	function memory(state) {
+		var m = { snoozeUntil: {} };
+		Object.keys(state.products).forEach(function (id) {
+			var e = (((S.json((state.products[id].userfields || {}).al_memory) || {}).lists) || {})[state.config.id];
+			if (e && e.snoozeUntil) m.snoozeUntil[id] = e.snoozeUntil;
+		});
+		return m;
+	}
+	function store(key, value) { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; } return null; }
+
+	function amount(state, s) {
+		var u = s.unitId && state.units[s.unitId] ? state.units[s.unitId].name : "";
+		return S.merge.number(s.amount, GL.lang) + (u ? " " + u : "");
+	}
+	function add(state, picks) {
+		return picks.reduce(function (chain, s) {
+			return chain.then(function () {
+				var p = state.products[s.productId];
+				return GC.shopAdd.submit(state, { name: p.name, product_id: s.productId, amount: s.amount, qu_id: s.unitId, source: "suggestion", many: true }, function () {});
+			});
+		}, Promise.resolve()).then(GC.shopPage.refresh);
+	}
+	function snooze(state, s) {
+		var until = S.beyond.addDays(GC.today(), 7), before = null;
+		var write = function (value) { return GC.shopEdit.remember({ product_id: s.productId }, state.config.id, function (m) { if (before === null) before = m.snoozeUntil || ""; if (value) m.snoozeUntil = value; else delete m.snoozeUntil; }); };
+		write(until).then(function () {
+			GC.agendaUI.undoBar(GL.t("tray.snoozed", { name: state.products[s.productId].name }), function () { return write(before); }, GC.shopPage.refresh);
+			GC.shopPage.refresh();
+		}, function (e) { toastr.error(e.message); });
+	}
+
+	/// The suggestions tray (17-26) on grocery lists: nothing is added without a click; Add All leaves the danger and
+	/// avoid items with their badge.
+	function tray($page, state) {
+		if (state.config.type !== "grocery") return;
+		var $box = $('<section class="gc-tray" aria-live="polite"></section>').appendTo($page);
+		context().then(function (ctx) {
+			var found = S.beyond.suggestions(ctx, catalog(state, ctx), state.rows, memory(state), {}, GC.today());
+			if (!found.length) { $box.remove(); return; }
+			var key = OPEN + state.config.id, open = store(key) === null ? found.length <= COLLAPSE_ABOVE : store(key) === "1";
+			var $h = $('<div class="gc-tray-head"></div>').appendTo($box);
+			$('<button type="button" class="btn btn-sm btn-link gc-tray-toggle"></button>').attr("aria-expanded", open ? "true" : "false")
+				.append($('<i class="fa-solid"></i>').addClass(open ? "fa-chevron-down" : "fa-chevron-right"))
+				.append($("<span></span>").text(GL.t("tray.title", { n: found.length })))
+				.on("click", function () { store(key, open ? "0" : "1"); GC.shopPage.render(); })
+				.appendTo($h);
+			var safe = found.filter(function (s) { var lv = S.diet ? S.diet.check(state.products[s.productId].name).level : "ok"; return lv !== "danger" && lv !== "avoid"; });
+			$('<button type="button" class="btn btn-sm btn-outline-primary"></button>').text(GL.t("tray.addAll")).prop("disabled", !safe.length)
+				.on("click", function () { add(state, safe); }).appendTo($h);
+			if (!open) return;
+			var $ul = $('<ul class="gc-shop-rows gc-tray-rows"></ul>').appendTo($box);
+			found.forEach(function (s) {
+				var p = state.products[s.productId], lv = S.diet ? S.diet.check(p.name).level : "ok";
+				var $r = $('<li class="gc-shop-row gc-tray-row"></li>').appendTo($ul);
+				var $main = $('<div class="gc-shop-main"></div>').appendTo($r);
+				var $t = $('<div class="gc-shop-name"></div>').text(p.name).appendTo($main);
+				$('<span class="gc-shop-qty"></span>').text(" (" + amount(state, s) + ")").appendTo($t);
+				if (lv === "danger" || lv === "avoid") $('<span class="gc-chip gc-chip-diet"></span>').addClass("is-" + lv).text(GL.t("tray.diet." + lv)).appendTo($t);
+				var why = S.beyond.reasonText(s.reasons[0], GL.lang, GC.today()), warn = S.beyond.warning(s, GL.lang);
+				$('<div class="gc-shop-note"></div>').text(warn ? why + " · " + warn : why).appendTo($main);
+				$('<button type="button" class="btn btn-sm btn-link"></button>').attr("title", GL.t("tray.snooze")).append('<i class="fa-solid fa-moon"></i>')
+					.on("click", function () { snooze(state, s); }).appendTo($r);
+				$('<button type="button" class="btn btn-sm btn-link"></button>').attr("title", GL.t("tray.add", { name: p.name })).append('<i class="fa-solid fa-plus"></i>')
+					.on("click", function () { add(state, [s]); }).appendTo($r);
+			});
+		}, function () { $box.remove(); });
+	}
+
+	/// The store estimate behind the totals bar (17-26): per store totals and the cheapest split; a store applies its filter.
+	function estimate(state) {
+		var $body = $('<div class="gc-estimate"></div>').append($('<p class="gc-loading"></p>').text(GL.t("loading")));
+		bootbox.dialog({ title: GL.t("sest.title"), message: $body, onEscape: true, backdrop: true, className: "gc-panel-dialog" });
+		context().then(function (ctx) {
+			var e = S.beyond.estimate(state.rows, ctx, state.products, state.config.stores);
+			$body.empty();
+			if (!e) { $('<p class="gc-shop-empty"></p>').text(GL.t("sest.needTwo")).appendTo($body); return; }
+			var $ul = $('<ul class="gc-panel-list"></ul>').appendTo($body);
+			e.stores.forEach(function (l) {
+				var $li = $('<li class="gc-panel-row"></li>').appendTo($ul);
+				var $b = $('<button type="button" class="gc-panel-item"></button>').on("click", function () {
+					bootbox.hideAll();
+					var f = GC.shopPanels.allFilters(state).filter(function (x) { return x.id === "store:" + l.storeId; })[0];
+					if (f) GC.shopPage.choose(f);
+				}).appendTo($li);
+				$("<span></span>").text((state.stores[l.storeId] || {}).name || "#" + l.storeId).appendTo($b);
+				$('<small class="gc-panel-caption"></small>').text(GL.money(l.total) + (l.missing ? " · " + GL.t("sest.missing", { n: l.missing }) : "")).appendTo($b);
+			});
+			$('<p class="gc-estimate-cheapest"></p>').text(GL.t("sest.cheapest", { v: GL.money(e.cheapest) })).appendTo($body);
+		}, function (err) { $body.empty().append($('<p class="gc-note gc-note-err"></p>').text(err.message)); });
+	}
+
+	GC.shopHooks.on("top", function ($page, state) { tray($page, state); });
+	GC.shopHooks.on("totals", function ($bar, state) {
+		if (state.filter || state.config.stores.length < 2) return;
+		$bar.addClass("is-button").attr({ role: "button", tabindex: "0", title: GL.t("sest.title") }).on("click keydown", function (e) {
+			if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+			e.preventDefault();
+			estimate(state);
+		});
+	});
+
+	GC.shopTray = { context: context, estimate: estimate, reset: function () { ctxP = null; } };
+})();
+</script>

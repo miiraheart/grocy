@@ -127,6 +127,27 @@
 	}
 	function input(value, type) { return $('<input class="form-control form-control-sm">').attr("type", type || "text").val(value === null || value === undefined ? "" : value); }
 
+	/// Recipe shares of the row (17-32): "2 for Dal" with Remove, which takes only that share off (the manual extra stays).
+	function shares(row, state, done) {
+		var list = S.json((row.userfields || {}).al_recipes);
+		if (!Array.isArray(list) || !list.length || !S.merge) return [];
+		var $box = $('<fieldset class="gc-edit-prices gc-edit-shares"></fieldset>').append($("<legend></legend>").text(GL.t("shop.shares")));
+		list.forEach(function (sh) {
+			var $r = $('<div class="gc-edit-row"></div>').appendTo($box);
+			$("<span></span>").text(GL.t("shop.shareFor", { n: S.merge.number(sh.amount, GL.lang), name: state.recipes[sh.recipe] || "#" + sh.recipe })).appendTo($r);
+			$('<button type="button" class="btn btn-sm btn-link text-danger"></button>').text(GL.t("shop.shareRemove")).on("click", function () {
+				var r = S.merge.removeShare(+row.amount, list, sh.recipe, sh.mealPlan == null ? null : sh.mealPlan);
+				if (!r) return;
+				GC.api("PUT", "objects/shopping_list/" + row.id, { amount: r.amount })
+					.then(function () { return GC.api("PUT", "userfields/shopping_list/" + row.id, { al_recipes: r.shares.length ? JSON.stringify(r.shares) : "" }); })
+					.then(function () { bootbox.hideAll(); done(); }, function (e) { toastr.error(e.message); });
+			}).appendTo($r);
+		});
+		$('<div class="gc-edit-row gc-edit-total"></div>').text(GL.t("shop.shareTotal", { n: S.merge.number(+row.amount, GL.lang),
+			c: S.merge.caption(+row.amount, list, function (id) { return state.recipes[id]; }, GL.lang) })).appendTo($box);
+		return [$box];
+	}
+
 	/// The item editor (pencil or e): name, note, quantity, package, price, stores, category, favorite, store prices, photo.
 	function open(row, state, done) {
 		var u = row.userfields || {}, cfg = state.config, set = S.activeSet(cfg), mem = memoryOf(row, state);
@@ -141,6 +162,7 @@
 		$unit.prop("disabled", !row.product_id);
 		var $qtyText = input(u[UF.qtyText]).attr("placeholder", GL.t("shop.qtyText")).appendTo($qty);
 		field($form, "shop.quantity", $qty);
+		shares(row, state, done).forEach(function ($x) { $form.append($x); });
 		var $pkg = field($form, "shop.package", input(u[UF.pkg]));
 		var $price = field($form, "shop.price", input(u[UF.price]).attr("inputmode", "decimal"));
 		var $priceQty = field($form, "shop.priceQty", input(u[UF.priceQty]).attr("inputmode", "decimal"));

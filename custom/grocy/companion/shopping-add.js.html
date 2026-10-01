@@ -41,13 +41,62 @@
 		return gate.then(function (verdict) {
 			if (!verdict.add) return null;
 			draft.guest = verdict.guest;
-			return S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter }, draft)
+			return S.addItem({ config: state.config, rows: state.rows, products: state.products, groups: state.groups, filter: state.filter,
+				units: state.units, conversions: state.conversions }, draft)
 				.then(function (result) {
+					if (result.kind === "confirm") return confirm(state, result, done);
 					if (result.kind !== "created") toastr.info(GL.t(result.kind === "uncrossed" ? "shop.putBack" : "shop.already", { name: draft.name }));
 					done(result);
 					return result;
 				});
 		}).catch(function (e) { toastr.error(e.message); });
+	}
+
+	function amountText(n) { return S.merge.number(n, GL.lang); }
+
+	/// The confirm card of 17-32 (Add, Keep current, Set amount) for an item already on the list; the row is flashed after.
+	function confirmCard(name, decision, caption, onChoice) {
+		var d = decision, $body = $('<div class="gc-confirm"></div>');
+		$('<p class="gc-confirm-now"></p>').text(GL.t("shop.dup.onList", { name: name, n: amountText(d.current) })).appendTo($body);
+		if (caption) $('<p class="gc-shop-caption"></p>').text(caption).appendTo($body);
+		var $set = $('<input type="number" step="any" min="0" class="form-control form-control-sm gc-confirm-set">')
+			.val(d.kind === "confirm" ? d.sum : d.current).attr("aria-label", GL.t("shop.dup.set"));
+		var buttons = {};
+		if (d.kind === "confirm") buttons.add = { label: GL.t("shop.dup.add", { a: amountText(d.current), b: amountText(d.incoming), c: amountText(d.sum) }), className: "btn-primary",
+			callback: function () { onChoice({ kind: "add" }); } };
+		buttons.keep = { label: GL.t("shop.dup.keep"), className: "btn-secondary", callback: function () { onChoice({ kind: "keep" }); } };
+		buttons.set = { label: GL.t("shop.dup.set"), className: "btn-outline-primary", callback: function () {
+			var v = S.num($set.val());
+			if (!(v > 0)) return false;
+			onChoice({ kind: "set", amount: v, note: d.kind === "confirmUnconvertible" ? d.incoming : null });
+		} };
+		if (d.kind === "confirmUnconvertible") $('<p class="gc-note"></p>').text(GL.t("shop.dup.unconvertible", { q: d.incoming })).appendTo($body);
+		$('<label class="gc-edit-field"></label>').append($("<span></span>").text(GL.t("shop.dup.set"))).append($set).appendTo($body);
+		return bootbox.dialog({ title: GL.t("shop.dup.title"), message: $body, onEscape: function () { onChoice({ kind: "keep" }); }, buttons: buttons });
+	}
+
+	function confirm(state, result, done) {
+		var name = S.nameOf(result.row, state.products), cap = GC.shopPage ? GC.shopPage.caption(result.row) : null;
+		return new Promise(function (resolve) {
+			confirmCard(name, result.decision, cap, function (choice) {
+				S.resolveDuplicate(result, choice).then(function () { var r = { kind: "highlighted", id: result.id }; done(r); resolve(r); },
+					function (e) { toastr.error(e.message); resolve(null); });
+			});
+		});
+	}
+
+	/// Typed text the app's way (ItemNameParser): several items split by commas, "et", "and"; a known unit becomes the
+	/// row unit, any other unit word stays as quantity text.
+	function drafts(state, text, item) {
+		var parsed = S.inbox ? S.inbox.items(text) : [S.parseQty(text)];
+		var units = Object.keys(state.units).map(function (id) { return state.units[id]; });
+		var draft = function (name, pid, p) {
+			var key = p && p.unitWord ? S.merge.canonical(p.unitWord) : null, qu = key ? S.inbox.resolveUnit(key, units) : null;
+			return { name: name, product_id: pid || null, amount: p && p.amount != null ? p.amount : null, qu_id: qu,
+				qtyText: (p && p.qtyText) || (qu == null && p && p.unitWord ? p.unitWord : null) };
+		};
+		if (item) return [draft(item.name, item.product_id, parsed[0])];
+		return parsed.filter(function (p) { return p.name; }).map(function (p) { return draft(p.name, null, p); });
 	}
 
 	var ICONS = { active: "fa-list", crossed: "fa-list", favorite: "fa-star", recent: "fa-clock-rotate-left", product: "fa-box", catalog: "fa-basket-shopping" };
@@ -68,11 +117,11 @@
 		}
 
 		function add(item) {
-			var typed = S.parseQty($input.val());
-			var draft = item ? { name: item.name, product_id: item.product_id, amount: typed.amount, unit: typed.unit }
-				: { name: typed.name, amount: typed.amount, unit: typed.unit };
-			if (!draft.name) return;
-			submit(state, draft, done);
+			var list = drafts(state, $input.val(), item);
+			if (!list.length) return;
+			if (list.length === 1) submit(state, list[0], done);
+			else list.reduce(function (chain, d) { return chain.then(function () { d.many = true; return submit(state, d, function () {}); }); }, Promise.resolve())
+				.then(function () { done(null); });
 			$input.val("");
 			items = []; index = -1; draw();
 		}
@@ -116,6 +165,6 @@
 		$input.on("blur", function () { setTimeout(function () { $menu.hide(); }, 150); });
 	}
 
-	GC.shopAdd = { mount: mount, suggestions: suggestions, submit: submit };
+	GC.shopAdd = { mount: mount, suggestions: suggestions, submit: submit, confirmCard: confirmCard, drafts: drafts };
 })();
 </script>
