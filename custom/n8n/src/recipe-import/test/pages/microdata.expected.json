@@ -1,0 +1,4 @@
+{ "parser": "microdata", "name": "Banana bread", "servings": 8, "servings_text": "8 slices", "times": { "prep": null, "cook": null, "lead": null },
+  "image_url": null, "author": null, "tags": [],
+  "lines": [["3 ripe bananas", 3, null, "ripe bananas"], ["1 1/2 cups flour", 1.5, "cup", "flour"], ["1/2 cup (100 g) sugar", 0.5, "cup", "sugar"], ["1 tsp baking soda", 1, "tsp", "baking soda"]],
+  "steps": [["", "Mash the bananas."], ["", "Stir in the flour, sugar and soda."], ["", "Bake 60 minutes at 175°C."]] }

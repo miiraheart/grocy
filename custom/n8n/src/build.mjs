@@ -7,6 +7,9 @@ const SRC = dirname(fileURLToPath(import.meta.url));
 const OUT = join(SRC, "..", "templates");
 const read = (...p) => readFileSync(join(SRC, ...p), "utf8");
 const OPENROUTER_CRED = { openRouterApi: { id: "l86vEWp9ZQt60YHZ", name: "OpenRouter account 2" } };
+// Twins never use the app OpenRouter key: test key credential (n8n/create-test-credential.sh) and one :free model.
+const OPENROUTER_TEST_CRED = { openRouterApi: { id: "orTestKey0000001", name: "OpenRouter test" } };
+const TEST_FREE_MODEL = "qwen/qwen3.8-27b:free";
 
 const webhook = (path, x = 0) => ({ id: path + "-hook", name: "Webhook", type: "n8n-nodes-base.webhook", typeVersion: 2,
   position: [x, 0], webhookId: path, parameters: { httpMethod: "POST", path, responseMode: "responseNode", options: {} } });
@@ -47,8 +50,13 @@ const toTest = (wf, id) => {
     if (n.parameters.jsCode) n.parameters.jsCode = n.parameters.jsCode.replaceAll("http://grocy/api", "http://grocy-test/api")
       .replace(/(localhost:5678\/webhook\/[a-z-]+)"/g, '$1-test"');
     if (typeof n.parameters.url === "string") n.parameters.url = n.parameters.url.replaceAll("http://grocy/api", "http://grocy-test/api");
+    if (n.parameters.jsCode) n.parameters.jsCode = n.parameters.jsCode.replace("const TWIN = false;", "const TWIN = true;")
+      .replace(/"[a-z0-9-]+\/[a-zA-Z0-9.:_-]+:free"/g, JSON.stringify(TEST_FREE_MODEL));
+    if (n.credentials && n.credentials.openRouterApi) n.credentials = structuredClone(OPENROUTER_TEST_CRED);
   }
-  if (JSON.stringify(twin).includes("http://grocy/")) throw new Error(id + " still points at the real Grocy");
+  const text = JSON.stringify(twin);
+  if (text.includes("http://grocy/")) throw new Error(id + " still points at the real Grocy");
+  if (text.includes(OPENROUTER_CRED.openRouterApi.id)) throw new Error(id + " still uses the app OpenRouter credential");
   return twin;
 };
 const saveWithTest = (file, wf, testId) => {
@@ -138,6 +146,26 @@ const tiktok = { ...workflow("tiktokRecipe0001", "TikTok -> Grocy recipe", [
   ["Download thumbnail", "Upload photo"], ["Upload photo", "Link photo"],
 ]), settings: { executionOrder: "v1" } };
 saveWithTest("tiktok-recipe.json", tiktok, "tiktokRecipeTest0001");
+
+const lib = (file) => read("recipe-import", file);
+const linesLib = lib("lines-lib.js");
+const netLib = lib("net-lib.js");
+const grocyLib = lib("grocy-lib.js");
+const htmlLib = lib("html-lib.js");
+saveWithTest("recipe-import.json", workflow("recipeImport0001", "Kitchen: recipe import", [
+  webhook("recipe-import"),
+  code("Start", linesLib + netLib + grocyLib + lib("start.js"), 220),
+  respond(440),
+  ifTrue("Continue?", "go", 660),
+  code("Read", linesLib + netLib + grocyLib + htmlLib + lib("read.js"), 880),
+  code("Parse", linesLib + htmlLib + lib("parse-plan.js"), 1100),
+  ifTrue("Needs model?", "needs_model", 1320),
+  openrouter("OpenRouter", "POST", "https://openrouter.ai/api/v1/chat/completions", "openrouter_body", 120000, 1540, -120),
+  code("Draft", linesLib + netLib + grocyLib + providersLib + lib("draft.js"), 1760),
+], [
+  ["Webhook", "Start"], ["Start", "Respond"], ["Respond", "Continue?"], ["Continue?", "Read", 0], ["Read", "Parse"],
+  ["Parse", "Needs model?"], ["Needs model?", "OpenRouter", 0], ["Needs model?", "Draft", 1], ["OpenRouter", "Draft"],
+]), "recipeImportTest0001");
 
 save("openrouter-quota.json", {
   ...workflow("openrouterQuota0001", "Tool: OpenRouter free quota", [

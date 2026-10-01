@@ -1,0 +1,6 @@
+{ "parser": "jsonld", "name": "Poulet coco citronnelle", "servings": 4, "servings_text": "4 pers.", "times": { "prep": 15, "cook": 75, "lead": null },
+  "image_url": "https://example.org/img/poulet-coco.jpg", "author": "Léa Martin", "tags": ["plat principal", "thaï", "curry", "coco", "rapide"],
+  "lines": [["600 g de hauts de cuisse de poulet", 600, "g", "hauts de cuisse de poulet"], ["2 c.à.s. de coconut aminos", 2, "tbsp", "coconut aminos"],
+    ["40 cl de lait de coco", 40, "cl", "lait de coco"], ["1 bâton de citronnelle, émincé", 1, null, "bâton de citronnelle"], ["sel & poivre", null, null, "sel & poivre"]],
+  "steps": [["Marinade", "Mélanger le poulet et le coconut aminos, laisser 10 min."], ["Cuisson", "Faire dorer le poulet 5 min."],
+    ["Cuisson", "Ajouter le lait de coco et la citronnelle, mijoter 1 h."]] }
