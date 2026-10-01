@@ -1,0 +1,109 @@
+<script>
+/// Activity: the shared assistant history (phone and web) with the app's action menu on every entry: Inspect, Undo,
+/// Redo, Duplicate, Undo from here, Open.
+(function () {
+	if (!window.GC || !GC.actions || !GC.assist || Grocy.View !== "userobjects" || GC.entityName() !== "gc_actions" || GC.subview()) return;
+	var A = window.GCAR, GA = GC.assist, all = [], replaySession = A.uuid();
+	var ICONS = { inspect: "fa-solid fa-circle-info", undo: "fa-solid fa-rotate-left", redo: "fa-solid fa-rotate-right", duplicate: "fa-regular fa-clone",
+		undoFromHere: "fa-solid fa-clock-rotate-left", open: "fa-solid fa-arrow-up-right-from-square" };
+	var FILTERS = {
+		all: function () { return true; },
+		today: function (r) { return String(r.created || "").slice(0, 10) === moment().format("YYYY-MM-DD"); },
+		undone: function (r) { return r.status === "undone"; },
+		failed: function (r) { return r.status === "failed" || r.status === "undoFailed"; }
+	};
+
+	var ui = GC.page({
+		eyebrow: GL.t("sec.actions"), title: GL.t("as.activity"),
+		actions: [{ label: GL.t("as.refresh"), icon: "fa-solid fa-arrows-rotate", onClick: function () { load(); } },
+			{ label: GL.t("as.title"), icon: "fa-solid fa-comment-dots", primary: true, onClick: function () { if (GA.panel) GA.panel.open(); } }],
+		tabs: Object.keys(FILTERS).map(function (k) { return { key: k, label: GL.t("as.filter." + k) }; }),
+		onTab: function (key, $p) { render(key, $p); }
+	});
+	var current = "all";
+
+	function load() {
+		Object.keys(ui.panes).forEach(function (k) { ui.panes[k].empty().append($('<div class="gc-loading"></div>').text(GL.t("loading"))); });
+		return GC.actions.list(200).then(function (rows) { all = rows; Object.keys(ui.panes).forEach(function (k) { ui.refresh(k); }); }, function (e) {
+			Object.keys(ui.panes).forEach(function (k) { ui.panes[k].empty().append($('<div class="gc-note gc-note-err"></div>').text(e.message)); });
+		});
+	}
+
+	function statusChip(r) {
+		var tone = { applied: "done", edited: "manual", undone: "pending", superseded: "pending", failed: "failed", undoFailed: "failed" }[r.status] || "pending";
+		return $('<span class="gc-status"></span>').attr("data-s", tone).text(GL.t("as.status." + r.status));
+	}
+
+	function render(key, $p) {
+		current = key;
+		$p.empty();
+		var rows = all.filter(FILTERS[key]);
+		if (!rows.length) { $('<div class="gc-empty"></div>').text(GL.t("as.noActivity")).appendTo($p); return; }
+		var $list = $('<div class="gc-list gc-as-activity-list"></div>').appendTo($p);
+		rows.forEach(function (r) {
+			var $row = $('<div class="gc-row gc-as-act"></div>').attr("data-action", r.action_id).appendTo($list);
+			var $main = $('<div class="gc-row-main"></div>').appendTo($row);
+			$('<div class="gc-row-title"></div>').text(r.summary || r.kind).appendTo($main);
+			var $meta = $('<div class="gc-row-meta"></div>').appendTo($main);
+			$meta.append($('<span class="gc-rchip"></span>').append($("<i></i>").attr("class", r.origin === "ios" ? "fa-solid fa-mobile-screen" : "fa-solid fa-display")).append(document.createTextNode(GL.t(r.origin === "ios" ? "as.phone" : "as.web"))));
+			$meta.append(statusChip(r)).append($('<span class="gc-sub"></span>').text(moment(r.created).isValid() ? moment(r.created).format("DD/MM HH:mm") : ""));
+			if (r.sentence) $('<div class="gc-sub gc-as-sentence"></div>').text(GL.t("as.quote", { s: r.sentence })).appendTo($main);
+			$row.append(menu(r));
+		});
+	}
+
+	function menu(r) {
+		var $d = $('<div class="dropdown gc-row-act"></div>');
+		$('<button type="button" class="btn btn-sm btn-outline-secondary" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false"><i class="fa-solid fa-ellipsis"></i></button>')
+			.attr("aria-label", GL.t("as.menu.label")).appendTo($d);
+		var $m = $('<div class="dropdown-menu dropdown-menu-right"></div>').appendTo($d);
+		A.menu(r, all).forEach(function (item) {
+			$('<button type="button" class="dropdown-item"></button>').attr("data-item", item).toggleClass("text-danger", item === "undo" || item === "undoFromHere")
+				.append($("<i></i>").attr("class", ICONS[item] + " mr-2")).append(document.createTextNode(GL.t("as.menu." + item)))
+				.on("click", function () { act(item, r); }).appendTo($m);
+		});
+		return $d;
+	}
+
+	function done(msg) { GC.toast("success", msg); return load(); }
+	function failed(e) { GC.toast("error", e.message); return load(); }
+
+	function replay(r, source) {
+		return GA.context().then(function (ctx) {
+			var op = r.record.op;
+			if (op.product_id && !ctx.products[op.product_id]) op = Object.assign({}, op, { product_id: null, name_fr: op.name_fr || r.record.product_name });
+			return GA.ops[op.op](op, ctx).then(function (res) {
+				return GC.actions.add({ action_id: A.uuid(), created: A.stamp(), kind: r.kind, status: "applied", origin: "web", source: source, session_id: replaySession,
+					parent_id: r.action_id, summary: res.summary, sentence: r.sentence, record: res.record });
+			});
+		});
+	}
+
+	function act(item, r) {
+		if (item === "inspect") return inspect(r);
+		if (item === "open") { location.href = GC.url(A.link(r)); return; }
+		if (item === "undo") return GC.actions.undo(r).then(function () { return done(GL.t("as.undid", { what: r.summary })); }, failed);
+		if (item === "redo" || item === "duplicate") return replay(r, item).then(function (n) { return done(n.summary); }, failed);
+		if (item === "undoFromHere") {
+			var n = A.fromHere(r, all).length;
+			GC.sheet(GL.t("as.menu.undoFromHere"), $("<p></p>").text(GL.t("as.fromHereAsk", { n: n })), [
+				{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+				{ label: GL.t("as.menu.undo"), primary: true, onClick: function (close) { close(); GC.actions.undoFrom(r, all).then(function (k) { return done(GL.t("as.undidN", { n: k })); }, failed); } }
+			]);
+		}
+	}
+
+	function inspect(r) {
+		var $b = $('<div class="gc-as-inspect"></div>'), $dl = $("<dl></dl>").appendTo($b);
+		[["as.f.summary", r.summary], ["as.f.sentence", r.sentence], ["as.f.kind", r.kind], ["as.f.status", GL.t("as.status." + r.status)],
+			["as.f.origin", GL.t(r.origin === "ios" ? "as.phone" : "as.web")], ["as.f.source", r.source], ["as.f.created", r.created], ["as.f.id", r.action_id], ["as.f.parent", r.parent_id]
+		].forEach(function (x) { if (x[1]) { $("<dt></dt>").text(GL.t(x[0])).appendTo($dl); $("<dd></dd>").text(x[1]).appendTo($dl); } });
+		if (!A.canUndo(r) && (r.status === "applied" || r.status === "edited")) $('<div class="gc-note gc-note-warn"></div>').text(GL.t("as.undoPhone")).appendTo($b);
+		$("<pre class='gc-as-json'></pre>").text(JSON.stringify(r.record, null, 2)).appendTo($b);
+		GC.sheet(GL.t("as.menu.inspect"), $b, [{ label: GL.t("as.copyIds"), onClick: function () { GC.copy(r.action_id + (r.record.transaction_ids ? " " + r.record.transaction_ids.join(" ") : "")).then(function () { GC.toast("success", GL.t("as.copied")); }); } },
+			{ label: GL.t("close"), primary: true, onClick: function (close) { close(); } }]);
+	}
+
+	load();
+})();
+</script>

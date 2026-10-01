@@ -1,0 +1,113 @@
+<script>
+/// The web assistant on every page: a pill opens a panel where she types or says what she did or wants; the
+/// assistant-intake webhook (the app's intake contract) returns operations, shown as cards to confirm, then written
+/// to Grocy and to the shared history with an undo. Questions are answered from Grocy reads.
+(function () {
+	if (!window.GC || !GC.assist || !GC.assist.session || Grocy.UserId < 1 || $("body").hasClass("embedded")) return;
+	var GA = GC.assist, S = GA.session, busy = false, ctx = null;
+	var Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+	GA.timeoutMs = 60000;
+
+	var $pill = $('<button type="button" class="gc-as-pill"><i class="fa-solid fa-comment-dots"></i><span></span></button>');
+	$pill.find("span").text(GL.t("as.title"));
+	$pill.attr({ "aria-label": GL.t("as.open"), "aria-haspopup": "dialog", "aria-keyshortcuts": "Alt+A" });
+	var $panel = $('<aside class="gc-as-panel" role="dialog" aria-modal="false" hidden></aside>').attr("aria-label", GL.t("as.title"));
+	var $hd = $('<div class="gc-as-hd"><b></b><span class="gc-grow"></span></div>').appendTo($panel);
+	$hd.find("b").text(GL.t("as.title"));
+	$('<a class="btn btn-sm btn-outline-secondary gc-as-activity"><i class="fa-solid fa-clock-rotate-left"></i><span></span></a>').attr("href", GC.url("/userobjects/gc_actions"))
+		.find("span").text(GL.t("as.activity")).end().appendTo($hd);
+	var $new = $('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-broom"></i></button>').attr({ title: GL.t("as.newSession"), "aria-label": GL.t("as.newSession") }).appendTo($hd);
+	var $close = $('<button type="button" class="gc-x"><i class="fa-solid fa-xmark"></i></button>').attr("aria-label", GL.t("close")).appendTo($hd);
+	var $body = $('<div class="gc-as-body" aria-live="polite"></div>').appendTo($panel);
+	var $form = $('<form class="gc-as-form"></form>').appendTo($panel);
+	var $input = $('<textarea class="form-control" rows="2" maxlength="4000"></textarea>').attr({ placeholder: GL.t("as.placeholder"), "aria-label": GL.t("as.placeholder") }).appendTo($form);
+	var $mic = Speech ? $('<button type="button" class="btn btn-outline-secondary gc-as-mic"><i class="fa-solid fa-microphone"></i></button>').attr("aria-label", GL.t("as.speak")).appendTo($form) : $();
+	var $send = $('<button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i></button>').attr("aria-label", GL.t("as.send")).appendTo($form);
+	$("body").append($pill).append($panel);
+
+	function open() {
+		$panel.prop("hidden", false); $pill.attr("aria-expanded", "true");
+		GA.context().then(function (c) { ctx = c; render(); }, function (e) { note(e.message, "err"); });
+		setTimeout(function () { $input.trigger("focus"); }, 30);
+	}
+	function close() { $panel.prop("hidden", true); $pill.attr("aria-expanded", "false"); stopSpeech(); }
+	function note(text, kind) { $('<div class="gc-note"></div>').addClass(kind === "err" ? "gc-note-err" : "gc-note-warn").text(text).appendTo($body); }
+
+	function render() {
+		$body.empty();
+		if (!GC.cfg.configured) note(GL.t("as.notConfigured"));
+		var st = S.state;
+		if (!st.turns.length) $('<div class="gc-as-empty"></div>').text(GL.t("as.hint")).appendTo($body);
+		st.turns.forEach(function (turn) {
+			var $t = $('<div class="gc-as-turn"></div>').appendTo($body);
+			$('<div class="gc-as-said"></div>').append(turn.source === "voice" ? '<i class="fa-solid fa-microphone"></i> ' : "").append(document.createTextNode(turn.text)).appendTo($t);
+			if (turn.error) $('<div class="gc-as-msg gc-as-err"></div>').text(turn.error).appendTo($t);
+			(turn.heard || []).forEach(function (h) { if (h.confirmation) $('<div class="gc-as-heard"></div>').text(h.confirmation.replace(/<\/?fr>/g, "")).appendTo($t); });
+			(turn.answers || []).forEach(function (a) {
+				var $a = $('<div class="gc-as-answer"></div>').append($("<b></b>").text(a.title)).appendTo($t);
+				if (a.lines.length) { var $ul = $("<ul></ul>").appendTo($a); a.lines.slice(0, 30).forEach(function (l) { $("<li></li>").text(l).appendTo($ul); }); }
+			});
+			var rows = turn.rows.map(function (id) { return st.rows[id]; }).filter(function (r) { return r && r.status !== "removed"; });
+			rows.forEach(function (r) { $t.append(GA.card(r, ctx, render)); });
+			var drafts = rows.filter(function (r) { return r.status === "draft"; });
+			if (drafts.length > 1) {
+				$('<button type="button" class="btn btn-primary btn-sm gc-as-all"></button>').text(GL.t("as.applyAll", { n: drafts.length })).on("click", function () {
+					$(this).prop("disabled", true);
+					drafts.reduce(function (p, r) { return p.then(function () { return S.apply(r.row_id, ctx); }); }, Promise.resolve()).then(render, render);
+				}).appendTo($t);
+			}
+			if (!turn.error && !rows.length && !(turn.answers || []).length) $('<div class="gc-as-msg"></div>').text(GL.t("as.nothing")).appendTo($t);
+		});
+		if (busy) $('<div class="gc-as-busy"><i class="fa-solid fa-spinner fa-spin"></i> <span></span></div>').appendTo($body).find("span").text(GL.t("as.thinking"));
+		$body.scrollTop($body[0].scrollHeight);
+	}
+
+	function send(text, source) {
+		text = $.trim(text || "");
+		if (!text || busy) return;
+		busy = true; $input.val(""); $send.prop("disabled", true);
+		render();
+		GA.context().then(function (c) {
+			ctx = c;
+			return GC.hook("assistant-intake", GA.request(c, text, S.recentRows(), S.state.answered), GA.timeoutMs).then(function (reply) {
+				if (!reply || !reply.ok) throw new Error((reply && reply.error) || GL.t("as.failed"));
+				return S.take(text, reply, c, source);
+			});
+		}).catch(function (e) {
+			S.state.turns.push({ text: text, source: source, heard: [], answers: [], rows: [], error: e.message || GL.t("as.failed") });
+			S.save();
+		}).then(function () { busy = false; $send.prop("disabled", false); render(); });
+	}
+
+	var rec = null;
+	function stopSpeech() { if (rec) { try { rec.stop(); } catch (e) {} } }
+	$mic.on("click", function () {
+		if (rec) { stopSpeech(); return; }
+		rec = new Speech();
+		rec.lang = GL.lang === "fr" ? "fr-FR" : "en-US";
+		rec.interimResults = true;
+		rec.continuous = false;
+		var finalText = "";
+		$mic.addClass("gc-as-listening").attr("aria-pressed", "true");
+		rec.onresult = function (e) {
+			var interim = "";
+			for (var i = e.resultIndex; i < e.results.length; i++) { if (e.results[i].isFinal) finalText += e.results[i][0].transcript; else interim += e.results[i][0].transcript; }
+			$input.val(finalText + interim);
+		};
+		rec.onerror = function (e) { if (e.error !== "no-speech" && e.error !== "aborted") GC.toast("warning", GL.t("as.speechError")); };
+		rec.onend = function () { $mic.removeClass("gc-as-listening").attr("aria-pressed", "false"); rec = null; if ($.trim(finalText)) send(finalText, "voice"); };
+		rec.start();
+	});
+
+	$pill.on("click", function () { if ($panel.prop("hidden")) open(); else close(); });
+	$close.on("click", close);
+	$new.on("click", function () { S.reset(); render(); });
+	$form.on("submit", function (e) { e.preventDefault(); send($input.val(), "typed"); });
+	$input.on("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send($input.val(), "typed"); } });
+	$(document).on("keydown", function (e) {
+		if (e.altKey && (e.key === "a" || e.code === "KeyA")) { e.preventDefault(); if ($panel.prop("hidden")) open(); else close(); }
+		else if (e.key === "Escape" && !$panel.prop("hidden") && !$(".gc-sheet-bg, .modal.show").length) close();
+	});
+	GA.panel = { open: open, close: close, send: send };
+})();
+</script>

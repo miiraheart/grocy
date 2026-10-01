@@ -1,0 +1,89 @@
+<script>
+/// Answers to ask operations from Grocy reads (the app's AnswerEngine for stock, list, tasks and chores). Nothing is written.
+(function () {
+	if (!window.GC || !window.GCAR) return;
+	var GA = GC.assist = GC.assist || {}, A = window.GCAR;
+
+	function n(v) { return String(Math.round(GC.num(v) * 100) / 100); }
+	function place(ctx, id) { var l = ctx.locations[id]; return l ? l.name : "-"; }
+	function dateText(d) { return !d || String(d).indexOf("2999") === 0 ? GL.t("as.ans.noDate") : GC.fmtDate(String(d)); }
+	function productOf(op, ctx) {
+		if (op.product_id && ctx.products[op.product_id]) return ctx.products[op.product_id];
+		var want = A.fold(op.name_fr || op.name_spoken || "");
+		if (!want) return null;
+		var all = Object.keys(ctx.products).map(function (k) { return ctx.products[k]; });
+		return all.filter(function (p) { return A.fold(p.name) === want; })[0] || all.filter(function (p) { return A.fold(p.name).indexOf(want) !== -1; })[0] || null;
+	}
+	function item(pid, name, amount, best) { return { product_id: +pid, name: name, amount: amount == null ? null : GC.num(amount), best_before: best ? String(best).slice(0, 10) : null }; }
+
+	function have(op, ctx) {
+		var p = productOf(op, ctx);
+		if (!p) return Promise.resolve({ title: GL.t("as.ans.unknown", { name: op.name_fr || op.name_spoken || "" }), lines: [], items: [] });
+		return GC.api("GET", "objects/stock?query[]=product_id=" + p.id).then(function (rows) {
+			rows = rows || [];
+			var total = rows.reduce(function (s, e) { return s + GC.num(e.amount); }, 0);
+			var lines = rows.map(function (e) {
+				return GL.t("as.ans.batch", { n: n(e.amount), place: place(ctx, e.location_id), date: dateText(e.best_before_date) }) + (+e.open === 1 ? ", " + GL.t("as.ans.opened") : "");
+			});
+			return { title: total > 0 ? GL.t("as.ans.have", { n: n(total), name: p.name }) : GL.t("as.ans.none", { name: p.name }), lines: lines,
+				items: [item(p.id, p.name, total, rows[0] && rows[0].best_before_date)] };
+		});
+	}
+
+	function due(op, ctx, expired) {
+		var days = op.days == null ? 7 : op.days;
+		return GC.api("GET", "stock/volatile?due_soon_days=" + days).then(function (v) {
+			var rows = expired ? (v.expired_products || []).concat(v.overdue_products || []) : (v.due_products || []);
+			var items = rows.map(function (r) { var name = (r.product && r.product.name) || (ctx.products[r.product_id] || {}).name || "#" + r.product_id; return item(r.product_id, name, r.amount, r.best_before_date); });
+			var lines = items.map(function (i) { return GL.t("as.ans.dueLine", { name: i.name, n: n(i.amount), date: dateText(i.best_before) }); });
+			var title = expired ? GL.t("as.ans.expired", { n: items.length }) : GL.t("as.ans.expiring", { n: items.length, d: days });
+			return { title: title, lines: lines, items: items };
+		});
+	}
+
+	function list(op, ctx) {
+		var lid = +(op.list_id || (ctx.screen.list && ctx.screen.list.id) || ctx.activeListId);
+		return GC.api("GET", "objects/shopping_list?query[]=shopping_list_id=" + lid).then(function (rows) {
+			var open = (rows || []).filter(function (r) { return +r.done !== 1; });
+			var lines = open.map(function (r) { var p = ctx.products[r.product_id]; return n(r.amount) + " " + (p ? p.name : r.note || ""); });
+			return { title: GL.t("as.ans.list", { n: open.length, list: (ctx.lists[lid] || {}).name || "" }), lines: lines, items: [] };
+		});
+	}
+
+	function low(op, ctx) {
+		return GC.api("GET", "stock/volatile").then(function (v) {
+			var rows = v.missing_products || [];
+			return { title: GL.t("as.ans.low", { n: rows.length }), lines: rows.map(function (r) { return GL.t("as.ans.lowLine", { name: r.name, n: n(r.amount_missing) }); }),
+				items: rows.map(function (r) { return item(r.id, r.name, null, null); }) };
+		});
+	}
+
+	function tasks(op, ctx) {
+		var limit = op.days == null ? null : GC.addDays(ctx.today, op.days);
+		var open = Object.keys(ctx.tasks).map(function (k) { return ctx.tasks[k]; }).filter(function (t) { return !limit || (t.due_date && String(t.due_date).slice(0, 10) <= limit); });
+		open.sort(function (a, b) { return String(a.due_date || "9").localeCompare(String(b.due_date || "9")); });
+		return Promise.resolve({ title: GL.t("as.ans.tasks", { n: open.length }), items: [],
+			lines: open.map(function (t) { return t.name + (t.due_date ? " (" + GC.fmtDate(String(t.due_date)) + ")" : ""); }) });
+	}
+
+	function chores(op, ctx) {
+		var limit = GC.addDays(ctx.today, op.days == null ? 0 : op.days);
+		return GC.api("GET", "chores").then(function (rows) {
+			var dueRows = (rows || []).filter(function (c) { return c.next_estimated_execution_time && String(c.next_estimated_execution_time).slice(0, 10) <= limit; });
+			return { title: GL.t("as.ans.chores", { n: dueRows.length }), items: [], lines: dueRows.map(function (c) {
+				var name = (ctx.chores[c.chore_id] || {}).name || c.chore_name || "#" + c.chore_id;
+				return name + " (" + GC.fmtDate(String(c.next_estimated_execution_time)) + ")";
+			}) };
+		});
+	}
+
+	var BY = { have: have, where: have, expiring: function (o, c) { return due(o, c, false); }, expired: function (o, c) { return due(o, c, true); },
+		list: list, low: low, tasks: tasks, chores: chores };
+	GA.answerable = function (query) { return !!BY[query]; };
+	GA.answer = function (op, ctx) {
+		var fn = BY[op.query];
+		if (!fn) return Promise.resolve({ title: GL.t("as.ans.phoneOnly"), lines: [], items: [] });
+		return fn(op, ctx);
+	};
+})();
+</script>

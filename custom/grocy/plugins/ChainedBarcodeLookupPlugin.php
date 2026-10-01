@@ -3,9 +3,13 @@
 use Grocy\Helpers\BaseBarcodeLookupPlugin;
 use GuzzleHttp\Client;
 
+require_once __DIR__ . '/EanSearchSource.php';
+
 class ChainedBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 {
-	public const PLUGIN_NAME = 'Open Food Facts + EAN-DB + UPCitemdb';
+	use EanSearchSource;
+
+	public const PLUGIN_NAME = 'Open Food Facts + EAN-Search + EAN-DB + UPCitemdb';
 
 	private const TIMEOUT = 2;
 	private const LOCATION_FRIDGE = 2;
@@ -19,6 +23,7 @@ class ChainedBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 		'beauty' => 'Open Beauty Facts (ODbL)',
 		'product' => 'Open Products Facts (ODbL)',
 		'petfood' => 'Open Pet Food Facts (ODbL)',
+		'eansearch' => 'EAN-Search',
 		'eandb' => 'EAN-DB',
 		'upcitemdb' => 'UPCitemdb'
 	];
@@ -92,6 +97,10 @@ class ChainedBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 	private function Sources(): array
 	{
 		$sources = ['off' => 'FetchOpenFoodFacts'];
+		if ($this->Option('eansearch_token', '') !== '')
+		{
+			$sources['eansearch'] = 'FetchEanSearch';
+		}
 		if ($this->Option('eandb_token', '') !== '')
 		{
 			$sources['eandb'] = 'FetchEanDb';
@@ -279,7 +288,7 @@ class ChainedBarcodeLookupPlugin extends BaseBarcodeLookupPlugin
 		]]);
 
 		$data = json_decode(mb_convert_encoding((string) $response->getBody(), 'UTF-8', 'UTF-8'), true);
-		return [$response->getStatusCode(), is_array($data) ? $data : []];
+		return [$response->getStatusCode(), is_array($data) ? $data : [], $response->getHeaderLine('X-Credits-Remaining')];
 	}
 
 	private function Option(string $key, string $default): string

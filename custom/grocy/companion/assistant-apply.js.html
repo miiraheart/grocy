@@ -1,0 +1,145 @@
+<script>
+/// Web assistant writes for stock (the app's ActionExecutor+Stock verbs): each returns the entry the shared history
+/// keeps, with the Grocy calls that undo it. Grocy's own transaction undo reverses every stock booking.
+(function () {
+	if (!window.GC || !window.GCAR || !window.GCR) return;
+	var GA = GC.assist = GC.assist || {};
+	var ops = GA.ops = GA.ops || {};
+
+	function txIds(res) {
+		var list = Array.isArray(res) ? res : res ? [res] : [], seen = [];
+		list.forEach(function (b) { if (b && b.transaction_id && seen.indexOf(b.transaction_id) === -1) seen.push(b.transaction_id); });
+		return seen;
+	}
+	function undoTx(ids) { return ids.slice().reverse().map(function (t) { return { method: "POST", path: "stock/transactions/" + t + "/undo" }; }); }
+	function amountText(n) { return String(Math.round(n * 100) / 100); }
+	function placeName(ctx, id) { var l = ctx.locations[id]; return l ? l.name : ""; }
+
+	function entries(pid) { return GC.api("GET", "objects/stock?query[]=product_id=" + pid); }
+	function stockAt(pid, loc) {
+		return entries(pid).then(function (rows) {
+			return (rows || []).filter(function (e) { return !loc || +e.location_id === +loc; }).reduce(function (s, e) { return s + GC.num(e.amount); }, 0);
+		});
+	}
+
+	/// The product of an operation; an add of something new creates it first (the app's productCreate), with the user's presets.
+	function product(op, ctx) {
+		if (op.product_id && ctx.products[op.product_id]) return Promise.resolve({ p: ctx.products[op.product_id], created: false });
+		if (op.op !== "add" || !op.name_fr) return Promise.reject(new Error(GL.t("as.err.product")));
+		var loc = op.location_id || +ctx.settings.product_presets_location_id || ctx.ids.locPantry || +Object.keys(ctx.locations)[0];
+		var qu = +ctx.settings.product_presets_qu_id > 0 ? +ctx.settings.product_presets_qu_id : +Object.keys(ctx.units)[0];
+		var body = { name: op.name_fr, location_id: +loc, qu_id_purchase: qu, qu_id_stock: qu, active: 1, default_best_before_days: 0 };
+		return GC.api("POST", "objects/products", body).then(function (r) {
+			var p = Object.assign({ id: +r.created_object_id }, body);
+			ctx.products[p.id] = p;
+			return { p: p, created: true };
+		});
+	}
+
+	function result(ctx, op, p, summary, undo, extra) {
+		var record = { v: 1, op: op, product_id: +p.id, product_name: p.name, object_type: "stockEntry", object_id: null, undo: undo };
+		Object.keys(extra || {}).forEach(function (k) { record[k] = extra[k]; });
+		return { summary: summary, record: record };
+	}
+
+	ops.add = function (op, ctx) {
+		return product(op, ctx).then(function (got) {
+			var p = got.p, bought = op.purchased_on || ctx.today, amount = op.amount || 1;
+			var best = op.best_before || GCR.bestBeforeFor(bought, p.default_best_before_days);
+			var body = { amount: amount, best_before_date: best, location_id: op.location_id || +p.location_id, purchased_date: bought, transaction_type: "purchase" };
+			if (op.price != null) body.price = op.price;
+			return GC.api("POST", "stock/products/" + p.id + "/add", body).then(function (res) {
+				var ids = txIds(res);
+				var opened = op.opened ? GC.api("POST", "stock/products/" + p.id + "/open", { amount: 1 }).then(txIds) : Promise.resolve([]);
+				return opened.then(function (openIds) {
+					var undo = undoTx(ids.concat(openIds));
+					if (got.created) undo.push({ method: "DELETE", path: "objects/products/" + p.id });
+					return result(ctx, op, p, GL.t("as.sum.add", { n: amountText(amount), name: p.name, place: placeName(ctx, body.location_id) }), undo,
+						{ transaction_ids: ids.concat(openIds), product_created: got.created, best_before: best, location_id: body.location_id, amount: amount });
+				});
+			});
+		});
+	};
+
+	function take(spoiled) {
+		return function (op, ctx) {
+			return product(op, ctx).then(function (got) {
+				var p = got.p, amountP = op.whole || !op.amount ? (op.whole ? stockAt(p.id, op.location_id) : Promise.resolve(1)) : Promise.resolve(op.amount);
+				return amountP.then(function (amount) {
+					if (!(amount > 0)) throw new Error(GL.t("as.err.noStock", { name: p.name }));
+					var body = { amount: amount, spoiled: spoiled, transaction_type: "consume" };
+					if (op.location_id) body.location_id = op.location_id;
+					return GC.api("POST", "stock/products/" + p.id + "/consume", body).then(function (res) {
+						var ids = txIds(res);
+						return result(ctx, op, p, GL.t(spoiled ? "as.sum.spoil" : "as.sum.consume", { n: amountText(amount), name: p.name }), undoTx(ids), { transaction_ids: ids, amount: amount });
+					});
+				});
+			});
+		};
+	}
+	ops.consume = take(false);
+	ops.spoil = take(true);
+
+	ops.open = function (op, ctx) {
+		return product(op, ctx).then(function (got) {
+			var p = got.p, body = { amount: op.amount || 1 };
+			if (op.location_id) body.location_id = op.location_id;
+			return GC.api("POST", "stock/products/" + p.id + "/open", body).then(function (res) {
+				var ids = txIds(res);
+				return result(ctx, op, p, GL.t("as.sum.open", { n: amountText(body.amount), name: p.name }), undoTx(ids), { transaction_ids: ids, amount: body.amount });
+			});
+		});
+	};
+
+	ops.move = function (op, ctx) {
+		return product(op, ctx).then(function (got) {
+			var p = got.p, to = +op.target_location_id;
+			return entries(p.id).then(function (rows) {
+				var at = {};
+				(rows || []).forEach(function (e) { if (+e.location_id !== to) at[e.location_id] = (at[e.location_id] || 0) + GC.num(e.amount); });
+				var from = op.location_id && +op.location_id !== to ? +op.location_id : +Object.keys(at).sort(function (a, b) { return at[b] - at[a]; })[0];
+				var amount = op.whole || !op.amount ? (op.whole ? at[from] || 0 : Math.min(1, at[from] || 0)) : op.amount;
+				if (!from || !(amount > 0)) throw new Error(GL.t("as.err.noStock", { name: p.name }));
+				return GC.api("POST", "stock/products/" + p.id + "/transfer", { amount: amount, location_id_from: from, location_id_to: to }).then(function (res) {
+					var ids = txIds(res);
+					return result(ctx, op, p, GL.t("as.sum.move", { n: amountText(amount), name: p.name, place: placeName(ctx, to) }), undoTx(ids),
+						{ transaction_ids: ids, amount: amount, location_id: from, target_location_id: to });
+				});
+			});
+		});
+	};
+
+	ops.set_amount = function (op, ctx) {
+		return product(op, ctx).then(function (got) {
+			var p = got.p, body = { new_amount: op.amount };
+			if (op.location_id) body.location_id = op.location_id;
+			return GC.api("POST", "stock/products/" + p.id + "/inventory", body).then(function (res) {
+				var ids = txIds(res);
+				return result(ctx, op, p, GL.t("as.sum.setAmount", { n: amountText(op.amount), name: p.name }), undoTx(ids), { transaction_ids: ids, amount: op.amount });
+			});
+		});
+	};
+
+	/// A new date on one batch: the batch on screen, else the first to expire (at the place she said).
+	ops.set_date = function (op, ctx) {
+		return product(op, ctx).then(function (got) {
+			var p = got.p;
+			return entries(p.id).then(function (rows) {
+				var list = (rows || []).filter(function (e) { return !op.location_id || +e.location_id === +op.location_id; });
+				var onScreen = ctx.screen.entry && list.filter(function (e) { return +e.id === +ctx.screen.entry.id; })[0];
+				var e = onScreen || list.sort(function (a, b) { return String(a.best_before_date).localeCompare(String(b.best_before_date)); })[0];
+				if (!e) throw new Error(GL.t("as.err.noStock", { name: p.name }));
+				var body = function (best) { return { amount: GC.num(e.amount), best_before_date: best, location_id: +e.location_id, price: e.price, open: +e.open, purchased_date: e.purchased_date }; };
+				return GC.api("PUT", "stock/entry/" + e.id, body(op.best_before)).then(function () {
+					return result(ctx, op, p, GL.t("as.sum.setDate", { name: p.name, date: GC.fmtDate(op.best_before) }),
+						[{ method: "PUT", path: "stock/entry/" + e.id, body: body(String(e.best_before_date).slice(0, 10)) }],
+						{ object_id: String(e.id), best_before: op.best_before, before: { best_before: String(e.best_before_date).slice(0, 10) } });
+				});
+			});
+		});
+	};
+
+	GA.txIds = txIds;
+	GA.stockAt = stockAt;
+})();
+</script>

@@ -12,7 +12,7 @@
 		{ key: "pantry", label: GL.t("sec.pantry"), views: ["userobjects/dashboard", "stockoverview", "shoppinglist"] },
 		{ key: "cooking", label: GL.t("sec.cooking"), views: ["userobjects/cuisine", "userobjects/tickets", "recipes", "mealplan"] },
 		{ key: "home", label: GL.t("sec.home"), views: ["userobjects/agenda", "choresoverview", "tasks", "batteriesoverview", "equipment", "calendar"] },
-		{ key: "actions", label: GL.t("sec.actions"), views: ["purchase", "consume", "transfer", "inventory", "choretracking", "batterytracking"] },
+		{ key: "actions", label: GL.t("sec.actions"), views: ["purchase", "consume", "transfer", "inventory", "choretracking", "batterytracking", "userobjects/gc_actions"] },
 		{ key: "objects", label: GL.t("sec.objects"), views: ["userobjects"] },
 		{ key: "data", label: GL.t("sec.data"), views: ["products", "locations", "shoppinglocations", "quantityunits", "productgroups", "chores", "batteries", "taskcategories", "userfields", "userentities"] }
 	];
@@ -446,7 +446,7 @@
 <?php
 if (defined('GROCY_AUTHENTICATED') && GROCY_AUTHENTICATED)
 {
-	foreach (array('stock-rules', 'common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'stock-add', 'stock-batch', 'stock-search', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-merge', 'shopping-theme', 'shopping-beyond-rules', 'shopping-i18n', 'shopping-catalog', 'shopping-diet', 'shopping-add', 'shopping-edit', 'shopping-panels', 'shopping-keys', 'shopping-lists', 'shopping-lists-edit', 'shopping-settings', 'shopping-organize', 'shopping-tray', 'shopping-trip', 'shopping-putaway', 'shopping', 'agenda-i18n', 'agenda-rules', 'agenda-filter', 'agenda-quickadd', 'agenda-data', 'agenda-row', 'agenda-calendar', 'agenda-add', 'agenda-views', 'agenda-detail', 'agenda', 'dash-rules', 'dashboard', 'recipe-text', 'shopping-inbox-rules', 'shopping-inbox', 'shopping-inbox-review', 'shopping-recipe-list', 'recipe-rules', 'recipe-page', 'recipe-cook', 'recipe-finish-ops', 'recipe-finish', 'recipe-variation', 'product-safe') as $gcPart)
+	foreach (array('stock-rules', 'common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'stock-add', 'stock-batch', 'stock-search', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-merge', 'shopping-theme', 'shopping-beyond-rules', 'shopping-i18n', 'shopping-catalog', 'shopping-diet', 'shopping-add', 'shopping-edit', 'shopping-panels', 'shopping-keys', 'shopping-lists', 'shopping-lists-edit', 'shopping-settings', 'shopping-organize', 'shopping-tray', 'shopping-trip', 'shopping-putaway', 'shopping', 'agenda-i18n', 'agenda-rules', 'agenda-filter', 'agenda-quickadd', 'agenda-data', 'agenda-row', 'agenda-calendar', 'agenda-add', 'agenda-views', 'agenda-detail', 'agenda', 'dash-rules', 'dashboard', 'recipe-text', 'shopping-inbox-rules', 'shopping-inbox', 'shopping-inbox-review', 'shopping-recipe-list', 'recipe-rules', 'recipe-page', 'recipe-cook', 'recipe-finish-ops', 'recipe-finish', 'recipe-variation', 'product-safe', 'assistant-i18n', 'assistant-rules', 'assistant-history', 'assistant-apply', 'assistant-apply-more', 'assistant-answer', 'assistant-context', 'assistant-session', 'assistant-cards', 'assistant', 'assistant-activity') as $gcPart)
 	{
 		include __DIR__ . '/companion/' . $gcPart . '.js.html';
 	}

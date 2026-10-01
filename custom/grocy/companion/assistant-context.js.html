@@ -1,0 +1,73 @@
+<script>
+/// What the web assistant knows before a call: master data, open tasks and chores, lists, and the screen (the app's
+/// ExtractionContext plus AssistantScreenContext), and the request body of the assistant-intake webhook.
+(function () {
+	if (!window.GC || !window.GCAR || !window.GCR) return;
+	var GA = GC.assist = GC.assist || {}, A = window.GCAR;
+	var loaded = null;
+
+	function load() {
+		if (loaded) return loaded;
+		loaded = Promise.all([GC.master(), GC.api("GET", "objects/products"), GC.api("GET", "objects/quantity_units"), GC.api("GET", "objects/tasks?query[]=done=0"),
+			GC.api("GET", "objects/chores"), GC.api("GET", "chores").catch(function () { return []; }), GC.api("GET", "user/settings").catch(function () { return {}; }),
+			GC.api("GET", "stock").catch(function () { return []; })]).then(function (r) {
+			var next = {};
+			(r[5] || []).forEach(function (c) { next[c.chore_id] = c.next_estimated_execution_time; });
+			return { ids: r[0].ids, locations: GC.byId(r[0].locations), lists: GC.byId(r[0].lists), products: GC.byId(r[1]), units: GC.byId(r[2]),
+				tasks: GC.byId(r[3]), chores: GC.byId(r[4]), choreNext: next, settings: r[6] || {}, stockIds: (r[7] || []).map(function (s) { return +s.product_id; }) };
+		}, function (e) { loaded = null; throw e; });
+		return loaded;
+	}
+
+	/// The page's screen context with names, resolved from the address and the page (stock place filter).
+	function screen(data) {
+		var ids = A.screenIds(location.pathname, location.search), s = {};
+		var named = function (map, id) { return map[id] ? { id: +id, name: map[id].name } : null; };
+		if (ids.product) s.product = named(data.products, ids.product);
+		if (ids.task) s.task = named(data.tasks, ids.task);
+		if (ids.chore) s.chore = named(data.chores, ids.chore);
+		if (ids.list) s.list = named(data.lists, ids.list === "active" ? data.ids.shoppingList : ids.list);
+		if (Grocy.View === "stockoverview") {
+			var loc = +$("#location-filter").val();
+			if (loc > 0) s.location_ids = [loc];
+		}
+		var recipe = ids.recipe ? GC.api("GET", "objects/recipes/" + ids.recipe).then(function (r) { if (r) s.recipe = { id: +r.id, name: r.name }; }, function () {}) : null;
+		var entry = ids.entry ? GC.api("GET", "objects/stock/" + ids.entry).then(function (e) {
+			if (!e) return;
+			s.entry = { id: +e.id, product_id: +e.product_id, location_id: +e.location_id, best_before: String(e.best_before_date || "").slice(0, 10), opened: +e.open === 1, amount: GC.num(e.amount) };
+			if (!s.product) s.product = named(data.products, e.product_id);
+		}, function () {}) : null;
+		return Promise.all([recipe, entry]).then(function () { Object.keys(s).forEach(function (k) { if (!s[k]) delete s[k]; }); return s; });
+	}
+
+	/// Everything a call or a write needs, fresh screen included.
+	GA.context = function () {
+		return load().then(function (data) {
+			return screen(data).then(function (s) {
+				var ctx = Object.assign({}, data, { screen: s, today: moment().format("YYYY-MM-DD") });
+				ctx.activeListId = s.list ? s.list.id : data.ids.shoppingList;
+				return ctx;
+			});
+		});
+	};
+	GA.reload = function () { loaded = null; };
+
+	/// The assistant-intake request: the same parts the app puts in its prompt.
+	GA.request = function (ctx, text, recentRows, answered) {
+		var keep = [ctx.screen.product && ctx.screen.product.id].concat(recentRows.map(function (r) { return r.product_id; })).filter(Boolean);
+		var list = function (map) { return Object.keys(map).map(function (k) { return map[k]; }); };
+		return {
+			text: text, today: ctx.today, timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Paris"), language: GL.lang,
+			locations: list(ctx.locations).map(function (l) { return { id: +l.id, name: l.name, kind: GCR.locationKind(l) }; }),
+			units: list(ctx.units).map(function (u) { return { id: +u.id, name: u.name }; }),
+			shortlist: A.shortlist(text, list(ctx.products), keep, ctx.stockIds, 150),
+			tasks: list(ctx.tasks).map(function (t) { return { id: +t.id, name: t.name, due: t.due_date ? String(t.due_date).slice(0, 16) : null }; }),
+			chores: list(ctx.chores).filter(function (c) { return +c.active !== 0; }).map(function (c) {
+				return { id: +c.id, name: c.name, next: ctx.choreNext[c.id] ? String(ctx.choreNext[c.id]).slice(0, 10) : null, rule: c.period_type || null, room: null };
+			}),
+			lists: list(ctx.lists).map(function (l) { return { id: +l.id, name: l.name }; }), active_list_id: ctx.activeListId,
+			screen: ctx.screen, recent_rows: recentRows, answered: answered || []
+		};
+	};
+})();
+</script>

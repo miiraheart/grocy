@@ -1,0 +1,151 @@
+<script>
+(function (root) {
+	/// Intake operations the web applies, with the app's action kind (AssistantActionKind) each one records.
+	var KINDS = {
+		add: "stockAdd", consume: "consume", spoil: "spoil", open: "open", move: "transfer", set_amount: "inventory", set_date: "stockEdit",
+		out_of: "listAdd", list_done: "listDone", list_undone: "listUndone", list_remove: "listRemove", list_amount: "listAmount", list_note: "listNote",
+		task_add: "taskAdd", task_done: "taskComplete", task_undone: "taskUndo", chore_done: "choreDone"
+	};
+	var PRODUCT_OPS = ["add", "consume", "spoil", "open", "move", "set_amount", "set_date", "list_done", "list_undone", "list_remove", "list_amount"];
+	var TARGET_OPS = ["task_done", "task_undone", "chore_done"];
+	var DRAFT_OPS = ["update", "delete", "undo", "ask"];
+	var UNDOABLE = ["applied", "edited"];
+	var STOP = ["les", "des", "une", "the", "and", "pour", "with", "dans", "sur", "mon", "mes", "est", "pas", "plus", "que", "qui", "j'ai", "have", "some", "out", "of", "add", "ajoute", "liste", "list"];
+	var FIELDS = ["action_id", "created", "kind", "status", "origin", "source", "session_id", "parent_id", "summary", "sentence", "record"];
+
+	function fold(text) {
+		return String(text == null ? "" : text).replace(/œ/gi, "oe").replace(/æ/gi, "ae").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+	}
+	function stem(w) { return w.length > 4 ? w.replace(/(es|s|x)$/, "") : w; }
+	function words(text) {
+		return fold(text).split(/[^a-z0-9']+/).map(function (w) { return w.replace(/^[a-z]'/, ""); })
+			.filter(function (w) { return w.length >= 3 && STOP.indexOf(w) === -1; }).map(stem);
+	}
+
+	/// The products the model may name: those whose words are in the text first, then the ones on screen or in stock,
+	/// then the rest, up to `limit` (the app's shortlist, without its lexicon: the full list covers English names).
+	function shortlist(text, products, keepIds, stockIds, limit) {
+		var said = words(text), keep = (keepIds || []).map(Number), stock = (stockIds || []).map(Number);
+		var scored = (products || []).filter(function (p) { return +p.active !== 0; }).map(function (p) {
+			var own = words(p.name), hits = own.filter(function (w) { return said.some(function (s) { return s === w || (s.length >= 4 && (w.indexOf(s) === 0 || s.indexOf(w) === 0)); }); }).length;
+			var rank = keep.indexOf(+p.id) !== -1 ? 3 : 0;
+			return { id: +p.id, name: p.name, score: hits * 10 + rank + (stock.indexOf(+p.id) !== -1 ? 1 : 0) };
+		});
+		scored.sort(function (a, b) { return b.score - a.score || a.name.localeCompare(b.name); });
+		return scored.slice(0, limit || 150).map(function (p) { return { id: p.id, name: p.name }; });
+	}
+
+	/// What the page shows, from its address: the ids the app's AssistantScreenContext would hold.
+	function screenIds(pathname, search) {
+		var path = String(pathname || ""), q = new URLSearchParams(search || ""), ids = {}, m;
+		var num = function (v) { var n = parseInt(v, 10); return n > 0 ? n : null; };
+		if ((m = /\/product\/(\d+)/.exec(path))) ids.product = num(m[1]);
+		if ((m = /\/stockentry\/(\d+)/.exec(path))) ids.entry = num(m[1]);
+		if ((m = /\/task\/(\d+)/.exec(path))) ids.task = num(m[1]);
+		if ((m = /\/chore\/(\d+)/.exec(path))) ids.chore = num(m[1]);
+		if ((m = /\/recipe\/(\d+)/.exec(path))) ids.recipe = num(m[1]);
+		if (/\/(stockentries|consume|purchase|inventory|transfer|stockjournal)\b/.test(path) && q.get("product")) ids.product = num(q.get("product"));
+		if (/\/shoppinglist\b/.test(path)) ids.list = num(q.get("list")) || "active";
+		if (/\/recipes\b/.test(path) && q.get("recipe")) ids.recipe = num(q.get("recipe"));
+		if (/\/choretracking\b/.test(path) && q.get("chore")) ids.chore = num(q.get("chore"));
+		Object.keys(ids).forEach(function (k) { if (ids[k] == null) delete ids[k]; });
+		return ids;
+	}
+
+	function kindOf(op) { return KINDS[op.op] || null; }
+	function supported(op) { return !!KINDS[op.op] || DRAFT_OPS.indexOf(op.op) !== -1; }
+	/// What a card still needs before it can be applied, or null when it is ready.
+	function missing(op) {
+		if (!KINDS[op.op]) return null;
+		if (PRODUCT_OPS.indexOf(op.op) !== -1 && !op.product_id && !(op.op === "add" && op.name_fr)) return "product";
+		if (TARGET_OPS.indexOf(op.op) !== -1 && !op.target_id) return "target";
+		if (op.op === "move" && !op.target_location_id) return "location";
+		if (op.op === "set_date" && !op.best_before) return "date";
+		if (op.op === "set_amount" && op.amount == null) return "amount";
+		if ((op.op === "task_add" || op.op === "list_note") && !op.text && !op.name_spoken) return "text";
+		if (op.op === "out_of" && !op.product_id && !op.name_fr && !op.name_spoken && !(op.values && op.values.length)) return "product";
+		return null;
+	}
+
+	/// An update of a card: the fields the model set win, the rest stay.
+	function merge(op, update) {
+		var out = {};
+		Object.keys(op).forEach(function (k) { out[k] = op[k]; });
+		["product_id", "name_fr", "amount", "qu_id", "best_before", "location_id", "target_location_id", "price", "purchased_on", "text", "day", "target_id"].forEach(function (k) {
+			if (update[k] != null) out[k] = update[k];
+		});
+		if (update.best_before) out.best_before_source = update.best_before_source || "spoken";
+		if (update.whole) { out.whole = true; out.amount = null; }
+		if (update.opened) out.opened = true;
+		return out;
+	}
+
+	function uuid() {
+		if (root.crypto && root.crypto.randomUUID) return root.crypto.randomUUID();
+		return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; return (c === "x" ? r : (r & 3 | 8)).toString(16); });
+	}
+	function stamp(date) {
+		var d = date || new Date(), off = -d.getTimezoneOffset(), pad = function (n) { return (n < 10 ? "0" : "") + n; };
+		var local = new Date(d.getTime() + off * 60000).toISOString().slice(0, 23);
+		return local + (off >= 0 ? "+" : "-") + pad(Math.floor(Math.abs(off) / 60)) + ":" + pad(Math.abs(off) % 60);
+	}
+
+	/// One history entry as the userentity gc_actions fields (docs/action-history.md), and back.
+	function toFields(rec) {
+		var f = {};
+		FIELDS.forEach(function (k) { if (k !== "record") f[k] = rec[k] == null ? "" : String(rec[k]); });
+		f.record = JSON.stringify(rec.record || {});
+		return f;
+	}
+	function fromRow(row) {
+		var uf = row.userfields || row, rec = { row_id: row.id != null ? +row.id : null }, body = {};
+		FIELDS.forEach(function (k) { if (k !== "record") rec[k] = uf[k] == null || uf[k] === "" ? null : String(uf[k]); });
+		try { body = uf.record ? JSON.parse(uf.record) : {}; } catch (e) { body = {}; }
+		rec.record = body && typeof body === "object" ? body : {};
+		return rec.action_id ? rec : null;
+	}
+	/// Entries from both devices carry their own offset: order them by instant, never by text.
+	function when(r) { var t = Date.parse(String(r.created || "").replace(" ", "T")); return isNaN(t) ? 0 : t; }
+	function newest(a, b) { return when(b) - when(a); }
+
+	function canUndo(rec) { return UNDOABLE.indexOf(rec.status) !== -1 && Array.isArray(rec.record.undo) && rec.record.undo.length > 0; }
+	function canReplay(rec) { var op = rec.record.op; return !!(op && KINDS[op.op] && !missing(op)); }
+	/// The undoable entries of the same session written at or after this one, newest first ("Undo from here").
+	function fromHere(rec, all) {
+		if (!rec.session_id) return [rec].filter(canUndo);
+		return all.filter(function (r) { return r.session_id === rec.session_id && when(r) >= when(rec) && canUndo(r); }).sort(newest);
+	}
+
+	/// The app's action menu (ActionMenuModel.items) for one entry: Inspect, Undo, Redo, Duplicate, Undo from here, Open.
+	function menu(rec, all) {
+		var items = ["inspect"];
+		if (canUndo(rec)) items.push("undo");
+		if (rec.status === "undone" && canReplay(rec)) items.push("redo");
+		if (UNDOABLE.indexOf(rec.status) !== -1 && canReplay(rec)) items.push("duplicate");
+		if (canUndo(rec) && fromHere(rec, all || []).length > 1) items.push("undoFromHere");
+		if (link(rec)) items.push("open");
+		return items;
+	}
+
+	/// The Grocy page of what the entry wrote (the app's GrocyLink.path).
+	function link(rec) {
+		var r = rec.record || {}, id = r.object_id != null && r.object_id !== "" ? r.object_id : null;
+		if (r.link) return r.link;
+		switch (r.object_type) {
+			case "product": return id ? "/product/" + id : null;
+			case "stockEntry": return r.product_id ? "/stockentries?product=" + r.product_id : null;
+			case "listItem": return r.list_id ? "/shoppinglist?list=" + r.list_id : "/shoppinglist";
+			case "task": return id ? "/task/" + id : "/tasks";
+			case "chore": return id ? "/chore/" + id : "/choresoverview";
+			case "recipe": return id ? "/recipes?recipe=" + id : "/recipes";
+			case "mealPlan": return "/mealplan";
+		}
+		return r.product_id ? "/stockentries?product=" + r.product_id : null;
+	}
+
+	var R = { KINDS: KINDS, FIELDS: FIELDS, fold: fold, words: words, shortlist: shortlist, screenIds: screenIds, kindOf: kindOf, supported: supported,
+		missing: missing, merge: merge, uuid: uuid, stamp: stamp, toFields: toFields, fromRow: fromRow, when: when, newest: newest, canUndo: canUndo,
+		canReplay: canReplay, fromHere: fromHere, menu: menu, link: link };
+	if (typeof module !== "undefined" && module.exports) module.exports = R; else root.GCAR = R;
+})(typeof window !== "undefined" ? window : globalThis);
+</script>
