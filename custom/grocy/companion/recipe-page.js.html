@@ -1,0 +1,145 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCRD) return;
+	/// The recipe as the app reads it (lines, steps, diet report) and, on the recipe page, the Pestle kit: stat row,
+	/// Start cooking and Finish buttons, then the diet card after the steps with swaps, "Cook with swaps",
+	/// "Save as variation" and "Checked by hand" (19-11, 19-18, 19-VISUAL-PESTLE P-03).
+	GL.add({
+		"rk.servings": ["Servings", "Portions"], "rk.time": ["Time", "Temps"], "rk.rating": ["Rating", "Note"], "rk.start": ["Start cooking", "Commencer à cuisiner"],
+		"rk.finish": ["Finish cooking", "Terminer la cuisine"], "rk.diet": ["Diet check", "Vérification régime"],
+		"rk.v.ok": ["Fine for you", "OK pour toi"], "rk.v.info": ["Fine, with notes", "OK, avec remarques"], "rk.v.unknown": ["Check the labels", "Vérifie les étiquettes"],
+		"rk.v.limit": ["Limit", "À limiter"], "rk.v.avoid": ["Avoid as written", "À éviter telle quelle"], "rk.v.danger": ["Danger: do not cook as written", "Danger : ne pas cuisiner telle quelle"],
+		"rk.cookSwaps": ["Cook with swaps", "Cuisiner avec substitutions"], "rk.saveVariation": ["Save as variation", "Enregistrer une variante"],
+		"rk.override": ["Checked by hand", "Vérifiée à la main"], "rk.overrideOff": ["Turn the diet check back on", "Réactiver la vérification"],
+		"rk.overrideAsk": ["Why is it fine? (saved in the notes)", "Pourquoi c'est bon ? (enregistré dans les notes)"],
+		"rk.overridden": ["Checked by hand: {r}", "Vérifiée à la main : {r}"], "rk.checkOn": ["Diet check back on", "Vérification réactivée"],
+		"rk.remove": ["remove this line", "retirer cette ligne"], "rk.blocked": ["This recipe has a danger line. Cook it anyway?", "Cette recette a une ligne dangereuse. La cuisiner quand même ?"],
+		"rk.saved": ["Saved {name} with {n} swaps", "{name} enregistrée avec {n} substitutions"], "rk.boost": ["Good for: {list}", "Bon pour : {list}"],
+		"rk.boost.iron": ["iron", "fer"], "rk.boost.vitamin_a": ["vitamin A", "vitamine A"], "rk.boost.vitamin_b": ["vitamin B", "vitamine B"],
+		"rk.starch": ["more than half a cup a serving", "plus d'une demi-tasse par portion"], "rk.cookIt": ["cook it", "à cuire"], "rk.min": ["{n} min", "{n} min"], "rk.openCopy": ["Open", "Ouvrir"]
+	});
+	var RANK = GCRD.rank;
+
+	/// Recipe, lines (positions then free lines of the description) and steps, with its diet report.
+	GC.recipeModel = function (id) {
+		return Promise.all([GC.api("GET", "objects/recipes/" + id), GC.api("GET", "objects/recipes_pos?query[]=recipe_id=" + id),
+			GC.api("GET", "objects/products"), GC.api("GET", "objects/quantity_units")]).then(function (r) {
+			var recipe = r[0], uf = recipe.userfields || {}, products = GC.byId(r[2]), units = GC.byId(r[3]), doc = GCT.readDocument(GCT.domBody(recipe.description));
+			var lines = (r[1] || []).map(function (p) {
+				var prod = products[p.product_id] || {}, pu = p.userfields || {};
+				return { key: "pos:" + p.id, posId: +p.id, productId: +p.product_id, product: prod.name || null, ingredients: (prod.userfields || {}).ingredients || null,
+					rawLine: pu.raw_line || null, text: p.note || "", amount: GC.num(p.amount), unit: units[p.qu_id] ? units[p.qu_id].name : null };
+			}).concat(doc.lines.map(function (t, i) { return { key: "free:" + i, text: t, free: i }; }));
+			var m = { recipe: recipe, uf: uf, lines: lines, steps: doc.steps, servings: GC.num(recipe.base_servings) || 1, products: products,
+				desired: GC.num(recipe.desired_servings) || GC.num(recipe.base_servings) || 1, override: String(uf.diet_override) === "1" };
+			m.report = GCRD.report(m);
+			m.label = function (l) { return l.product ? (l.rawLine || GCT.compose(l.amount, l.unit, l.product)) : l.text; };
+			return m;
+		});
+	};
+
+	GC.recipeSaveFlags = function (m) {
+		if ((m.uf.diet_flags || "") === m.report.summary) return Promise.resolve();
+		return GC.api("PUT", "userfields/recipes/" + m.recipe.id, { diet_flags: m.report.summary });
+	};
+
+	function stat(label, value) { return $('<div class="gc-kit-stat"></div>').append($("<span></span>").text(label)).append($("<b></b>").text(value)); }
+
+	function kit(m) {
+		var $k = $('<div class="gc-kit d-print-none"></div>'), u = m.uf, minutes = (+u.prep_minutes || 0) + (+u.cook_minutes || 0);
+		var $stats = $('<div class="gc-kit-stats"></div>').appendTo($k);
+		$stats.append(stat(GL.t("rk.servings"), GCT.compose(m.desired, null, "")));
+		if (minutes > 0) $stats.append(stat(GL.t("rk.time"), minutes >= 60 ? Math.floor(minutes / 60) + " h " + (minutes % 60 ? minutes % 60 : "") : GL.t("rk.min", { n: minutes })));
+		if (+u.rating > 0) $stats.append(stat(GL.t("rk.rating"), u.rating + "/5"));
+		var $b = $('<div class="gc-kit-actions"></div>').appendTo($k);
+		$('<button type="button" class="btn btn-primary gc-kit-start"></button>').append('<i class="fa-solid fa-fire-burner"></i> ').append($("<span></span>").text(GL.t("rk.start")))
+			.on("click", function () { start(m, false); }).appendTo($b);
+		$('<button type="button" class="btn btn-outline-secondary"></button>').append('<i class="fa-solid fa-flag-checkered"></i> ').append($("<span></span>").text(GL.t("rk.finish")))
+			.on("click", function () { GC.finishCooking(m); }).appendTo($b);
+		return $k;
+	}
+
+	function start(m, swaps) {
+		if (!m.report.hardBlocked) { GC.cookMode(m, swaps); return; }
+		bootbox.confirm({ message: GL.t("rk.blocked"), callback: function (ok) { if (ok) GC.cookMode(m, swaps); } });
+	}
+
+	function flagText(f) {
+		var lang = GL.lang === "fr" ? "fr" : "en", rule = GCDiet.rules.rules.filter(function (r) { return r.id === f.ruleId; })[0];
+		if (f.context === "starch") return GL.t("rk.starch");
+		var name = rule ? rule.name[lang] : f.ruleId;
+		return name + (f.word ? " (" + f.word + ")" : "") + (f.context === "raw" ? ", " + GL.t("rk.cookIt") : rule ? ", " + rule.reason[lang] : "");
+	}
+
+	function dietCard(m) {
+		var rep = m.report, lang = GL.lang === "fr" ? "fr" : "en", view = GCRD.swapView(m, rep, lang);
+		var $c = $('<section class="gc-card gc-kit-diet d-print-none"></section>').attr("data-level", rep.verdict);
+		var $hd = $('<div class="gc-kit-diet-hd"></div>').appendTo($c);
+		$hd.append($("<b></b>").text(GL.t("rk.diet"))).append($('<span class="gc-kit-verdict"></span>').text(GL.t("rk.v." + rep.verdict)));
+		var $list = $('<div class="gc-kit-lines"></div>').appendTo($c);
+		m.lines.concat(m.steps.map(function (s, i) { return { key: "step:" + i, text: s, step: true }; })).forEach(function (l) {
+			var flags = rep.forKey(l.key).filter(function (f) { return RANK(f.level) >= RANK("info"); });
+			if (!flags.length) return;
+			var worst = flags.reduce(function (w, f) { return RANK(f.level) > RANK(w.level) ? f : w; });
+			var $l = $('<div class="gc-kit-line"></div>').attr("data-level", worst.level).appendTo($list);
+			$("<b></b>").text(l.step ? l.text : m.label(l)).appendTo($l);
+			$('<span class="gc-sub"></span>').text(flags.map(flagText).join(" · ")).appendTo($l);
+			var v = view.lines.filter(function (x) { return x.key === l.key; })[0];
+			if (v && v.action === "remove") $('<span class="gc-kit-swap is-danger"></span>').text(GL.t("rk.remove")).appendTo($l);
+			else if (v && v.action !== "none") $('<span class="gc-kit-swap"></span>').append('<i class="fa-solid fa-arrow-right-arrow-left"></i> ').append($("<span></span>").text(v.text)).appendTo($l);
+		});
+		if (rep.boosts.length) $('<div class="gc-sub"></div>').text(GL.t("rk.boost", { list: rep.boosts.map(function (b) { return GL.t("rk.boost." + b); }).join(", ") })).appendTo($c);
+		var $a = $('<div class="gc-kit-actions"></div>').appendTo($c);
+		if (view.swapped) {
+			$('<button type="button" class="btn btn-sm btn-primary"></button>').text(GL.t("rk.cookSwaps")).on("click", function () { start(m, true); }).appendTo($a);
+			$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("rk.saveVariation")).on("click", function () { GC.saveVariation(m, view); }).appendTo($a);
+		}
+		if (RANK(rep.verdict) >= RANK("avoid")) {
+			$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t(m.override ? "rk.overrideOff" : "rk.override"))
+				.on("click", function () { override(m, !m.override); }).appendTo($a);
+		}
+		return $c;
+	}
+
+	/// "Checked by hand" (DietOverrideEdit): diet_override and a dated reason in the notes; undo restores both.
+	function override(m, on) {
+		if (!on) { writeOverride(m, false, ""); return; }
+		bootbox.prompt({ title: GL.t("rk.overrideAsk"), callback: function (reason) { if ($.trim(reason || "")) writeOverride(m, true, reason); } });
+	}
+
+	function writeOverride(m, on, reason) {
+		var old = { diet_override: m.uf.diet_override || "", notes: m.uf.notes || "" }, values = { diet_override: on ? "1" : "0" };
+		if (on) { var kept = $.trim(old.notes); values.notes = (kept ? kept + "\n" : "") + GC.today() + " override: " + $.trim(reason); }
+		GC.api("PUT", "userfields/recipes/" + m.recipe.id, values).then(function () {
+			GC.agendaUI.undoBar(on ? GL.t("rk.overridden", { r: $.trim(reason) }) : GL.t("rk.checkOn"), function () {
+				var back = { diet_override: old.diet_override };
+				if (on) back.notes = old.notes;
+				return GC.api("PUT", "userfields/recipes/" + m.recipe.id, back);
+			}, mount);
+			mount();
+		}, function (err) { GC.toast("error", err.message); });
+	}
+
+	function recipeId() {
+		var q = new URLSearchParams(location.search).get("recipe");
+		if (q && /^\d+$/.test(q)) return +q;
+		var $b = $("#selectedRecipeCard .recipe-consume[data-recipe-id]").first();
+		return $b.length ? +$b.attr("data-recipe-id") : null;
+	}
+
+	function mount() {
+		var id = recipeId(), $body = $("#selectedRecipeCard .card-body").first();
+		if (!id || !$body.length) return;
+		GC.recipeModel(id).then(function (m) {
+			$("#selectedRecipeCard .gc-kit, #selectedRecipeCard .gc-kit-diet").remove();
+			kit(m).insertAfter($body.children(".shadow").first());
+			if (m.report.flags.some(function (f) { return f.context !== "boost"; })) $body.append(dietCard(m));
+			GC.recipeSaveFlags(m).catch(function (e) { console.log("diet flags", e.message); });
+			if (GC.cookResume) GC.cookResume(m);
+		}, function (err) { console.log("recipe kit", err.message); });
+	}
+	GC.recipeMount = mount;
+
+	$(function () { if (Grocy.View === "recipes") setTimeout(mount, 300); });
+})();
+</script>

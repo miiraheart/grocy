@@ -1,0 +1,61 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCT) return;
+	/// "Save as variation" (RecipeVariationEdit): a copy of the recipe with the swaps written in. A linked line points to
+	/// the product named like the swap when one exists, else becomes a free line; an omitted line keeps a note. One undo
+	/// deletes the copy.
+	var api = GC.api;
+
+	function productNamed(name, products) {
+		var f = GCT.fold(name).trim();
+		if (!f) return null;
+		return Object.keys(products).map(Number).sort(function (a, b) { return a - b; }).filter(function (id) { return GCT.fold(products[id].name).trim() === f; })[0] || null;
+	}
+
+	function ingredientList(body) {
+		var doc = GCT.readDocument(body);
+		if (doc.lists.ingredients) return doc.lists.ingredients;
+		var h = body.ownerDocument.createElement("h3"), ul = body.ownerDocument.createElement("ul");
+		h.textContent = GL.lang === "fr" ? "Ingrédients" : "Ingredients";
+		body.insertBefore(ul, body.firstChild);
+		body.insertBefore(h, ul);
+		return ul;
+	}
+
+	GC.saveVariation = function (m, view) {
+		var r = m.recipe, copyId = null, name = r.name + (GL.lang === "fr" ? " (substitutions)" : " (swaps)");
+		var swapped = view.lines.filter(function (l) { return l.action === "swapped" || l.action === "omit"; });
+		api("POST", "recipes/" + r.id + "/copy").then(function (c) {
+			copyId = +c.created_object_id;
+			return Promise.all([api("GET", "objects/recipes/" + copyId), api("GET", "objects/recipes_pos?query[]=recipe_id=" + copyId)]);
+		}).then(function (x) {
+			var body = GCT.domBody(x[0].description), doc = GCT.readDocument(body), rows = (x[1] || []).sort(function (a, b) { return a.id - b.id; });
+			var originals = m.lines.filter(function (l) { return l.posId; }).sort(function (a, b) { return a.posId - b.posId; }), copies = {};
+			originals.forEach(function (l, i) { if (rows[i]) copies[l.posId] = rows[i]; });
+			var writes = [], extra = [];
+			swapped.forEach(function (l) {
+				var line = m.lines.filter(function (x2) { return x2.key === l.key; })[0];
+				if (line.free != null && doc.lineEls[line.free]) { doc.lineEls[line.free].textContent = l.text; return; }
+				var row = copies[line.posId];
+				if (!row) return;
+				if (l.action === "omit") { writes.push(api("PUT", "objects/recipes_pos/" + row.id, { note: l.text })); return; }
+				var pid = productNamed(l.swap.name, m.products);
+				if (pid) writes.push(api("PUT", "objects/recipes_pos/" + row.id, { product_id: pid, amount: GC.num(row.amount) * l.swap.ratio }));
+				else { writes.push(api("DELETE", "objects/recipes_pos/" + row.id)); extra.push(l.text); }
+			});
+			view.steps.forEach(function (s, i) { if (s !== m.steps[i] && doc.stepEls[i]) doc.stepEls[i].textContent = s; });
+			if (extra.length) {
+				var ul = ingredientList(body);
+				extra.forEach(function (t) { var li = body.ownerDocument.createElement("li"); li.textContent = t; ul.appendChild(li); });
+			}
+			return Promise.all(writes).then(function () { return api("PUT", "objects/recipes/" + copyId, { name: name, description: body.innerHTML }); });
+		}).then(function () {
+			GC.agendaUI.undoBar(GL.t("rk.saved", { name: name, n: swapped.length }), function () { return api("DELETE", "objects/recipes/" + copyId); }, function () {});
+			$(".gc-ag-undo").append($('<a class="btn btn-sm"></a>').attr("href", GC.url("/recipes?recipe=" + copyId)).text(GL.t("rk.openCopy")));
+		}).catch(function (err) {
+			GC.toast("error", err.message);
+			if (copyId) api("DELETE", "objects/recipes/" + copyId);
+		});
+	};
+})();
+</script>

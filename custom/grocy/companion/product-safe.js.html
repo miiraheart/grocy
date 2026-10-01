@@ -1,0 +1,84 @@
+<script>
+(function () {
+	if (!window.GC || !window.Grocy) return;
+	/// Product detail gaps (20-05): the recipes a product is used in on its edit page, and a safe delete on the products
+	/// list. A product used in recipes is archived instead; any other delete archives first and only deletes when the
+	/// Undo window closes, so Undo always gets it back.
+	GL.add({
+		"ps.usedIn": ["Used in {n} recipes: {list}", "Utilisé dans {n} recettes : {list}"], "ps.usedIn1": ["Used in the recipe {list}", "Utilisé dans la recette {list}"],
+		"ps.blocked": ["{name} is used in {list}. Archive it instead? Archived products stay in recipes and history.", "{name} est utilisé dans {list}. L'archiver plutôt ? Un produit archivé reste dans les recettes et l'historique."],
+		"ps.archive": ["Archive", "Archiver"], "ps.archived": ["{name} archived", "{name} archivé"], "ps.deleted": ["{name} deleted", "{name} supprimé"],
+		"ps.confirm": ["Delete {name}? You can undo for a few seconds.", "Supprimer {name} ? Annulable quelques secondes."]
+	});
+	var WINDOW_MS = 8000;
+
+	function recipesUsing(pid) {
+		return Promise.all([GC.api("GET", "objects/recipes_pos?query[]=product_id=" + pid), GC.api("GET", "objects/recipes")]).then(function (r) {
+			var ids = (r[0] || []).map(function (p) { return +p.recipe_id; });
+			return (r[1] || []).filter(function (x) { return ids.indexOf(+x.id) >= 0 && (x.type || "normal") === "normal"; });
+		});
+	}
+
+	function archive(pid, name, $row) {
+		return GC.api("GET", "objects/products/" + pid).then(function (p) {
+			var was = String(p.active) === "1" ? 1 : 0;
+			return GC.api("PUT", "objects/products/" + pid, { active: 0 }).then(function () {
+				if ($row) $row.addClass("gc-hidden");
+				GC.agendaUI.undoBar(GL.t("ps.archived", { name: name }), function () { return GC.api("PUT", "objects/products/" + pid, { active: was }); },
+					function () { if ($row) $row.removeClass("gc-hidden"); });
+			});
+		});
+	}
+
+	function safeDelete(pid, name, $row) {
+		var undone = false;
+		GC.api("PUT", "objects/products/" + pid, { active: 0 }).then(function () {
+			$row.addClass("gc-hidden");
+			GC.agendaUI.undoBar(GL.t("ps.deleted", { name: name }), function () {
+				undone = true;
+				return GC.api("PUT", "objects/products/" + pid, { active: 1 });
+			}, function () { $row.removeClass("gc-hidden"); });
+			setTimeout(function () {
+				if (!undone) GC.api("DELETE", "objects/products/" + pid).catch(function (err) { GC.toast("error", err.message); });
+			}, WINDOW_MS + 300);
+		}, function (err) { GC.toast("error", err.message); });
+	}
+
+	if (Grocy.View === "products") {
+		document.addEventListener("click", function (e) {
+			var btn = e.target.closest && e.target.closest(".product-delete-button");
+			if (!btn) return;
+			e.preventDefault();
+			e.stopImmediatePropagation();
+			var pid = +btn.getAttribute("data-product-id"), name = btn.getAttribute("data-product-name") || "", $row = $(btn).closest("tr");
+			recipesUsing(pid).then(function (used) {
+				if (used.length) {
+					bootbox.confirm({ message: $("<p></p>").text(GL.t("ps.blocked", { name: name, list: used.map(function (r) { return r.name; }).join(", ") })),
+						buttons: { confirm: { label: GL.t("ps.archive"), className: "btn-primary" }, cancel: { label: GL.t("cancel") } },
+						callback: function (ok) { if (ok) archive(pid, name, $row).catch(function (err) { GC.toast("error", err.message); }); } });
+					return;
+				}
+				bootbox.confirm({ message: $("<p></p>").text(GL.t("ps.confirm", { name: name })), buttons: { confirm: { className: "btn-danger", label: GL.t("delete") }, cancel: { label: GL.t("cancel") } },
+					callback: function (ok) { if (ok) safeDelete(pid, name, $row); } });
+			}, function (err) { GC.toast("error", err.message); });
+		}, true);
+	}
+
+	if (Grocy.View === "productform" && Grocy.EditMode === "edit") {
+		$(function () {
+			var pid = +(location.pathname.match(/\/product\/(\d+)/) || [])[1];
+			if (!pid) return;
+			recipesUsing(pid).then(function (used) {
+				if (!used.length) return;
+				var $n = $('<div class="gc-note gc-ps-used"><i class="fa-solid fa-book-open"></i><span></span></div>');
+				var $s = $n.find("span").text(GL.t(used.length === 1 ? "ps.usedIn1" : "ps.usedIn", { n: used.length, list: "" }));
+				used.forEach(function (r, i) {
+					if (i) $s.append(", ");
+					$s.append($("<a></a>").attr("href", GC.url("/recipes?recipe=" + r.id)).text(r.name));
+				});
+				$n.insertBefore("#product-form");
+			}, function (err) { console.log("product recipes", err.message); });
+		});
+	}
+})();
+</script>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Phase 18 schema (18-SPEC 3.2): the chores and tasks userfields and the web Agenda userentity. Writes schema only, never a data row.
+# Phase 18 schema (18-SPEC 3.2): the chores and tasks userfields and the web Agenda and Dashboard userentities. Writes schema only, never a data row.
 # Only GET and POST /objects/userfields and /objects/userentities. Adds what is missing, reports drift, never edits a field.
 # Usage: grocy-schema-chores.sh [--target test|real] [--yes-real] [--check]
 #   --target test (default) talks to https://grocy-test.audibox.cc/api and nothing else.
@@ -61,16 +61,20 @@ tasks|steps|text-multi-line|Étapes|0|'
 MISSING=0
 FAILED=0
 
-# The web Agenda page (companion/agenda.js.html) lives on userobjects/agenda; the entity holds no rows.
-if api GET /objects/userentities | jq -e '.[] | select(.name == "agenda")' >/dev/null; then
-  echo "userentity agenda exists"
-elif [ "$MODE" = check ]; then
-  echo "userentity agenda missing"; MISSING=$((MISSING + 1))
-elif id=$(api POST /objects/userentities '{"name":"agenda","caption":"Agenda","show_in_sidebar_menu":1,"icon_css_class":"fa-solid fa-list-check"}' | jq -r .created_object_id); then
-  echo "userentity agenda created $id"
-else
-  FAILED=$((FAILED + 1)); echo "userentity agenda failed"
-fi
+# The web pages living on a userentity (they hold no rows): Agenda (companion/agenda.js.html) and Dashboard
+# (companion/dashboard.js.html).
+for page in 'agenda|Agenda|fa-solid fa-list-check' 'dashboard|Tableau de bord|fa-solid fa-gauge'; do
+  IFS='|' read -r ename ecaption eicon <<<"$page"
+  if api GET /objects/userentities | jq -e --arg n "$ename" '.[] | select(.name == $n)' >/dev/null; then
+    echo "userentity $ename exists"
+  elif [ "$MODE" = check ]; then
+    echo "userentity $ename missing"; MISSING=$((MISSING + 1))
+  elif id=$(api POST /objects/userentities "$(jq -nc --arg n "$ename" --arg c "$ecaption" --arg i "$eicon" '{name:$n,caption:$c,show_in_sidebar_menu:1,icon_css_class:$i}')" | jq -r .created_object_id); then
+    echo "userentity $ename created $id"
+  else
+    FAILED=$((FAILED + 1)); echo "userentity $ename failed"
+  fi
+done
 
 prev_entity=""""
 sort=0

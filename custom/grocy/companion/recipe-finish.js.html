@@ -1,0 +1,116 @@
+<script>
+(function () {
+	if (!window.GC || !GC.finishOps) return;
+	/// "Finish cooking" (19-13): servings, ingredients from stock, portions into the Kitchen (eat now, fridge, freezer),
+	/// today's plan entries ticked, rating, again and a note; then "Plan the portions" (BatchSpread) on the next free
+	/// lunches and dinners. Every step is undone by one Undo.
+	GL.add({
+		"fc.title": ["Finish cooking: {name}", "Terminer : {name}"], "fc.servings": ["Servings cooked", "Portions cuisinées"],
+		"fc.consume": ["Take the ingredients out of stock", "Retirer les ingrédients du stock"], "fc.cuisine": ["Put the portions in the Kitchen", "Mettre les portions en Cuisine"],
+		"fc.eat": ["Eat now", "Mangées tout de suite"], "fc.fridge": ["Fridge", "Frigo"], "fc.freezer": ["Freezer", "Congélateur"],
+		"fc.plan": ["Tick on today's plan: {name}", "Cocher au menu du jour : {name}"], "fc.rating": ["Rating", "Note"], "fc.again": ["Would make again", "À refaire"],
+		"fc.note": ["Note (added to the recipe notes)", "Remarque (ajoutée aux notes de la recette)"], "fc.finish": ["Finish", "Terminer"], "fc.working": ["Finishing…", "En cours…"],
+		"fc.done": ["Finished {name}", "{name} terminée"], "fc.donePortions": ["Finished {name}: {n} portions", "{name} terminée : {n} portions"],
+		"fc.short": ["Short: {list}", "Manquait : {list}"], "fc.tooMany": ["Eat now and freezer cannot be more than the servings cooked.", "Mangées et congélateur ne peuvent pas dépasser les portions cuisinées."],
+		"fc.spreadTitle": ["Plan the portions", "Planifier les portions"], "fc.spreadNone": ["No free lunch or dinner slot to plan.", "Aucun déjeuner ni dîner libre à planifier."],
+		"fc.spreadFreezer": ["{n} fridge portions do not fit within a day: freeze them.", "{n} portions frigo ne tiennent pas un jour : cong\u00E8le-les."],
+		"fc.histamine": ["histamine builds up", "l'histamine monte"], "fc.thawOn": ["thaw the evening of {d}", "décongeler le soir du {d}"],
+		"fc.planned": ["Planned {n} portions of {name}", "{n} portions de {name} planifiées"], "fc.skip": ["Not now", "Pas maintenant"], "fc.planIt": ["Plan them", "Planifier"],
+		"fc.noGroup": ["No dishes group or fridge in Grocy for the Kitchen.", "Aucun groupe de plats ni frigo dans Grocy pour la Cuisine."],
+		"fc.servingsReq": ["Enter the servings cooked.", "Indique les portions cuisin\u00E9es."]
+	});
+	var LUNCH = "Déjeuner", DINNER = "Dîner";
+
+	function lbl(key, $in, vars) { return $("<label></label>").text(GL.t(key, vars)).append($in); }
+	function check(key, on, vars) { return $('<label class="gc-check"></label>').append($('<input type="checkbox">').prop("checked", on)).append(document.createTextNode(" " + GL.t(key, vars))); }
+	function numIn(v) { return $('<input type="number" class="form-control" min="0" step="0.5">').val(v); }
+
+	GC.finishCooking = function (m) {
+		var today = GC.today(), u = m.uf;
+		GC.api("GET", "objects/meal_plan?query[]=day=" + today + "&query[]=type=recipe&query[]=recipe_id=" + m.recipe.id).catch(function () { return []; }).then(function (plan) {
+			sheet(m, (plan || []).filter(function (p) { return String(p.done) !== "1"; }), u);
+		});
+	};
+
+	function sheet(m, plan, u) {
+		var storage = u.storage_default || "fridge", s = m.desired, rating = +u.rating || 0;
+		var $f = $('<form class="gc-form gc-finish" novalidate></form>').on("submit", function (e) { e.preventDefault(); });
+		var $serv = numIn(s).attr("min", "0.5"), $consume = check("fc.consume", true), $cuisine = check("fc.cuisine", storage !== "none");
+		$f.append(lbl("fc.servings", $serv)).append($consume).append($cuisine);
+		var $eat = numIn(0), $fridge = numIn(storage === "freezer" ? 0 : s), $freezer = numIn(storage === "freezer" ? s : 0);
+		var $portions = $('<div class="gc-form-row"></div>').append(lbl("fc.eat", $eat)).append(lbl("fc.fridge", $fridge)).append(lbl("fc.freezer", $freezer)).appendTo($f);
+		$serv.on("input", function () { var v = GC.num($serv.val()); if (storage === "freezer") $freezer.val(v - GC.num($eat.val())); else $fridge.val(Math.max(v - GC.num($eat.val()) - GC.num($freezer.val()), 0)); });
+		$eat.add($freezer).on("input", function () { $fridge.val(Math.max(GC.num($serv.val()) - GC.num($eat.val()) - GC.num($freezer.val()), 0)); });
+		$cuisine.find("input").on("change", function () { $portions.prop("hidden", !this.checked); }).trigger("change");
+		var $plans = plan.map(function (p) { return check("fc.plan", true, { name: m.recipe.name }).attr("data-id", p.id); });
+		$plans.forEach(function ($p) { $f.append($p); });
+		var $stars = $('<div class="gc-stars" role="radiogroup"></div>');
+		for (var i = 1; i <= 5; i++) {
+			$('<button type="button" class="gc-star-btn"></button>').attr({ "data-n": i, "aria-label": GL.t("rk.rating") + " " + i }).append('<i class="fa-solid fa-star"></i>').appendTo($stars);
+		}
+		function paintStars() { $stars.children().each(function () { $(this).toggleClass("is-on", +$(this).attr("data-n") <= rating); }); }
+		$stars.on("click", "button", function () { var n = +$(this).attr("data-n"); rating = rating === n ? 0 : n; paintStars(); });
+		paintStars();
+		$f.append($("<label></label>").text(GL.t("fc.rating")).append($stars));
+		var $again = check("fc.again", String(u.would_make_again) === "1");
+		var $note = $('<textarea class="form-control" rows="2"></textarea>');
+		$f.append($again).append(lbl("fc.note", $note));
+		GC.sheet(GL.t("fc.title", { name: m.recipe.name }), $f, [
+			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+			{ label: GL.t("fc.finish"), primary: true, onClick: function (close, $b) {
+				var cuisine = $cuisine.find("input").prop("checked"), servings = GC.num($serv.val());
+				var req = { servings: servings, consume: $consume.find("input").prop("checked"), cuisine: cuisine,
+					eatenNow: cuisine ? GC.num($eat.val()) : 0, fridge: cuisine ? GC.num($fridge.val()) : 0, freezer: cuisine ? GC.num($freezer.val()) : 0,
+					rating: rating || null, again: $again.find("input").prop("checked") !== (String(u.would_make_again) === "1") ? $again.find("input").prop("checked") : null,
+					note: $note.val(), planIds: $plans.filter(function ($p) { return $p.find("input").prop("checked"); }).map(function ($p) { return +$p.attr("data-id"); }) };
+				if (servings <= 0) { GC.toast("warning", GL.t("fc.servingsReq")); return; }
+				if (req.eatenNow + req.freezer > servings + 0.0001) { GC.toast("warning", GL.t("fc.tooMany")); return; }
+				$b.prop("disabled", true).text(GL.t("fc.working"));
+				run(m, req, close, $b);
+			} }
+		]);
+	}
+
+	function run(m, req, close, $b) {
+		GC.finishOps(m, req).then(function (res) {
+			close();
+			var n = Math.round(req.eatenNow + req.fridge + req.freezer), msg = n > 0 && req.cuisine ? GL.t("fc.donePortions", { name: m.recipe.name, n: n }) : GL.t("fc.done", { name: m.recipe.name });
+			if (res.short.length) msg += ". " + GL.t("fc.short", { list: res.short.join(", ") });
+			GC.agendaUI.undoBar(msg, res.undo, after);
+			after();
+			if (res.dishId && res.produced.length && (req.fridge > 0 || req.freezer > 0)) spread(m, res);
+		}, function (err) {
+			$b.prop("disabled", false).text(GL.t("fc.finish"));
+			GC.toast("error", err.message);
+			if (err.undo) err.undo().then(after, after);
+		});
+	}
+	function after() { GC.clearNavCounts(); if (GC.recipeMount) GC.recipeMount(); }
+
+	function spread(m, res) {
+		var today = GC.today();
+		Promise.all([GC.api("GET", "objects/meal_plan_sections"), GC.api("GET", "objects/meal_plan?query[]=day>=" + today), GC.master()]).then(function (r) {
+			var batches = res.produced.map(function (e) { return { stockId: e.stock_id, portions: Math.floor(GC.num(e.amount)), inFreezer: +e.location_id === r[2].ids.locFreezer }; });
+			var p = GCRD.spread(m.recipe.name, batches, today, r[0], r[1], { lunch: LUNCH, dinner: DINNER });
+			var $b = $('<div class="gc-spread"></div>');
+			if (!p.slots.length) $b.append($('<p class="gc-sub"></p>').text(GL.t("fc.spreadNone")));
+			p.slots.forEach(function (s) {
+				var bits = [s.storage === "freezer" ? GL.t("fc.freezer") : GL.t("fc.fridge")];
+				if (s.histamine) bits.push(GL.t("fc.histamine"));
+				if (s.thawOn) bits.push(GL.t("fc.thawOn", { d: GC.fmtDate(s.thawOn) }));
+				$('<div class="gc-spread-row"></div>').append($("<b></b>").text(GC.fmtDate(s.day) + " · " + s.sectionName)).append($('<span class="gc-sub"></span>').text(bits.join(", "))).appendTo($b);
+			});
+			if (p.suggestedForFreezer) $('<p class="gc-note gc-note-warn"></p>').text(GL.t("fc.spreadFreezer", { n: p.suggestedForFreezer })).appendTo($b);
+			var buttons = [{ label: GL.t("fc.skip"), onClick: function (c) { c(); } }];
+			if (p.slots.length) buttons.push({ label: GL.t("fc.planIt"), primary: true, onClick: function (c, $btn) {
+				$btn.prop("disabled", true);
+				GC.planPortions(res.dishId, p.slots).then(function (undo) {
+					c();
+					GC.agendaUI.undoBar(GL.t("fc.planned", { n: p.slots.length, name: m.recipe.name }), undo, after);
+				}, function (err) { $btn.prop("disabled", false); GC.toast("error", err.message); });
+			} });
+			GC.sheet(GL.t("fc.spreadTitle"), $b, buttons);
+		}, function (err) { GC.toast("error", err.message); });
+	}
+})();
+</script>

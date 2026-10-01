@@ -9,7 +9,7 @@
 	var isLogin = Grocy.View === "login" || Grocy.UserId === -1;
 
 	var SECTIONS = [
-		{ key: "pantry", label: GL.t("sec.pantry"), views: ["stockoverview", "shoppinglist"] },
+		{ key: "pantry", label: GL.t("sec.pantry"), views: ["userobjects/dashboard", "stockoverview", "shoppinglist"] },
 		{ key: "cooking", label: GL.t("sec.cooking"), views: ["userobjects/cuisine", "userobjects/tickets", "recipes", "mealplan"] },
 		{ key: "home", label: GL.t("sec.home"), views: ["userobjects/agenda", "choresoverview", "tasks", "batteriesoverview", "equipment", "calendar"] },
 		{ key: "actions", label: GL.t("sec.actions"), views: ["purchase", "consume", "transfer", "inventory", "choretracking", "batterytracking"] },
@@ -111,6 +111,8 @@
 		});
 		var $homeAnchor = liFor("choresoverview").add(liFor("tasks")).add(liFor("batteriesoverview")).first();
 		if ($homeAnchor.length) liFor("userobjects/agenda").insertBefore($homeAnchor);
+		var $pantryAnchor = liFor("stockoverview").add(liFor("shoppinglist")).first();
+		if ($pantryAnchor.length) liFor("userobjects/dashboard").insertBefore($pantryAnchor);
 		addAnalyticsLink(liFor("userobjects/tickets").first());
 
 		var lastKey = null;
@@ -444,7 +446,7 @@
 <?php
 if (defined('GROCY_AUTHENTICATED') && GROCY_AUTHENTICATED)
 {
-	foreach (array('stock-rules', 'common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'stock-add', 'stock-batch', 'stock-search', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-catalog', 'shopping-diet', 'shopping-add', 'shopping-edit', 'shopping-panels', 'shopping-keys', 'shopping-lists', 'shopping', 'agenda-i18n', 'agenda-rules', 'agenda-filter', 'agenda-quickadd', 'agenda-data', 'agenda-row', 'agenda-calendar', 'agenda-add', 'agenda-views', 'agenda-detail', 'agenda') as $gcPart)
+	foreach (array('stock-rules', 'common', 'receipts-lib', 'receipts-match', 'favoris', 'export', 'stock', 'stock-add', 'stock-batch', 'stock-search', 'cuisine-add', 'cuisine', 'tickets-history', 'tickets-restock', 'tickets', 'analytics-charts', 'analytics-product', 'analytics', 'recipes', 'recipes-list', 'shopping-lib', 'shopping-catalog', 'shopping-diet', 'shopping-add', 'shopping-edit', 'shopping-panels', 'shopping-keys', 'shopping-lists', 'shopping', 'agenda-i18n', 'agenda-rules', 'agenda-filter', 'agenda-quickadd', 'agenda-data', 'agenda-row', 'agenda-calendar', 'agenda-add', 'agenda-views', 'agenda-detail', 'agenda', 'dash-rules', 'dashboard', 'recipe-text', 'recipe-rules', 'recipe-page', 'recipe-cook', 'recipe-finish-ops', 'recipe-finish', 'recipe-variation', 'product-safe') as $gcPart)
 	{
 		include __DIR__ . '/companion/' . $gcPart . '.js.html';
 	}
