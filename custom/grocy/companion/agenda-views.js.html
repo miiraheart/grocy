@@ -1,0 +1,139 @@
+<script>
+(function () {
+	if (!window.GC || !GC.agendaUI) return;
+	/// The lists of the Tasks page, laid out like the app's Things screens.
+	var UI = GC.agendaUI;
+
+	function today($p, ctx) {
+		var t = GCA.today(ctx.filtered(), ctx.data.now);
+		if (!t.now.length && !t.evening.length) {
+			$p.append(ctx.groups.length ? UI.empty("fa-filter", GL.t("ag.emptyFilter")) : UI.empty("fa-star", GL.t("ag.emptyToday"), GL.t("ag.emptyTodaySub")));
+			return;
+		}
+		if (t.now.length) $p.append(UI.list(t.now, ctx));
+		if (t.evening.length) $p.append(UI.heading(GL.t("ag.evening"), "fa-moon"), UI.list(t.evening, ctx));
+	}
+
+	function upcoming($p, ctx) {
+		var groups = GCA.upcoming(ctx.filtered(), ctx.data.now);
+		if (!groups.length) { $p.append(UI.empty("fa-calendar-days", GL.t("ag.emptyUpcoming"), GL.t("ag.emptyUpcomingSub"))); return; }
+		groups.forEach(function (g) {
+			var $h;
+			if (g.span === "day") {
+				$h = $('<h3 class="gc-ag-day"></h3>').append($("<b></b>").text(new Date(g.date).getUTCDate()));
+				$h.append($("<span></span>").text(GCA.days(ctx.data.now, g.date) === 1 ? GL.t("ag.tomorrow") : UI.weekday(g.date)));
+			} else {
+				$h = $('<h3 class="gc-ag-month"></h3>').text(UI.monthLabel(g.date));
+			}
+			$p.append($h, UI.list(g.entries, ctx));
+		});
+	}
+
+	function anytime($p, ctx) {
+		var areas = GCA.anytime(ctx.filtered(), ctx.data.now);
+		if (!areas.length) { $p.append(UI.empty("fa-box-open", GL.t("ag.emptyAnytime"), GL.t("ag.emptyAnytimeSub"))); return; }
+		areas.forEach(function (a) {
+			var title = a.area.type === "room" ? UI.roomName(a.area.key) : a.area.type === "category" ? a.area.key : GL.t("ag.noArea");
+			var icon = a.area.type === "room" ? UI.roomIcon(a.area.key) : a.area.type === "category" ? "fa-folder" : "fa-inbox";
+			var $h = UI.heading(title, icon, String(a.entries.length));
+			if (a.area.type === "room") {
+				$h = $('<button type="button" class="gc-ag-headlink"></button>').append($h.children()).append('<i class="fa-solid fa-chevron-right"></i>')
+					.on("click", function () { ctx.room = a.area.key; ctx.show("rooms"); });
+			}
+			$p.append($h, UI.list(a.entries, ctx));
+		});
+	}
+
+	function someday($p, ctx) {
+		var paused = ctx.data.paused;
+		if (!paused.length) { $p.append(UI.empty("fa-box-archive", GL.t("ag.emptySomeday"), GL.t("ag.emptySomedaySub"))); return; }
+		var $l = $('<div class="gc-ag-list" role="list"></div>').appendTo($p);
+		paused.forEach(function (c) {
+			var $r = $('<div class="gc-ag-row" role="listitem"></div>').appendTo($l);
+			$('<span class="gc-ag-check gc-ag-check-off" aria-hidden="true"><i class="fa-solid fa-pause"></i></span>').appendTo($r);
+			var $m = $('<div class="gc-ag-main"></div>').appendTo($r);
+			$('<button type="button" class="gc-ag-name"></button>').text(c.name).on("click", function () { ctx.detail({ kind: "chore", id: +c.id, name: c.name }); }).appendTo($m);
+			$('<div class="gc-ag-meta"></div>').append(UI.pill("fa-rotate", UI.schedulePhrase(c))).appendTo($m);
+			$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("ag.resume")).on("click", function () {
+				ctx.run(GC.agenda.setActive(c.id, true), GL.t("ag.didResume", { name: c.name }));
+			}).appendTo($r);
+		});
+	}
+
+	function logbook($p, ctx) {
+		ctx.logDays = ctx.logDays || GC.agenda.LOG_DAYS;
+		ctx.logKind = ctx.logKind || "";
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i></div>');
+		GC.agenda.loadLog(ctx.logDays).then(function (days) {
+			$p.empty();
+			var $seg = $('<div class="gc-seg" role="group"></div>').appendTo($p);
+			[["", "lb.all"], ["task", "lb.tasks"], ["chore", "lb.chores"], ["battery", "lb.batteries"]].forEach(function (k) {
+				$('<button type="button"></button>').text(GL.t(k[1])).attr("aria-pressed", ctx.logKind === k[0] ? "true" : "false")
+					.on("click", function () { ctx.logKind = k[0]; logbook($p, ctx); }).appendTo($seg);
+			});
+			var shown = days.map(function (d) {
+				return { day: d.day, items: d.items.filter(function (i) { return !ctx.logKind || i.kind === ctx.logKind; }) };
+			}).filter(function (d) { return d.items.length; });
+			if (!shown.length) $p.append(UI.empty("fa-book", GL.t("lb.empty", { n: ctx.logDays })));
+			shown.forEach(function (d) {
+				$p.append(UI.heading(UI.dayLabel(d.day, ctx.data.now)));
+				var $l = $('<div class="gc-ag-list" role="list"></div>').appendTo($p);
+				d.items.forEach(function (i) {
+					var $r = $('<div class="gc-ag-row is-logged" role="listitem"></div>').appendTo($l);
+					$('<span class="gc-ag-check is-on" aria-hidden="true"><i class="fa-solid fa-check"></i></span>').toggleClass("is-skip", !!i.skipped).appendTo($r);
+					var $m = $('<div class="gc-ag-main"></div>').appendTo($r);
+					$("<span class='gc-ag-name'></span>").text(i.name).appendTo($m);
+					var $meta = $('<div class="gc-ag-meta"></div>').append(UI.pill("fa-clock", UI.time(i.at))).appendTo($m);
+					if (i.skipped) $meta.append(UI.pill("fa-forward", GL.t("lb.skipped")));
+					$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("ag.undo")).on("click", function () {
+						GC.agenda.undoExecution(i).then(function () { GC.toast("info", GL.t("ag.undone")); ctx.refresh(); },
+							function (err) { GC.toast("error", GL.t("ag.failed", { msg: err.message })); });
+					}).appendTo($r);
+				});
+			});
+			$('<button type="button" class="btn btn-outline-secondary gc-ag-older"></button>').text(GL.t("lb.older"))
+				.on("click", function () { ctx.logDays += GC.agenda.LOG_DAYS; logbook($p, ctx); }).appendTo($p);
+		}, function (err) { $p.empty().append(UI.empty("fa-triangle-exclamation", GL.t("ag.loadFail", { msg: err.message }))); });
+	}
+
+	function roomLabel(t) {
+		if (!t.due && !t.late) return GL.t("bucket." + t.bucket);
+		if (!t.due) return GL.t("rm.late", { n: t.late });
+		if (!t.late) return GL.t("rm.due", { n: t.due });
+		return GL.t("rm.dueLate", { a: t.due, b: t.late });
+	}
+
+	function rooms($p, ctx) {
+		var o = GCA.rooms(ctx.filtered());
+		var open = ctx.room === undefined ? undefined : o.tiles.filter(function (t) { return t.room === ctx.room; })[0];
+		if (open) {
+			$('<button type="button" class="btn btn-outline-secondary btn-sm gc-ag-back"><i class="fa-solid fa-chevron-left"></i> </button>')
+				.append(document.createTextNode(GL.t("rm.back"))).on("click", function () { ctx.room = undefined; ctx.show("rooms", true); }).appendTo($p);
+			$p.append(UI.heading(UI.roomName(open.room), UI.roomIcon(open.room), roomLabel(open)));
+			if (open.chores.length) $p.append(UI.heading(GL.t("rm.chores")), UI.list(open.chores, ctx));
+			if (open.tasks.length) $p.append(UI.heading(GL.t("rm.tasks")), UI.list(open.tasks, ctx));
+			return;
+		}
+		var summary = !o.due && !o.late ? GL.t("rm.fresh") : !o.late ? GL.t("rm.due", { n: o.due }) : GL.t("rm.dueLate", { a: o.due, b: o.late });
+		$p.append($('<p class="gc-ag-summary"></p>').text(summary + " · " + GL.t("rm.freshness", { p: Math.round(o.freshness * 100) })));
+		var $grid = $('<div class="gc-ag-rooms"></div>').appendTo($p);
+		o.tiles.forEach(function (t) {
+			var $t = $('<button type="button" class="gc-ag-room"></button>').attr("data-bucket", t.bucket).appendTo($grid);
+			$('<span class="gc-ag-head-icon"></span>').append($("<i></i>").attr("class", "fa-solid " + UI.roomIcon(t.room))).appendTo($t);
+			$("<b></b>").text(UI.roomName(t.room)).appendTo($t);
+			$('<span class="gc-ag-room-state"></span>').text(roomLabel(t)).appendTo($t);
+			$('<span class="gc-ag-room-bar"><i></i></span>').appendTo($t).find("i").css("width", Math.round(t.freshness * 100) + "%");
+			$('<span class="gc-sub"></span>').text((t.chores.length + t.tasks.length) + "").appendTo($t);
+			$t.on("click", function () { ctx.room = t.room; ctx.show("rooms", true); });
+		});
+	}
+
+	var VIEWS = { today: today, upcoming: upcoming, anytime: anytime, someday: someday, logbook: logbook, rooms: rooms };
+	GC.agendaViews = {
+		render: function (key, $p, ctx) {
+			$p.empty();
+			if (key === "calendar") GC.agendaCalendar($p, ctx); else VIEWS[key]($p, ctx);
+		}
+	};
+})();
+</script>

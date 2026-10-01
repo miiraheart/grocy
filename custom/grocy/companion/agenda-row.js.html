@@ -1,0 +1,137 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCA) return;
+	/// Rows, dates, schedule phrases and the undo bar shared by every view of the Tasks page.
+	var ROOM_ICONS = { kitchen: "fa-utensils", bathroom: "fa-shower", bedroom: "fa-bed", living_room: "fa-couch" };
+	var LOCALE = GL.lang === "fr" ? "fr-FR" : "en-GB";
+
+	function fmt(ms, opts) { return new Intl.DateTimeFormat(LOCALE, Object.assign({ timeZone: "UTC" }, opts)).format(new Date(ms)); }
+	function cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+	function time(ms) { return fmt(ms, { hour: "2-digit", minute: "2-digit" }); }
+	function weekday(ms) { return cap(fmt(ms, { weekday: "long" })); }
+	function dayLabel(ms, now) {
+		var off = GCA.days(now, ms);
+		if (off === 0) return GL.t("ag.today");
+		if (off === 1) return GL.t("ag.tomorrow");
+		if (off === -1) return GL.t("ag.yesterday");
+		return cap(fmt(ms, { weekday: "short", day: "numeric", month: "short" }));
+	}
+	function monthLabel(ms) { return cap(fmt(ms, { month: "long", year: "numeric" })); }
+	function roomName(key) { return key ? GL.t("room." + key) : GL.t("ag.noRoom"); }
+	function roomIcon(key) { return ROOM_ICONS[key] || "fa-house"; }
+
+	var WD = { monday: 0, tuesday: 1, wednesday: 2, thursday: 3, friday: 4, saturday: 5, sunday: 6 };
+	function weekdayNames(list) {
+		var names = list.map(function (d) { return fmt(Date.UTC(2026, 8, 28 + WD[d]), { weekday: "long" }); });
+		return names.join(", ");
+	}
+	/// The rule in words, like the app's ScheduleText.phrase. Takes a GCQ schedule or a Grocy chore row.
+	function schedulePhrase(s) {
+		if (s && s.period_type) {
+			s = GCQ.schedule(s.period_type, +s.period_interval || 1, String(s.period_config || "").split(",").map(function (x) { return x.trim(); }).filter(Boolean), +s.period_days || 1);
+		}
+		var n = s.interval;
+		switch (s.period) {
+			case "hourly": return n === 1 ? GL.t("sch.hour") : GL.t("sch.hours", { n: n });
+			case "daily": return n === 1 ? GL.t("sch.day") : GL.t("sch.days", { n: n });
+			case "weekly":
+				if (n === 1 && s.weekdays.join() === "monday,tuesday,wednesday,thursday,friday") return GL.t("sch.weekdays");
+				return GL.t(n === 1 ? "sch.week" : "sch.weeks", { n: n, d: weekdayNames(s.weekdays) });
+			case "monthly": return GL.t(n === 1 ? "sch.month" : "sch.months", { n: n, d: s.dayOfMonth });
+			case "yearly": return n === 1 ? GL.t("sch.year") : GL.t("sch.years", { n: n });
+			case "adaptive": return GL.t("sch.adaptive");
+			default: return GL.t("sch.manual");
+		}
+	}
+
+	function pill(icon, text, cls) {
+		var $p = $('<span class="gc-ag-pill"></span>').addClass(cls || "");
+		if (icon) $p.append($("<i></i>").attr("class", "fa-solid " + icon));
+		return text ? $p.append($("<span></span>").text(text)) : $p;
+	}
+
+	function meta(e, now) {
+		var $m = $('<div class="gc-ag-meta"></div>');
+		if (e.kind === "chore" && e.periodType && e.periodType !== "manually") $m.append(pill("fa-rotate", "", "gc-ag-icon").attr("title", GL.t("ag.repeats")));
+		if (e.kind === "battery") $m.append(pill("fa-battery-half", GL.t("ag.battery")));
+		if (e.room) $m.append(pill(roomIcon(e.room), roomName(e.room), "gc-ag-chip"));
+		if (e.category) $m.append(pill("fa-folder", e.category, "gc-ag-chip"));
+		var late = GCA.daysLate(e, now);
+		if (late > 0) $m.append(pill("fa-flag", late === 1 ? GL.t("ag.late1") : GL.t("ag.lateN", { n: late }), "gc-ag-late"));
+		var at = e.kind === "task" ? (e.deadlineHasTime ? e.deadline : null) : e.hasTime ? e.due : null;
+		if (at != null && GCA.days(now, at) === 0 && !late) $m.append(pill("fa-clock", time(at)));
+		if (e.stepsTotal) $m.append(pill("fa-list-check", GL.t("ag.steps", { a: e.stepsDone, b: e.stepsTotal })));
+		if (e.effort) {
+			var $d = $('<span class="gc-ag-dots"></span>').attr("title", GL.t("ag.effort", { n: e.effort }));
+			for (var i = 1; i <= 3; i++) $d.append($("<i></i>").toggleClass("on", i <= e.effort));
+			$m.append($d);
+		}
+		return $m;
+	}
+
+	/// One to-do: the round check, the name (opens the detail), the meta line, a flag for urgent and high tasks, the actions button.
+	function row(e, ctx) {
+		var now = ctx.data.now;
+		var $r = $('<div class="gc-ag-row" role="listitem"></div>').attr("data-key", e.key);
+		var late = GCA.daysLate(e, now) > 0;
+		var $check = $('<button type="button" class="gc-ag-check"></button>').toggleClass("is-late", late)
+			.attr("aria-label", (e.kind === "battery" ? GL.t("ag.changed") : GL.t("ag.done")) + ": " + e.name).appendTo($r);
+		var $main = $('<div class="gc-ag-main"></div>').appendTo($r);
+		$('<button type="button" class="gc-ag-name"></button>').text(e.name).on("click", function () { ctx.detail(e); }).appendTo($main);
+		var $meta = meta(e, now);
+		if ($meta.children().length) $main.append($meta);
+		if (e.kind === "task" && (e.priority === "urgent" || e.priority === "high")) {
+			$r.append(pill("fa-flag", "", "gc-ag-prio gc-ag-prio-" + e.priority).attr("title", GL.t("prio." + e.priority)));
+		}
+		$('<button type="button" class="gc-ag-more"><i class="fa-solid fa-ellipsis"></i></button>')
+			.attr("aria-label", GL.t("ag.more", { name: e.name })).on("click", function () { ctx.actions(e); }).appendTo($r);
+		$check.on("click", function () {
+			if ($r.hasClass("is-done")) return;
+			$r.addClass("is-done");
+			ctx.run(GC.agenda.done(e), GL.t("ag.didDone", { name: e.name }), function () { $r.removeClass("is-done"); });
+		});
+		return $r;
+	}
+
+	function list(entries, ctx) {
+		var $l = $('<div class="gc-ag-list" role="list"></div>');
+		entries.forEach(function (e) { $l.append(row(e, ctx)); });
+		return $l;
+	}
+
+	function heading(text, icon, sub) {
+		var $h = $('<h3 class="gc-ag-head"></h3>');
+		if (icon) $h.append($('<span class="gc-ag-head-icon"></span>').append($("<i></i>").attr("class", "fa-solid " + icon)));
+		$h.append($("<span></span>").text(text));
+		if (sub != null) $h.append($('<span class="gc-ag-head-sub"></span>').text(sub));
+		return $h;
+	}
+
+	function empty(icon, title, sub) {
+		var $e = $('<div class="gc-empty"></div>').append($("<i></i>").attr("class", "fa-solid " + icon));
+		$e.append($("<b></b>").text(title));
+		if (sub) $e.append($("<span></span>").text(sub));
+		return $e;
+	}
+
+	var undoTimer = null;
+	/// The bar at the bottom after every write: the message and Undo, for 8 seconds.
+	function undoBar(message, undo, after) {
+		$(".gc-ag-undo").remove();
+		clearTimeout(undoTimer);
+		var $b = $('<div class="gc-ag-undo" role="status"></div>').append($("<span></span>").text(message));
+		if (undo) {
+			$('<button type="button" class="btn btn-sm"></button>').text(GL.t("ag.undo")).on("click", function () {
+				$b.remove();
+				Promise.resolve(undo()).then(function () { GC.toast("info", GL.t("ag.undone")); after(); },
+					function (err) { GC.toast("error", GL.t("ag.failed", { msg: err.message })); after(); });
+			}).appendTo($b);
+		}
+		$("body").append($b);
+		undoTimer = setTimeout(function () { $b.remove(); }, 8000);
+	}
+
+	GC.agendaUI = { fmt: fmt, time: time, weekday: weekday, dayLabel: dayLabel, monthLabel: monthLabel, roomName: roomName, roomIcon: roomIcon,
+		schedulePhrase: schedulePhrase, pill: pill, row: row, list: list, heading: heading, empty: empty, undoBar: undoBar };
+})();
+</script>

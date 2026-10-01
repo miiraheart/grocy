@@ -1,0 +1,156 @@
+<script>
+(function () {
+	if (!window.GC || !window.GCA) return;
+	/// Reads and writes of the Tasks page. Every write resolves to an undo function that puts Grocy back.
+	var FILTERS_KEY = "gc_chore_filters", ROLLOVER_DEFAULT = true, LOG_DAYS = 30;
+	var api = GC.api;
+
+	function nowText() {
+		var parts = {};
+		try {
+			new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit",
+				minute: "2-digit", second: "2-digit", hourCycle: "h23" }).formatToParts(new Date()).forEach(function (p) { parts[p.type] = p.value; });
+			return parts.year + "-" + parts.month + "-" + parts.day + " " + parts.hour + ":" + parts.minute + ":" + parts.second;
+		} catch (e) { return moment().format("YYYY-MM-DD HH:mm:ss"); }
+	}
+	function now() { return GCA.wall(nowText()); }
+	function since(daysBack) { return GCA.dayText(GCA.startOfDay(now()) - daysBack * 86400000); }
+
+	function load() {
+		return Promise.all([
+			api("GET", "objects/chores"), api("GET", "chores"), api("GET", "objects/chores_log?query[]=tracked_time>=" + since(LOG_DAYS)),
+			api("GET", "objects/tasks?query[]=done=0"), api("GET", "objects/task_categories"), api("GET", "batteries")
+		]).then(function (r) {
+			var d = { chores: r[0] || [], current: r[1] || [], log: r[2] || [], tasks: r[3] || [], categories: r[4] || [], batteries: r[5] || [] };
+			d.now = now();
+			d.entries = GCA.entries(d, GCA.fmt(d.now));
+			d.paused = d.chores.filter(function (c) { return String(c.active) !== "1"; });
+			return d;
+		});
+	}
+
+	function loadLog(daysBack) {
+		var from = since(daysBack);
+		return Promise.all([
+			api("GET", "objects/tasks?query[]=done=1&query[]=done_timestamp>=" + from), api("GET", "objects/chores_log?query[]=tracked_time>=" + from),
+			api("GET", "objects/battery_charge_cycles?query[]=tracked_time>=" + from), api("GET", "objects/chores"), api("GET", "objects/batteries")
+		]).then(function (r) { return GCA.logbook({ tasks: r[0], log: r[1], cycles: r[2], chores: r[3], batteries: r[4] }); });
+	}
+
+	function at(ms) { return ms == null ? undefined : GCA.fmt(ms); }
+
+	function done(e, whenMs) {
+		var when = at(whenMs);
+		if (e.kind === "chore") {
+			return api("POST", "chores/" + e.id + "/execute", when ? { tracked_time: when } : {}).then(function (row) {
+				return function () { return api("POST", "chores/executions/" + row.id + "/undo"); };
+			});
+		}
+		if (e.kind === "task") {
+			return api("POST", "tasks/" + e.id + "/complete", when ? { done_time: when } : {}).then(function () {
+				return function () { return api("POST", "tasks/" + e.id + "/undo"); };
+			});
+		}
+		return api("POST", "batteries/" + e.id + "/charge", when ? { tracked_time: when } : {}).then(function (row) {
+			return function () { return api("POST", "batteries/charge-cycles/" + row.id + "/undo"); };
+		});
+	}
+
+	function skip(e) {
+		return api("POST", "chores/" + e.id + "/execute", { skipped: true }).then(function (row) {
+			return function () { return api("POST", "chores/executions/" + row.id + "/undo"); };
+		});
+	}
+
+	function undoExecution(item) {
+		if (item.kind === "chore") return api("POST", "chores/executions/" + item.ref + "/undo");
+		if (item.kind === "task") return api("POST", "tasks/" + item.ref + "/undo");
+		return api("POST", "batteries/charge-cycles/" + item.ref + "/undo");
+	}
+
+	/// Chores: a one-off rescheduled_date (Grocy clears it on the next execution). Tasks: the planned day when set, else the due day.
+	function postpone(e, ms) {
+		if (e.kind === "chore") {
+			return api("GET", "objects/chores/" + e.id).then(function (c) {
+				var before = c.rescheduled_date || null;
+				return api("PUT", "objects/chores/" + e.id, { rescheduled_date: GCA.fmt(ms) }).then(function () {
+					return function () { return api("PUT", "objects/chores/" + e.id, { rescheduled_date: before }); };
+				});
+			});
+		}
+		return api("GET", "objects/tasks/" + e.id).then(function (t) {
+			var day = GCA.dayText(ms), planned = (t.userfields || {}).planned;
+			if (planned) {
+				return api("PUT", "userfields/tasks/" + e.id, { planned: day }).then(function () {
+					return function () { return api("PUT", "userfields/tasks/" + e.id, { planned: planned }); };
+				});
+			}
+			var before = t.due_date || null, time = before && before.length >= 19 && before.slice(11) !== "00:00:00" ? before.slice(11) : null;
+			return api("PUT", "objects/tasks/" + e.id, { due_date: time ? day + " " + time : day }).then(function () {
+				return function () { return api("PUT", "objects/tasks/" + e.id, { due_date: before }); };
+			});
+		});
+	}
+
+	function setActive(choreId, active) {
+		return api("PUT", "objects/chores/" + choreId, { active: active ? 1 : 0 }).then(function () {
+			return function () { return api("PUT", "objects/chores/" + choreId, { active: active ? 0 : 1 }); };
+		});
+	}
+
+	function writeExtras(entity, id, extras) {
+		return Object.keys(extras).length ? api("PUT", "userfields/" + entity + "/" + id, extras) : Promise.resolve();
+	}
+	function clearAndDelete(entity, id, extras) {
+		var blank = {};
+		Object.keys(extras || {}).forEach(function (k) { blank[k] = ""; });
+		return writeExtras(entity, id, blank).then(function () { return api("DELETE", "objects/" + entity + "/" + id); });
+	}
+
+	/// A quick add line, saved like the app's QuickAddModel: a chore when it repeats, else a task (new category on the fly).
+	function create(r, categories) {
+		var extras = GCQ.extras(r);
+		if (r.isChore) {
+			return api("POST", "objects/chores", GCQ.choreColumns(r, nowText(), ROLLOVER_DEFAULT)).then(function (res) {
+				var id = +res.created_object_id;
+				return writeExtras("chores", id, extras).then(function () {
+					return function () { return clearAndDelete("chores", id, extras); };
+				}, function (err) { return clearAndDelete("chores", id, extras).then(function () { throw err; }); });
+			});
+		}
+		var known = r.category ? (categories || []).filter(function (c) { return GCQ.fold(c.name) === GCQ.fold(r.category); })[0] : null;
+		var made = null;
+		var cat = !r.category || known ? Promise.resolve(known ? known.id : null)
+			: api("POST", "objects/task_categories", { name: r.category }).then(function (res) { made = +res.created_object_id; return made; });
+		return cat.then(function (categoryId) {
+			return api("POST", "objects/tasks", GCQ.taskColumns(r, categoryId)).then(function (res) {
+				var id = +res.created_object_id;
+				function undo() {
+					return clearAndDelete("tasks", id, extras).then(function () { return made ? api("DELETE", "objects/task_categories/" + made) : null; });
+				}
+				return writeExtras("tasks", id, extras).then(function () { return undo; }, function (err) { return undo().then(function () { throw err; }); });
+			});
+		});
+	}
+
+	function savedFilters() {
+		return api("GET", "user/settings/" + FILTERS_KEY).then(function (r) {
+			try { return GCF.sortSaved(JSON.parse((r && r.value) || "[]")); } catch (e) { return []; }
+		}, function () { return []; });
+	}
+	function saveFilters(list) { return api("PUT", "user/settings/" + FILTERS_KEY, { value: JSON.stringify(list) }); }
+
+	function choreDetail(id, limit) {
+		return Promise.all([api("GET", "chores/" + id), api("GET", "objects/chores_log?query[]=chore_id=" + id + "&order=tracked_time:desc&limit=" + (limit || 50))])
+			.then(function (r) { return { details: r[0], log: r[1] || [] }; });
+	}
+
+	function uuid() {
+		if (window.crypto && crypto.randomUUID) return crypto.randomUUID().toUpperCase();
+		return "xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx".replace(/x/g, function () { return (Math.random() * 16 | 0).toString(16); }).toUpperCase();
+	}
+
+	GC.agenda = { nowText: nowText, now: now, load: load, loadLog: loadLog, done: done, skip: skip, undoExecution: undoExecution, postpone: postpone,
+		setActive: setActive, create: create, savedFilters: savedFilters, saveFilters: saveFilters, choreDetail: choreDetail, uuid: uuid, LOG_DAYS: LOG_DAYS };
+})();
+</script>

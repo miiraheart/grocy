@@ -1,0 +1,169 @@
+<script>
+(function (root) {
+	/// Port of the app's ScheduleEngine (next dates by the rule) and CalendarModel (day map, Monday-first month grid).
+	var DAY = 86400000, PROJECTION_DAYS = 60;
+	var ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+	function wall(text) {
+		var m = /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/.exec(String(text || ""));
+		if (!m || m[1] === "2999") return null;
+		return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+	}
+	function startOfDay(ms) { return Math.floor(ms / DAY) * DAY; }
+	function timeOfDay(ms) { return ms - startOfDay(ms); }
+	function weekdayIndex(ms) { return (new Date(ms).getUTCDay() + 6) % 7; }
+
+	function engine(c) {
+		var type = c.period_type || "manually", interval = Math.max(1, +c.period_interval || 1);
+		var start = wall(c.start_date), timed = String(c.start_date || "").length >= 19;
+		var dateOnly = String(c.track_date_only) === "1";
+		var weekdays = String(c.period_config || "").split(",").map(function (x) { return x.trim().toLowerCase(); }).filter(function (x) { return ORDER.indexOf(x) !== -1; });
+		var dom = Math.min(31, Math.max(1, +c.period_days || 1));
+		function next(last) {
+			var d = new Date(last);
+			switch (type) {
+				case "hourly": return last + interval * 3600000;
+				case "daily": return timed && start != null ? startOfDay(last + interval * DAY) + timeOfDay(start) : null;
+				case "weekly":
+					var base = last + (1 + (interval - 1) * 7) * DAY;
+					var c2 = weekdays.map(function (w) { return base + ((ORDER.indexOf(w) - weekdayIndex(base) + 7) % 7) * DAY; });
+					return c2.length ? Math.min.apply(null, c2) : null;
+				case "monthly": return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + interval, 1) + (dom - 1) * DAY;
+				case "yearly":
+					if (start == null) return null;
+					var s = new Date(start);
+					return Date.UTC(d.getUTCFullYear() + interval, s.getUTCMonth(), 1) + (s.getUTCDate() - 1) * DAY + timeOfDay(last);
+				default: return null;
+			}
+		}
+		function endOf(ms) { return dateOnly ? startOfDay(ms) + DAY - 1000 : ms; }
+		function ruleNext(last) {
+			var raw = last != null ? next(last) : type === "manually" ? null : start;
+			return raw == null ? null : endOf(raw);
+		}
+		return {
+			ruleDue: function (lastText) {
+				var r = wall(c.rescheduled_date);
+				return r != null ? endOf(r) : ruleNext(wall(lastText));
+			},
+			ruleNext: ruleNext
+		};
+	}
+
+	/// The next `count` due dates, as if each one is done on time (ScheduleEngine.nextDates).
+	function nextDates(chore, lastText, count) {
+		var e = engine(chore), out = [], cur = e.ruleDue(lastText);
+		while (cur != null && out.length < count) {
+			if (out.length && cur <= out[out.length - 1]) break;
+			out.push(cur);
+			cur = e.ruleNext(cur);
+		}
+		return out;
+	}
+
+	/// Items per day: entries on their due day, active chores projected 60 days ahead, planned meals.
+	function dayMap(d, now, meals, recipes) {
+		var map = {}, limit = startOfDay(now) + PROJECTION_DAYS * DAY;
+		function add(day, item) { (map[day] = map[day] || []).push(item); }
+		(d.entries || []).forEach(function (e) {
+			if (!e.paused && e.due != null) add(startOfDay(e.due), { kind: e.kind, name: e.name, key: e.key, entry: e });
+		});
+		var current = {}; (d.current || []).forEach(function (c) { current[c.chore_id] = c; });
+		(d.chores || []).filter(function (c) { return String(c.active) === "1"; }).forEach(function (c) {
+			nextDates(c, (current[c.id] || {}).last_tracked_time, 90).slice(1).forEach(function (ms) {
+				if (ms <= limit) add(startOfDay(ms), { kind: "chore", name: c.name, key: "chore:" + c.id, projected: true });
+			});
+		});
+		var names = {}; (recipes || []).forEach(function (r) { names[r.id] = r.name; });
+		(meals || []).forEach(function (m) {
+			var day = wall(String(m.day || "").slice(0, 10)), name = (m.recipe_id && names[m.recipe_id]) || m.note || "";
+			if (day != null && name) add(day, { kind: "meal", name: name, key: "meal:" + m.id });
+		});
+		return map;
+	}
+
+	/// The weeks of a month, Monday first; days outside the month are null.
+	function monthGrid(year, month) {
+		var first = Date.UTC(year, month, 1), count = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+		var cells = [];
+		for (var i = 0; i < weekdayIndex(first); i++) cells.push(null);
+		for (var k = 0; k < count; k++) cells.push(first + k * DAY);
+		while (cells.length % 7) cells.push(null);
+		var weeks = [];
+		for (var w = 0; w < cells.length; w += 7) weeks.push(cells.slice(w, w + 7));
+		return weeks;
+	}
+
+	var S = { nextDates: nextDates, dayMap: dayMap, monthGrid: monthGrid };
+	if (typeof module !== "undefined" && module.exports) module.exports = S; else root.GCS = S;
+})(this);
+</script>
+<script>
+(function () {
+	if (!window.GC || !GC.agendaUI) return;
+	var UI = GC.agendaUI, ICONS = { task: "fa-circle", chore: "fa-rotate", battery: "fa-battery-half", meal: "fa-utensils" };
+
+	GC.agendaCalendar = function ($p, ctx) {
+		var now = ctx.data.now, d = new Date(now);
+		ctx.month = ctx.month || { y: d.getUTCFullYear(), m: d.getUTCMonth() };
+		ctx.calDay = ctx.calDay || GCA.startOfDay(now);
+		var y = ctx.month.y, m = ctx.month.m;
+		var from = GCA.dayText(Date.UTC(y, m, 1)), to = GCA.dayText(Date.UTC(y, m + 1, 0));
+		$p.html('<div class="gc-loading"><i class="fa-solid fa-spinner fa-spin"></i></div>');
+		Promise.all([GC.api("GET", "objects/meal_plan?query[]=day>=" + from + "&query[]=day<=" + to), GC.api("GET", "objects/recipes")]).then(function (r) {
+			var map = GCS.dayMap({ entries: ctx.filtered(), chores: ctx.data.chores, current: ctx.data.current }, now, r[0], r[1]);
+			draw($p, ctx, map);
+		}, function (err) { $p.empty().append(UI.empty("fa-triangle-exclamation", GL.t("ag.loadFail", { msg: err.message }))); });
+	};
+
+	function move(ctx, $p, step) {
+		var t = new Date(Date.UTC(ctx.month.y, ctx.month.m + step, 1));
+		ctx.month = step ? { y: t.getUTCFullYear(), m: t.getUTCMonth() } : { y: new Date(ctx.data.now).getUTCFullYear(), m: new Date(ctx.data.now).getUTCMonth() };
+		if (!step) ctx.calDay = GCA.startOfDay(ctx.data.now);
+		GC.agendaCalendar($p, ctx);
+	}
+
+	function draw($p, ctx, map) {
+		$p.empty();
+		var $hd = $('<div class="gc-ag-calhd"></div>').appendTo($p);
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-chevron-left"></i></button>').attr("aria-label", GL.t("cal.prev")).on("click", function () { move(ctx, $p, -1); }).appendTo($hd);
+		$("<b></b>").text(UI.monthLabel(Date.UTC(ctx.month.y, ctx.month.m, 1))).appendTo($hd);
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"><i class="fa-solid fa-chevron-right"></i></button>').attr("aria-label", GL.t("cal.next")).on("click", function () { move(ctx, $p, 1); }).appendTo($hd);
+		$('<button type="button" class="btn btn-sm btn-outline-secondary"></button>').text(GL.t("cal.thisMonth")).on("click", function () { move(ctx, $p, 0); }).appendTo($hd);
+		var $grid = $('<div class="gc-ag-cal" role="grid"></div>').appendTo($p);
+		for (var i = 0; i < 7; i++) $('<span class="gc-ag-calwd"></span>').text(UI.fmt(Date.UTC(2026, 8, 28 + i), { weekday: "short" })).appendTo($grid);
+		var $list = $('<div class="gc-ag-calday"></div>');
+		GCS.monthGrid(ctx.month.y, ctx.month.m).forEach(function (week) {
+			week.forEach(function (day) {
+				if (day == null) { $('<span class="gc-ag-calcell is-out"></span>').appendTo($grid); return; }
+				var items = map[day] || [];
+				var $c = $('<button type="button" class="gc-ag-calcell"></button>').toggleClass("is-today", day === GCA.startOfDay(ctx.data.now))
+					.toggleClass("is-on", day === ctx.calDay).appendTo($grid);
+				$("<b></b>").text(new Date(day).getUTCDate()).appendTo($c);
+				var $dots = $('<span class="gc-ag-caldots"></span>').appendTo($c);
+				items.slice(0, 4).forEach(function (it) { $("<i></i>").attr("data-kind", it.kind).toggleClass("is-projected", !!it.projected).appendTo($dots); });
+				$c.attr("aria-label", UI.dayLabel(day, ctx.data.now) + ", " + items.length);
+				$c.on("click", function () { ctx.calDay = day; $grid.find(".is-on").removeClass("is-on"); $c.addClass("is-on"); dayList($list, ctx, day, items); });
+			});
+		});
+		$p.append($list);
+		dayList($list, ctx, ctx.calDay, map[ctx.calDay] || []);
+	}
+
+	function dayList($list, ctx, day, items) {
+		$list.empty().append(UI.heading(UI.dayLabel(day, ctx.data.now)));
+		if (!items.length) { $list.append($('<p class="gc-sub"></p>').text(GL.t("cal.empty"))); return; }
+		var live = items.filter(function (i) { return i.entry; }).map(function (i) { return i.entry; });
+		if (live.length) $list.append(UI.list(live, ctx));
+		var other = items.filter(function (i) { return !i.entry; });
+		if (!other.length) return;
+		var $l = $('<div class="gc-ag-list" role="list"></div>').appendTo($list);
+		other.forEach(function (i) {
+			var $r = $('<div class="gc-ag-row" role="listitem"></div>').appendTo($l);
+			$('<span class="gc-ag-check gc-ag-check-off" aria-hidden="true"></span>').append($("<i></i>").attr("class", "fa-solid " + ICONS[i.kind])).appendTo($r);
+			$('<div class="gc-ag-main"></div>').append($('<span class="gc-ag-name"></span>').text(i.name))
+				.append($('<div class="gc-ag-meta"></div>').append(UI.pill(null, i.projected ? GL.t("cal.projected") : GL.t("cal.meal")))).appendTo($r);
+		});
+	}
+})();
+</script>
