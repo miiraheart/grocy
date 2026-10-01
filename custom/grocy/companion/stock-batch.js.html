@@ -1,0 +1,97 @@
+<script>
+(function () {
+	if (!window.GC || Grocy.View !== "stockentries") return;
+	GL.add({
+		"sb.split": ["Split", "Diviser"], "sb.splitTitle": ["Split {name}", "Diviser {name}"], "sb.part": ["Part to split off", "Part à séparer"],
+		"sb.stay": ["{n} stay in this batch.", "{n} restent dans ce lot."], "sb.due": ["Best before", "À consommer avant"], "sb.opened": ["Opened", "Ouvert"],
+		"sb.needDiff": ["The new batch needs its own date or opened state.", "Le nouveau lot doit avoir sa propre date ou son état ouvert."],
+		"sb.errAmount": ["Split off more than 0 and less than {n}.", "Sépare plus de 0 et moins de {n}."],
+		"sb.done": ["Batch split", "Lot divisé"], "sb.freeze": ["Freeze", "Congeler"], "sb.thaw": ["Thaw", "Décongeler"],
+		"sb.frozen": ["{name} moved to the freezer", "{name} mis au congélateur"], "sb.thawed": ["{name} taken out of the freezer", "{name} sorti du congélateur"],
+		"sb.noPlace": ["No place of that kind in Grocy.", "Aucun emplacement de ce type dans Grocy."]
+	});
+
+	function entryOf(rowId) {
+		return Promise.all([GC.master(), GC.api("GET", "objects/stock/" + rowId)]).then(function (r) {
+			return GC.api("GET", "objects/products/" + r[1].product_id).then(function (p) { return { e: r[1], p: p }; });
+		});
+	}
+
+	function fail(err) { GC.toast("error", err.message); }
+	function done(msg) { GC.toast("success", msg); GC.clearNavCounts(); setTimeout(function () { location.reload(); }, 600); }
+
+	/// iOS SplitBatchSheet: the rest keeps its fields, the part becomes its own batch with its own date or opened state.
+	function split(x) {
+		var e = x.e, total = +e.amount;
+		var $f = $('<form class="gc-form" novalidate></form>').on("submit", function (ev) { ev.preventDefault(); });
+		var $amount = $('<input class="form-control" inputmode="decimal">').val(total > 1 ? 1 : total / 2);
+		var $stay = $('<span class="gc-sub"></span>');
+		var $due = $('<input class="form-control" type="date">').val(String(e.best_before_date || "").slice(0, 10));
+		var $open = $('<input type="checkbox">').prop("checked", String(e.open) === "1");
+		function stay() { var a = GCR.parseAmount($amount.val()) || 0; $stay.text(GL.t("sb.stay", { n: Math.max(Math.round((total - a) * 10000) / 10000, 0) })); }
+		$amount.on("input", stay);
+		stay();
+		$f.append($("<label></label>").text(GL.t("sb.part")).append($amount).append($stay));
+		$f.append($("<label></label>").text(GL.t("sb.due")).append($due));
+		$f.append($('<label class="gc-check"></label>').append($open).append(document.createTextNode(GL.t("sb.opened"))));
+		$('<span class="gc-sub"></span>').text(GL.t("sb.needDiff")).appendTo($f);
+		GC.sheet(GL.t("sb.splitTitle", { name: x.p.name }), $f, [
+			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+			{ label: GL.t("sb.split"), primary: true, onClick: function (close, $b) {
+				var parts = GCR.splitParts(e, GCR.parseAmount($amount.val()), $due.val() || null, $open.prop("checked"));
+				if (parts.error) { GC.toast("warning", parts.error === "amount" ? GL.t("sb.errAmount", { n: total }) : GL.t("sb.needDiff")); return; }
+				$b.prop("disabled", true);
+				writeSplit(x, parts).then(function () { close(); done(GL.t("sb.done")); }, function (err) { $b.prop("disabled", false); fail(err); });
+			} }
+		]);
+	}
+
+	function putBody(e, changes) {
+		return $.extend({ amount: +e.amount, best_before_date: e.best_before_date, purchased_date: e.purchased_date, location_id: +e.location_id,
+			shopping_location_id: e.shopping_location_id, price: e.price, open: String(e.open) === "1", note: e.note }, changes);
+	}
+
+	function writeSplit(x, parts) {
+		var p = parts.part, body = { amount: p.amount, best_before_date: p.best_before_date, purchased_date: p.purchased_date, location_id: p.location_id, transaction_type: "purchase" };
+		if (p.price != null && p.price !== "") body.price = +p.price;
+		if (p.shopping_location_id) body.shopping_location_id = +p.shopping_location_id;
+		if (p.note) body.note = p.note;
+		return GC.api("PUT", "stock/entry/" + x.e.id, putBody(x.e, { amount: parts.keep })).then(function () {
+			return GC.api("POST", "stock/products/" + x.e.product_id + "/add", body);
+		}).then(function (rows) {
+			var sid = rows && rows[0] && rows[0].stock_id;
+			if (!p.open || !sid) return null;
+			return GC.api("POST", "stock/products/" + x.e.product_id + "/open", { amount: p.amount, stock_entry_id: sid });
+		});
+	}
+
+	/// Freeze and thaw are transfers, so Grocy applies the product's freezing and thawing days itself.
+	function move(x, toFreezer) {
+		var ID = GC.IDS, own = +x.p.location_id;
+		var to = toFreezer ? ID.locFreezer : (own && ID.kinds[own] !== "freezer" ? own : ID.locFridge);
+		if (!to) { GC.toast("warning", GL.t("sb.noPlace")); return; }
+		GC.api("POST", "stock/products/" + x.e.product_id + "/transfer", { amount: +x.e.amount, location_id_from: +x.e.location_id, location_id_to: to, stock_entry_id: x.e.stock_id })
+			.then(function () { done(GL.t(toFreezer ? "sb.frozen" : "sb.thawed", { name: x.p.name })); }, fail);
+	}
+
+	function item(icon, label, fn) {
+		var $a = $('<a class="dropdown-item gc-sb-item" href="#"><span class="dropdown-item-icon"><i></i></span><span class="dropdown-item-text"></span></a>');
+		$a.find("i").attr("class", icon);
+		$a.find(".dropdown-item-text").text(label);
+		$a.on("click", function (ev) { ev.preventDefault(); fn(); });
+		return $a;
+	}
+
+	$(document).on("show.bs.dropdown", "#stockentries-table .dropdown", function () {
+		var $menu = $(this).find(".dropdown-menu"), $tr = $(this).closest("tr");
+		var m = /^stock-(\d+)-row$/.exec($tr.attr("id") || "");
+		$menu.find(".gc-sb-item").remove();
+		if (!m) return;
+		var rowId = m[1], frozen = GC.IDS.kinds[$tr.find("[data-location-id]").first().attr("data-location-id")] === "freezer";
+		var run = function (fn) { entryOf(rowId).then(fn, fail); };
+		$menu.prepend(item(frozen ? "fa-solid fa-temperature-arrow-up" : "fa-solid fa-snowflake", GL.t(frozen ? "sb.thaw" : "sb.freeze"), function () { run(function (x) { move(x, !frozen); }); }));
+		$menu.prepend(item("fa-solid fa-scissors", GL.t("sb.split"), function () { run(split); }));
+	});
+	GC.master();
+})();
+</script>

@@ -1,0 +1,167 @@
+<script>
+(function () {
+	if (!window.GC || ["stockoverview", "stockentries"].indexOf(Grocy.View) === -1) return;
+	GL.add({
+		"sa.title": ["Add to stock", "Ajouter au stock"], "sa.btn": ["Add to stock", "Ajouter au stock"], "sa.row": ["Add a batch", "Ajouter un lot"],
+		"sa.product": ["Product", "Produit"], "sa.productPh": ["Type to pick a product", "Tape pour choisir un produit"],
+		"sa.amount": ["Amount", "Quantité"], "sa.unit": ["Unit", "Unité"], "sa.bought": ["Bought on", "Acheté le"],
+		"sa.due": ["Best before", "À consommer avant"], "sa.never": ["Never expires", "Ne périme pas"], "sa.place": ["Place", "Emplacement"],
+		"sa.price": ["Unit price (optional)", "Prix unitaire (facultatif)"], "sa.opened": ["Already opened", "Déjà ouvert"], "sa.openedOn": ["Opened on", "Ouvert le"],
+		"sa.past": ["Already past its date: it is added and shown as expired.", "Date déjà dépassée : il est ajouté et affiché comme périmé."],
+		"sa.dueHint": ["Counted from the purchase day ({n} d), until you change it.", "Compté depuis le jour d'achat ({n} j), tant que tu ne le changes pas."],
+		"sa.pick": ["Pick a product from the list.", "Choisis un produit de la liste."], "sa.badAmount": ["Type an amount above 0.", "Indique une quantité supérieure à 0."],
+		"sa.noConv": ["No conversion from this unit to {u}.", "Pas de conversion de cette unité vers {u}."],
+		"sa.added": ["{n} {u} of {name} added", "{n} {u} de {name} ajouté(s)"], "sa.openFail": ["Added, but not marked opened: {msg}", "Ajouté, mais pas marqué ouvert : {msg}"]
+	});
+
+	var cache = null;
+	function load() {
+		if (!cache) {
+			cache = Promise.all([GC.master(), GC.api("GET", "objects/products"), GC.api("GET", "objects/quantity_units"), GC.api("GET", "objects/quantity_unit_conversions")]).then(function (r) {
+				return { m: r[0], products: (r[1] || []).filter(function (p) { return String(p.active) === "1"; }), units: r[2] || [], conv: r[3] || [] };
+			}, function (e) { cache = null; throw e; });
+		}
+		return cache;
+	}
+
+	GC.stockAdd = function (productId, onDone) {
+		load().then(function (d) { open(d, productId, onDone); }, function (err) { GC.toast("error", err.message); });
+	};
+
+	function lbl(key, $input) { return $("<label></label>").text(GL.t(key)).append($input); }
+
+	function open(d, productId, onDone) {
+		var today = GC.today(), product = null, conv = d.conv, edited = false;
+		var $f = $('<form class="gc-form gc-stock-add" novalidate></form>').on("submit", function (e) { e.preventDefault(); });
+		var $name = $('<input class="form-control" name="product" list="gc-sa-products" autocomplete="off">').attr("placeholder", GL.t("sa.productPh"));
+		var $list = $('<datalist id="gc-sa-products"></datalist>');
+		d.products.slice().sort(function (a, b) { return a.name.localeCompare(b.name); }).forEach(function (p) { $list.append($("<option></option>").val(p.name)); });
+		$f.append(lbl("sa.product", $name)).append($list);
+		var $amount = $('<input class="form-control" name="amount" inputmode="decimal" value="1">');
+		var $unit = $('<select class="form-control" name="unit"></select>');
+		$('<div class="gc-form-row"></div>').append(lbl("sa.amount", $amount)).append(lbl("sa.unit", $unit)).appendTo($f);
+		var $bought = $('<input class="form-control" name="bought" type="date">').val(today).attr("max", today);
+		var $place = $('<select class="form-control" name="place"></select>');
+		d.m.locations.forEach(function (l) { $place.append($("<option></option>").val(l.id).text(l.name)); });
+		$('<div class="gc-form-row"></div>').append(lbl("sa.bought", $bought)).append(lbl("sa.place", $place)).appendTo($f);
+		var $due = $('<input class="form-control" name="due" type="date">');
+		var $never = $('<input type="checkbox" name="never">');
+		$f.append(lbl("sa.due", $due)).append($('<label class="gc-check"></label>').append($never).append(document.createTextNode(GL.t("sa.never"))));
+		var $hint = $('<div class="gc-sub gc-sa-hint"></div>').appendTo($f);
+		var $past = $('<span class="gc-status" data-s="failed" hidden></span>').text(GL.t("sa.past")).appendTo($f);
+		var $opened = $('<input type="checkbox" name="opened">');
+		var $openedOn = $('<input class="form-control" name="openedOn" type="date">').val(today).attr("max", today);
+		$f.append($('<label class="gc-check"></label>').append($opened).append(document.createTextNode(GL.t("sa.opened"))));
+		var $openedRow = lbl("sa.openedOn", $openedOn).prop("hidden", true).appendTo($f);
+		var $price = $('<input class="form-control" name="price" inputmode="decimal">');
+		$f.append(lbl("sa.price", $price));
+
+		function shelf() { return product ? +product.default_best_before_days : 0; }
+		function recompute() {
+			if (!edited && product) {
+				var bb = GCR.bestBeforeFor($bought.val() || today, shelf());
+				$never.prop("checked", bb === GCR.NO_DATE);
+				if (bb !== GCR.NO_DATE) $due.val(bb);
+			}
+			$due.prop("disabled", $never.prop("checked"));
+			$hint.text(product && !edited && shelf() !== -1 ? GL.t("sa.dueHint", { n: shelf() > 0 ? shelf() : 14 }) : "");
+			$past.prop("hidden", $never.prop("checked") || !GCR.isPast($due.val(), today));
+			$openedOn.attr("min", $bought.val() || "");
+		}
+		function pick(p) {
+			product = p;
+			edited = false;
+			$unit.empty();
+			if (!p) { recompute(); return; }
+			$place.val(p.location_id || $place.find("option").first().val());
+			GC.api("GET", "objects/quantity_unit_conversions_resolved?query[]=product_id=" + p.id).catch(function () { return []; }).then(function (own) {
+				if (product !== p) return;
+				conv = (own || []).concat(d.conv);
+				GCR.unitOptions(p.id, p.qu_id_stock, d.units, conv).forEach(function (u) {
+					$unit.append($("<option></option>").val(u.id).text(u.name));
+				});
+				$unit.val(p.qu_id_stock);
+			});
+			recompute();
+		}
+		$name.on("change input", function () {
+			var w = GCR.fold($name.val());
+			var p = d.products.filter(function (x) { return GCR.fold(x.name) === w; })[0] || null;
+			if (p !== product) pick(p);
+		});
+		$bought.on("change", recompute);
+		$due.on("change", function () { edited = true; recompute(); });
+		$never.on("change", function () { edited = true; recompute(); });
+		$opened.on("change", function () { $openedRow.prop("hidden", !this.checked); });
+		if (productId) {
+			var start = d.products.filter(function (x) { return +x.id === +productId; })[0];
+			if (start) { $name.val(start.name); pick(start); }
+		}
+
+		GC.sheet(GL.t("sa.title"), $f, [
+			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
+			{ label: GL.t("add"), primary: true, onClick: function (close, $b) {
+				if (!product) { GC.toast("warning", GL.t("sa.pick")); return; }
+				var typed = GCR.parseAmount($amount.val());
+				if (!(typed > 0)) { GC.toast("warning", GL.t("sa.badAmount")); return; }
+				var stockUnit = d.units.filter(function (u) { return +u.id === +product.qu_id_stock; })[0] || {};
+				var amount = GCR.convert(typed, +$unit.val() || product.qu_id_stock, product.qu_id_stock, d.units, conv, product.id);
+				if (amount == null || !(amount > 0)) { GC.toast("warning", GL.t("sa.noConv", { u: stockUnit.name || "" })); return; }
+				var v = { amount: Math.round(amount * 10000) / 10000, bought: $bought.val() || today, due: $never.prop("checked") ? GCR.NO_DATE : ($due.val() || GCR.bestBeforeFor($bought.val() || today, shelf())),
+					place: +$place.val(), price: GCR.parseAmount($price.val()), opened: $opened.prop("checked"), openedOn: $openedOn.val() || today };
+				$b.prop("disabled", true).text(GL.t("saving"));
+				save(product, v).then(function () {
+					GC.toast("success", GL.t("sa.added", { n: v.amount, u: stockUnit.name || "", name: product.name }));
+					GC.clearNavCounts();
+					close();
+					if (onDone) onDone(); else setTimeout(function () { location.reload(); }, 600);
+				}, function (err) { $b.prop("disabled", false).text(GL.t("add")); GC.toast("error", err.message); });
+			} }
+		]);
+	}
+
+	/// Book the batch, then open it and count its opened days from the opened day (iOS openAdded).
+	function save(p, v) {
+		var body = { amount: v.amount, best_before_date: v.due, purchased_date: v.bought, location_id: v.place, transaction_type: "purchase" };
+		if (v.price != null && v.price >= 0) body.price = v.price;
+		return GC.api("POST", "stock/products/" + p.id + "/add", body).then(function (rows) {
+			var sid = rows && rows[0] && rows[0].stock_id;
+			if (!v.opened || !sid) return null;
+			return GC.api("POST", "stock/products/" + p.id + "/open", { amount: v.amount, stock_entry_id: sid }).then(function () {
+				return GC.api("GET", "objects/stock?query[]=stock_id=" + encodeURIComponent(sid));
+			}).then(function (es) {
+				var e = (es || []).filter(function (x) { return String(x.open) === "1"; })[0];
+				var due = e && GCR.openedDue(v.openedOn, p.default_best_before_days_after_open, e.best_before_date);
+				if (!e || !due || due === String(e.best_before_date).slice(0, 10)) return null;
+				return GC.api("PUT", "stock/entry/" + e.id, { amount: +e.amount, best_before_date: due, purchased_date: e.purchased_date, location_id: +e.location_id,
+					shopping_location_id: e.shopping_location_id, price: e.price, open: true, note: e.note });
+			}).catch(function (err) { GC.toast("warning", GL.t("sa.openFail", { msg: err.message })); });
+		});
+	}
+
+	function headerButton() {
+		var $r = $(".g-hd .g-hd-r").first();
+		if (!$r.length) return;
+		var $b = $('<button type="button" class="btn btn-primary gc-stock-add-btn"><i class="fa-solid fa-plus"></i><span></span></button>');
+		$b.find("span").text(GL.t("sa.btn"));
+		$b.on("click", function () { GC.stockAdd(null); });
+		$r.prepend($b);
+	}
+
+	function rowItem(table) {
+		$(document).on("show.bs.dropdown", table + " .dropdown", function () {
+			var $menu = $(this).find(".dropdown-menu");
+			var pid = $(this).closest("tr").find("[data-product-id]").first().attr("data-product-id");
+			$menu.find(".gc-sa-item").remove();
+			if (!pid) return;
+			var $a = $('<a class="dropdown-item gc-sa-item" href="#"><span class="dropdown-item-icon"><i class="fa-solid fa-cart-plus"></i></span><span class="dropdown-item-text"></span></a>');
+			$a.find(".dropdown-item-text").text(GL.t("sa.row"));
+			$a.on("click", function (e) { e.preventDefault(); GC.stockAdd(pid); });
+			$menu.prepend($a);
+		});
+	}
+
+	if (Grocy.View === "stockoverview") { headerButton(); rowItem("#stock-overview-table"); }
+	else rowItem("#stockentries-table");
+})();
+</script>

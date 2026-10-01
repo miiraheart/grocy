@@ -2,40 +2,117 @@
 (function () {
 	if (!window.GC || Grocy.View !== "userobjects" || GC.entityName() !== "cuisine") return;
 	var ID = GC.IDS;
+	GL.add({
+		"ca.cooked": ["Homemade meal", "Plat maison"], "ca.prepared": ["Marinating", "En marinade"], "ca.base": ["Raw product", "Produit cru"],
+		"ca.basePh": ["Pick the raw product", "Choisis le produit cru"], "ca.preparedOn": ["Prepared on", "Préparé le"], "ca.frozenOn": ["Frozen on", "Congelé le"],
+		"ca.preparedNamePh": ["Chicken, marinating", "Poulet en marinade"], "ca.link": ["For a meal (optional)", "Pour un repas (facultatif)"], "ca.noLink": ["None", "Aucun"],
+		"ca.preparedSub": ["Raw food you prepared, like chicken marinating. It stays in the fridge with a short use-by.", "Un aliment cru préparé, comme du poulet en marinade. Il reste au frigo avec une date courte."],
+		"ca.fridgeTip": ["Not eating it within 24 h? Freeze it today, histamine builds in the fridge.", "Pas mangé sous 24 h ? Congèle-le aujourd'hui, l'histamine monte au frigo."],
+		"ca.histamine": ["Already {n} days in the fridge. Histamine stays when frozen.", "Déjà {n} jours au frigo. L'histamine reste une fois congelé."],
+		"ca.dueCustom": ["Your date is kept: estimates never move it.", "Ta date est gardée : les estimations ne la changent jamais."],
+		"ca.duePrepared": ["Use by {d}, {src}.", "À consommer avant le {d}, {src}."], "ca.dueFrozen": ["Eat by {d}: freezer life counts from the day it was frozen.", "À manger avant le {d} : la durée au congélateur compte depuis le jour de congélation."],
+		"ca.dueStart": ["Starts at {d}, then the companion estimate replaces it.", "Commence au {d}, puis l'estimation du companion la remplace."],
+		"ca.src.product": ["from the product's opened days", "selon les jours après ouverture du produit"], "ca.src.estimate": ["from the product's companion estimate", "selon l'estimation companion du produit"],
+		"ca.src.category": ["from its category", "selon sa catégorie"], "ca.src.shelf": ["from the product's shelf life", "selon la durée de conservation du produit"],
+		"ca.src.setting": ["from your leftover setting", "selon ton réglage des restes"], "ca.pickBase": ["Pick the raw product.", "Choisis le produit cru."],
+		"ca.noGroup": ["No \"Plats cuisinés\" group in Grocy.", "Aucun groupe « Plats cuisinés » dans Grocy."]
+	});
 
 	GC.cuisineAddDish = function (deps) {
-		var $f = $('<form class="gc-form" novalidate></form>');
-		function lbl(key, $input) { return $("<label></label>").text(GL.t(key)).append($input); }
-		$f.append(lbl("cu.name", '<input class="form-control" name="name" required list="gc-dish-names" placeholder="Ratatouille">')).append('<datalist id="gc-dish-names"></datalist>');
-		$f.append(lbl("cu.ingredients", $('<textarea class="form-control" name="ingredients" rows="3"></textarea>').attr("placeholder", GL.t("cu.ingredientsPh"))));
-		$('<div class="gc-form-row"></div>').append(lbl("cu.portionsLabel", '<input class="form-control" name="portions" type="number" min="0.5" step="0.5" value="2">')).append(lbl("cu.cooked", '<input class="form-control" name="cooked" type="date">')).appendTo($f);
+		var today = GC.today();
+		Promise.all([GC.api("GET", "objects/products"), GC.api("GET", "objects/recipes").catch(function () { return []; }),
+			GC.api("GET", "objects/meal_plan?query[]=day>=" + today).catch(function () { return []; })]).then(function (r) {
+			sheet(deps, r[0] || [], GCR.dishLinks(r[1], r[2], today), today);
+		}, function (err) { GC.toast("error", err.message); });
+	};
+
+	function lbl(key, $input) { return $("<label></label>").text(GL.t(key)).append($input); }
+
+	function sheet(deps, products, links, today) {
+		var kind = "cooked", nameEdited = false;
+		var $f = $('<form class="gc-form" novalidate></form>').on("submit", function (e) { e.preventDefault(); });
+		var $seg = $('<div class="gc-seg" role="group"></div>').appendTo($f);
+		["cooked", "prepared"].forEach(function (k) { $('<button type="button"></button>').attr("data-k", k).text(GL.t("ca." + k)).appendTo($seg); });
+		var $base = $('<select class="form-control" name="base"></select>').append($("<option></option>").val("").text(GL.t("ca.basePh")));
+		GCR.preparedCandidates(products, ID.groupDishes).forEach(function (p) { $base.append($("<option></option>").val(p.id).text(p.name)); });
+		var $baseRow = lbl("ca.base", $base).appendTo($f);
+		var $name = $('<input class="form-control" name="name" required list="gc-dish-names">');
+		$f.append(lbl("cu.name", $name)).append('<datalist id="gc-dish-names"></datalist>');
+		products.filter(function (p) { return +p.product_group_id === ID.groupDishes; }).forEach(function (p) { $f.find("datalist").append($("<option></option>").val(p.name)); });
+		var $ingRow = lbl("cu.ingredients", $('<textarea class="form-control" name="ingredients" rows="3"></textarea>').attr("placeholder", GL.t("cu.ingredientsPh"))).appendTo($f);
+		var $cooked = $('<input class="form-control" name="cooked" type="date">').val(today).attr("max", today);
+		var $cookedLbl = lbl("cu.cooked", $cooked);
+		$('<div class="gc-form-row"></div>').append(lbl("cu.portionsLabel", '<input class="form-control" name="portions" type="number" min="0.5" step="0.5" value="2">')).append($cookedLbl).appendTo($f);
 		var $sel = $('<select class="form-control" name="loc"></select>');
-		GC.api("GET", "objects/locations").then(function (locs) {
-			var byId = GC.byId(locs);
-			deps.storage.forEach(function (id) { if (byId[id]) $sel.append($("<option></option>").val(id).text(byId[id].name)); });
-		});
-		lbl("cu.storage", $sel).appendTo($f);
+		var $frozen = $('<input class="form-control" name="frozen" type="date">').val(today).attr("max", today);
+		var $storeRow = $('<div class="gc-form-row"></div>').append(lbl("cu.storage", $sel)).appendTo($f);
+		var $frozenLbl = lbl("ca.frozenOn", $frozen).appendTo($storeRow);
+		var $storeNote = $('<div class="gc-sub"></div>').appendTo($f);
+		var $link = $('<select class="form-control" name="link"></select>').append($("<option></option>").val("").text(GL.t("ca.noLink")));
+		links.forEach(function (l, i) { $link.append($("<option></option>").val(i).text(l.day ? l.name + " (" + GC.fmtDate(l.day) + ")" : l.name)); });
+		$f.append(lbl("ca.link", $link));
 		$f.append($('<label class="gc-check"><input type="checkbox" name="custom"> </label>').append(document.createTextNode(GL.t("cu.custom")))).append(lbl("cu.useBy", '<input class="form-control" name="due" type="date">').addClass("gc-custom").prop("hidden", true));
-		$f.find("[name=cooked]").val(GC.today());
-		$f.find("[name=due]").val(GC.addDays(GC.today(), 3));
-		$f.find("[name=custom]").on("change", function () { $f.find(".gc-custom").prop("hidden", !this.checked); });
-		GC.api("GET", "objects/products?query[]=product_group_id=" + ID.groupDishes).then(function (ps) {
-			ps.forEach(function (p) { $f.find("datalist").append($("<option></option>").val(p.name)); });
+		$f.find("[name=due]").val(GC.addDays(today, 3));
+		var $dueNote = $('<div class="gc-sub"></div>').appendTo($f);
+
+		function values() {
+			var base = products.filter(function (p) { return +p.id === +$base.val(); })[0] || null;
+			var loc = kind === "prepared" ? ID.locFridge : +$sel.val();
+			return { kind: kind, name: $.trim($name.val()), ingredients: $.trim($f.find("[name=ingredients]").val()), portions: GC.num($f.find("[name=portions]").val()),
+				cookedOn: $cooked.val() || today, frozenOn: $frozen.val() || today, loc: loc, storage: GC.storageFor(loc), custom: $f.find("[name=custom]").prop("checked"),
+				customDate: $f.find("[name=due]").val(), link: $link.val() === "" ? null : links[+$link.val()], base: base, rule: GCR.preparedRule(base, products, 3) };
+		}
+		function update() {
+			var v = values(), prepared = kind === "prepared";
+			$seg.children().each(function () { $(this).attr("aria-pressed", $(this).data("k") === kind ? "true" : "false"); });
+			$baseRow.prop("hidden", !prepared);
+			$ingRow.add($storeRow).prop("hidden", prepared);
+			$cookedLbl.contents().first()[0].nodeValue = GL.t(prepared ? "ca.preparedOn" : "cu.cooked");
+			$name.attr("placeholder", prepared ? GL.t("ca.preparedNamePh") : "Ratatouille");
+			$frozenLbl.prop("hidden", v.storage !== "freezer");
+			$frozen.attr("min", v.cookedOn);
+			var hist = v.storage === "freezer" ? GCR.histamineDays(v.cookedOn, v.frozenOn) : null;
+			$storeNote.text(prepared ? GL.t("ca.preparedSub") : v.storage === "fridge" ? GL.t("ca.fridgeTip") : hist ? GL.t("ca.histamine", { n: hist }) : "");
+			var d = GC.fmtDate(GCR.dishDue(dueInput(v, {})));
+			$dueNote.text(v.custom ? GL.t("ca.dueCustom") : prepared ? GL.t("ca.duePrepared", { d: d, src: GL.t("ca.src." + v.rule.source) })
+				: v.storage === "freezer" ? GL.t("ca.dueFrozen", { d: d }) : GL.t("ca.dueStart", { d: d }));
+		}
+		GC.master().then(function (m) {
+			deps.storage.forEach(function (id) { var l = m.locations.filter(function (x) { return +x.id === +id; })[0]; if (l) $sel.append($("<option></option>").val(id).text(l.name)); });
+			update();
 		});
+		$seg.on("click", "button", function () { kind = $(this).data("k"); update(); });
+		$base.on("change", function () {
+			var v = values();
+			if (v.base && !nameEdited) $name.val(GCR.preparedName(v.base.name, GL.lang));
+			update();
+		});
+		$name.on("input", function () { nameEdited = !!$name.val(); });
+		$f.find("[name=custom]").on("change", function () { $f.find(".gc-custom").prop("hidden", !this.checked); update(); });
+		$f.on("change", "[name=cooked], [name=frozen], [name=loc], [name=due]", update);
+		update();
 		GC.sheet(GL.t("cu.addDish"), $f, [
 			{ label: GL.t("cancel"), onClick: function (close) { close(); } },
 			{ label: GL.t("save"), primary: true, onClick: function (close, $b) {
-				var v = { name: $.trim($f.find("[name=name]").val()), ingredients: $.trim($f.find("[name=ingredients]").val()), portions: GC.num($f.find("[name=portions]").val()), cooked: $f.find("[name=cooked]").val() || GC.today(), loc: +$sel.val(), custom: $f.find("[name=custom]").prop("checked"), due: $f.find("[name=due]").val() };
-				if (!v.name || v.portions <= 0 || (v.custom && !v.due)) { GC.toast("warning", GL.t("cu.required")); return; }
+				var v = values();
+				if (!ID.groupDishes) { GC.toast("warning", GL.t("ca.noGroup")); return; }
+				if (v.kind === "prepared" && !v.base) { GC.toast("warning", GL.t("ca.pickBase")); return; }
+				if (!v.name || v.portions <= 0 || !v.loc || (v.custom && !v.customDate)) { GC.toast("warning", GL.t("cu.required")); return; }
 				$b.prop("disabled", true).text(GL.t("saving"));
 				saveDish(v, deps).then(function () { close(); }, function (err) { $b.prop("disabled", false).text(GL.t("save")); GC.toast("error", err.message); });
 			} }
 		]);
-	};
+	}
+
+	/// The iOS NewDish rules with this dish's known durations (its own estimate when it has one).
+	function dueInput(v, u) {
+		return { kind: v.kind, storage: v.storage, cookedOn: v.cookedOn, frozenOn: v.frozenOn, custom: v.custom, customDate: v.customDate, link: v.link,
+			preparedDays: v.rule.days, fridgeDays: +u.shelf_fridge_days || 3, counterDays: +u.shelf_counter_days || 1, freezerDays: +u.shelf_freezer_days || 90 };
+	}
 
 	function findOrCreate(v) {
 		return GC.api("GET", "objects/products").then(function (all) {
-			var found = all.filter(function (p) { return p.name.trim().toLowerCase() === v.name.toLowerCase(); })[0];
+			var found = all.filter(function (p) { return GCR.fold(p.name) === GCR.fold(v.name); })[0];
 			if (found && +found.product_group_id !== ID.groupDishes) throw new Error(GL.t("cu.nameTaken", { name: found.name }));
 			if (found) return (String(found.active) === "1" ? Promise.resolve() : GC.api("PUT", "objects/products/" + found.id, { active: 1 })).then(function () { return found.id; });
 			return GC.api("GET", "objects/quantity_units").then(function (qus) {
@@ -47,32 +124,37 @@
 		});
 	}
 
+	/// Prepared items and her own date are dated by rule (manual); a dish frozen later is dated from the freezing day.
 	function saveDish(v, deps) {
-		var product, force;
+		var product, force, d, manual = v.custom || v.kind === "prepared";
+		if (!v.ingredients && v.base) v.ingredients = v.base.name;
 		return findOrCreate(v).then(function (p) {
 			product = p;
 			var u = p.userfields;
+			d = dueInput(v, u);
 			force = !!u.ingredients && u.ingredients !== v.ingredients;
-			var status = u.shelf_status === "done" && !force ? "done" : v.custom ? (u.shelf_status || "manual") : GC.cfg.configured ? "pending" : (u.shelf_status || "none");
-			var fields = { ingredients: v.ingredients, cooked_on: v.cooked, shelf_status: status };
+			var estimate = GCR.wantsEstimate(d) && GC.cfg.configured;
+			var status = u.shelf_status === "done" && !force && !manual ? "done" : manual ? "manual" : estimate ? "pending" : (u.shelf_status || "none");
+			var fields = { ingredients: v.ingredients, cooked_on: v.cookedOn, shelf_status: status };
 			$.extend(product.userfields, fields);
 			return GC.api("PUT", "userfields/products/" + p.id, fields);
 		}).then(function () {
-			var u = product.userfields;
-			var days = v.loc === ID.locFreezer ? (+u.shelf_freezer_days || 90) : v.loc === ID.locCounter ? (+u.shelf_counter_days || 0) : (+u.shelf_fridge_days || 3);
-			return GC.api("POST", "stock/products/" + product.id + "/add", { amount: v.portions, best_before_date: v.custom ? v.due : GC.addDays(v.cooked, days), location_id: v.loc, transaction_type: "self-production", purchased_date: v.cooked });
+			var body = { amount: v.portions, best_before_date: GCR.dishDue(d), location_id: v.loc, transaction_type: "self-production", purchased_date: v.cookedOn };
+			var note = GCR.dishNote(d, GL.lang);
+			if (note) body.note = note;
+			return GC.api("POST", "stock/products/" + product.id + "/add", body);
 		}).then(function (rows) {
 			var sid = rows && rows[0] && rows[0].stock_id;
 			return GC.api("GET", "objects/stock?query[]=product_id=" + product.id + "&order=id:desc").then(function (es) {
 				return es.filter(function (e) { return e.stock_id === sid; })[0] || es[0];
 			});
 		}).then(function (entry) {
-			if (v.custom) {
-				return deps.putEntry(entry, { best_before_date: v.due }).then(function (rows) { return deps.markManual(entry, rows); }).then(function () {
-					GC.toast("success", GL.t("cu.addedDue", { name: product.name, d: GC.fmtDate(v.due) }));
-					deps.refresh();
-				});
-			}
+			var due = GCR.dishDue(d), dated = function () {
+				GC.toast("success", GL.t("cu.addedDue", { name: product.name, d: GC.fmtDate(due) }));
+				deps.refresh();
+			};
+			if (manual) return deps.putEntry(entry, { best_before_date: due }).then(function (rows) { return deps.markManual(entry, rows); }).then(dated);
+			if (!GCR.wantsEstimate(d) || !GC.cfg.configured) { dated(); return; }
 			GC.toast("info", GL.t("cu.addedEst", { name: product.name }));
 			deps.refresh();
 			deps.estimate(product, entry, force);

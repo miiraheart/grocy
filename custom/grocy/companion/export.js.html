@@ -9,30 +9,30 @@
 	};
 	var CHIPS = [
 		{ key: "all", label: GL.t("chip.all"), test: function () { return true; } },
-		{ key: "fridge", label: GL.t("chip.fridge"), test: function (r) { return +r.e.location_id === ID.locFridge; } },
-		{ key: "pantry", label: GL.t("chip.pantry"), test: function (r) { return +r.e.location_id === ID.locPantry; } },
-		{ key: "freezer", label: GL.t("chip.freezer"), test: function (r) { return +r.e.location_id === ID.locFreezer; } },
-		{ key: "counter", label: GL.t("chip.counter"), test: function (r) { return +r.e.location_id === ID.locCounter; } },
+		{ key: "fridge", label: GL.t("chip.fridge"), test: function (r) { return ID.kinds[r.e.location_id] === "fridge"; } },
+		{ key: "pantry", label: GL.t("chip.pantry"), test: function (r) { return ID.kinds[r.e.location_id] === "pantry"; } },
+		{ key: "freezer", label: GL.t("chip.freezer"), test: function (r) { return ID.kinds[r.e.location_id] === "freezer"; } },
+		{ key: "counter", label: GL.t("chip.counter"), test: function (r) { return ID.kinds[r.e.location_id] === "counter"; } },
 		{ key: "soon", label: GL.t("chip.soon"), test: function (r) { return r.left != null && r.left >= 0 && r.left <= 5; } },
 		{ key: "expired", label: GL.t("chip.expired"), test: function (r) { return r.left != null && r.left < 0; } },
 		{ key: "dishes", label: GL.t("chip.dishes"), test: function (r) { return r.dish; } }
 	];
 
 	GC.loadStockRows = function () {
-		return Promise.all([
+		return GC.master().then(function () { return Promise.all([
 			GC.api("GET", "objects/stock"),
 			GC.api("GET", "objects/products"),
 			GC.api("GET", "objects/locations"),
 			GC.api("GET", "objects/product_groups"),
 			GC.api("GET", "objects/quantity_units")
-		]).then(function (r) {
+		]); }).then(function (r) {
 			var P = GC.byId(r[1]), L = GC.byId(r[2]), G = GC.byId(r[3]), Q = GC.byId(r[4]);
 			return (r[0] || []).filter(function (e) { return P[e.product_id]; }).map(function (e) {
 				var p = P[e.product_id], u = p.userfields || {}, q = Q[p.qu_id_stock] || {};
 				var dish = +p.product_group_id === ID.groupDishes;
 				var age = -GC.daysLeft(e.purchased_date);
 				var notes = [GL.inLang(u.shelf_notes) ? u.shelf_notes || "" : ""];
-				if (dish && age >= 1 && +e.location_id !== ID.locFreezer) notes.push(GL.t("exp.leftover24"));
+				if (dish && age >= 1 && ID.kinds[e.location_id] !== "freezer") notes.push(GL.t("exp.leftover24"));
 				return {
 					e: e, p: p, dish: dish, left: GC.daysLeft(e.best_before_date),
 					name: p.name, qty: GC.num(e.amount), unit: GC.num(e.amount) > 1 ? (q.name_plural || q.name || "") : (q.name || ""),

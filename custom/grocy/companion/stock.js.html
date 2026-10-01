@@ -3,17 +3,21 @@
 	if (!window.GC) return;
 	var ID = GC.IDS;
 
-	if (Grocy.View === "stockoverview") { stockChips(); lowStockButton(); favoriteMenu(); phoneRowMenu(); }
-	if (Grocy.View === "stockoverview" || Grocy.View === "consume") openHook();
-	if (Grocy.View === "productform") productEstimate();
+	if (["stockoverview", "consume", "productform"].indexOf(Grocy.View) === -1) return;
+	GC.master().then(function (m) {
+		if (Grocy.View === "stockoverview") { stockChips(m); lowStockButton(); favoriteMenu(); phoneRowMenu(); }
+		if (Grocy.View === "stockoverview" || Grocy.View === "consume") openHook();
+		if (Grocy.View === "productform") productEstimate();
+	}, function (err) { GC.toast("error", err.message); });
 
-	function stockChips() {
+	function stockChips(m) {
 		var $loc = $("#location-filter"), $grp = $("#product-group-filter");
 		if (!$loc.length) return;
+		var name = function (list, id) { var x = list.filter(function (l) { return +l.id === +id; })[0]; return x ? x.name : null; };
 		var CH = [
-			[GL.t("chip.all"), null, null], [GL.t("chip.fridge"), "Réfrigérateur", null], [GL.t("chip.pantry"), "Placard", null],
-			[GL.t("chip.freezer"), "Congélateur", null], [GL.t("chip.counter"), "Plan de travail", null]
-		];
+			[GL.t("chip.all"), null, null], [GL.t("chip.fridge"), name(m.locations, ID.locFridge), null], [GL.t("chip.pantry"), name(m.locations, ID.locPantry), null],
+			[GL.t("chip.freezer"), name(m.locations, ID.locFreezer), null], [GL.t("chip.counter"), name(m.locations, ID.locCounter), null]
+		].filter(function (c, i) { return i === 0 || c[1]; });
 		var $row = $('<div class="gc-chips gc-stock-chips" role="group"></div>').attr("aria-label", GL.t("chip.quick"));
 		CH.forEach(function (c, i) {
 			if (c[1] && !$loc.find("option").filter(function () { return this.value === c[1]; }).length) return;
@@ -37,21 +41,21 @@
 		});
 		$loc.add($grp).on("change", function () { setTimeout(paint, 0); });
 		paint();
-		dishToggle($row, $grp);
+		dishToggle($row, $grp, name(m.groups, ID.groupDishes));
 	}
 
-	function dishToggle($row, $grp) {
-		if (!$.fn.dataTable || !$.fn.dataTable.isDataTable("#stock-overview-table")) return;
+	function dishToggle($row, $grp, groupName) {
+		if (!groupName || !$.fn.dataTable || !$.fn.dataTable.isDataTable("#stock-overview-table")) return;
 		var table = $("#stock-overview-table").DataTable();
 		var KEY = "gc-show-dishes";
 		var norm = function (t) { return String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); };
-		var dishes = "xx" + norm("Plats cuisinés") + "xx";
+		var dishes = "xx" + norm(groupName) + "xx";
 		var show = false;
 		try { show = localStorage.getItem(KEY) === "1"; } catch (e) {}
 		var col = table.colReorder ? table.colReorder.transpose(8) : 8;
 		$.fn.dataTable.ext.search.push(function (settings, data) {
 			if (settings.nTable.id !== "stock-overview-table" || show) return true;
-			if (norm($grp.val()) === norm("Plats cuisinés")) return true;
+			if (norm($grp.val()) === norm(groupName)) return true;
 			return norm(data[col]).indexOf(dishes) === -1;
 		});
 		var $t = $('<button type="button" class="gc-dish-toggle"></button>').appendTo($row);
@@ -188,7 +192,7 @@
 			var loc = +$("#location_id").val();
 			var group = +$("#product_group_id").val();
 			$b.prop("disabled", true).find("span").text(GL.t("est.running"));
-			GC.hook("shelf-life", GC.estimateBody({ product_id: +Grocy.EditObjectId, name: name, kind: group === ID.groupDishes ? "dish" : group === 2 ? "produce" : "product", storage: GC.storageFor(loc), opened: false, mode: "sync", force: !!force }, opts), GC.estimateTimeout(opts)).then(function (r) {
+			GC.hook("shelf-life", GC.estimateBody({ product_id: +Grocy.EditObjectId, name: name, kind: group === ID.groupDishes ? "dish" : group === ID.groupProduce ? "produce" : "product", storage: GC.storageFor(loc), opened: false, mode: "sync", force: !!force }, opts), GC.estimateTimeout(opts)).then(function (r) {
 				if (!r || r.status !== "done") {
 					$chip.prop("hidden", false).attr("data-s", "pending").text(r && r.status === "pending" ? GL.t("est.pendingWrite") : GL.t("est.impossible"));
 					return;
