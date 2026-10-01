@@ -2,7 +2,7 @@
 // corpus test/ingredient-lines.json (19-SPEC 7.9). Plain functions: build.mjs pastes this file into Code nodes.
 const LINE_INVISIBLE = /[⁣⁢​‌‍﻿]/g;
 const LINE_SPACES = /[   \t]/g;
-const LINE_BULLETS = ["-", "*", "•", "·", "–", "—"];
+const LINE_BULLETS = ["-", "*", "\u2022", "\u00B7", "\u2013", "\u2014"];
 const WORD_START = "(?<![\\p{L}\\p{N}_])";
 const WORD_END = "(?![\\p{L}\\p{N}_])";
 const OPTIONAL_RE = new RegExp(",?\\s*" + WORD_START + "(facultatif|facultative|optionnel|optionnelle|optional)" + WORD_END, "giu");
@@ -89,7 +89,7 @@ function parseNumber(input) {
 
 function rangeEnd(text) {
   const trimmed = dropSpaces(text);
-  for (const connector of ["-", "–", "à ", "a ", "to ", "ou ", "or "]) {
+  for (const connector of ["-", "\u2013", "à ", "a ", "to ", "ou ", "or "]) {
     if (!trimmed.toLowerCase().startsWith(connector)) continue;
     const found = parseNumber(trimmed.slice(connector.length));
     if (found) return found;
