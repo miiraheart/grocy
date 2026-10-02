@@ -2,7 +2,8 @@
 (function (root) {
 	/// Port of the app's DueStatus, UseSoon and TodayMeals (dashboard "Use soon" and "Today" cards).
 	/// tests/dashboard-cases.json is shared with the app (DashboardCasesFixtureTests.swift).
-	var TOL = 0.0001, WINDOW = 5, SOON_DAYS = 7, BEST_BEFORE = 1, NO_DATE = "2999-12-31";
+	var TOL = 0.0001, SOON_DAYS = 7, BEST_BEFORE = 1, EXPIRATION = 2, NO_DATE = "2999-12-31";
+	var WINDOW = { freshDays: 3, longLifeDays: 14 }, FRESH_SHELF_LIFE = 30, SHELF_SHARE = 0.25;
 
 	function dayMs(text) {
 		var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(text || ""));
@@ -38,28 +39,77 @@
 	function dueTypeOf(item) { return item.product && item.product.due_type != null ? item.product.due_type : item.due_type; }
 	function itemDays(s) { return s.kind === "expired" || s.kind === "bestBeforePassed" ? -1 : s.days; }
 
-	/// UseSoon.items: past dates first (expired before best before passed), then within 5 days, then opened, by days left.
-	function useSoon(volatile, stock, today) {
+	function positive(v) { var n = num(v); return n > 0 ? n : null; }
+	/// UseSoonWindow.days: the last quarter of the shelf life (after opening when opened), capped at 3 days for fresh food
+	/// (shelf life up to 30 days, or an expiration date without one) and 14 for long-life food; thawed days always count.
+	function windowDays(product, opened, window) {
+		var w = window || WINDOW, p = product || {};
+		var shelf = (opened ? positive(p.default_best_before_days_after_open) : null) || positive(p.default_best_before_days);
+		var fresh = shelf != null ? shelf <= FRESH_SHELF_LIFE : +p.due_type === EXPIRATION;
+		var cap = fresh ? w.freshDays : w.longLifeDays;
+		var share = shelf != null ? Math.min(cap, Math.max(1, Math.ceil(shelf * SHELF_SHARE))) : cap;
+		var thawed = positive(p.default_best_before_days_after_thawing);
+		return Math.max(share, thawed != null ? Math.min(cap, thawed) : 0);
+	}
+
+	/// UseSoon.items: past dates first (expired before best before passed), then the products inside their own window,
+	/// opened ones measured on their opened limit, most urgent first. An opened product with no date or plenty of time stays off.
+	function useSoon(volatile, stock, today, window) {
 		var v = volatile || {}, openedIds = {}, seen = {}, out = [];
 		(stock || []).forEach(function (i) { if (isOpened(i)) openedIds[i.product_id] = true; });
-		function add(item) {
-			if (seen[item.product_id]) return;
-			seen[item.product_id] = true;
+		function entry(item) {
 			var s = dueStatus([item.best_before_date], dueTypeOf(item), today);
-			out.push({ productId: +item.product_id, name: item.product ? item.product.name : "", status: s, days: itemDays(s), tint: tint(s),
-				opened: isOpened(item) || !!openedIds[item.product_id], canOpen: num(item.amount) - num(item.amount_opened) > TOL, item: item });
+			return { productId: +item.product_id, name: item.product ? item.product.name : "", status: s, days: itemDays(s), tint: tint(s),
+				opened: isOpened(item) || !!openedIds[item.product_id], canOpen: num(item.amount) - num(item.amount_opened) > TOL, item: item };
 		}
-		(v.expired_products || []).concat(v.overdue_products || []).forEach(add);
-		(v.due_products || []).forEach(function (item) {
-			var d = itemDays(dueStatus([item.best_before_date], dueTypeOf(item), today));
-			if (d != null && d <= WINDOW) add(item);
+		function add(e) {
+			if (seen[e.productId]) return;
+			seen[e.productId] = true;
+			out.push(e);
+		}
+		(v.expired_products || []).concat(v.overdue_products || []).forEach(function (i) { add(entry(i)); });
+		(v.due_products || []).concat((stock || []).filter(isOpened)).map(entry).forEach(function (e) {
+			if (e.days != null && e.days <= windowDays(e.item.product, e.opened, window)) add(e);
 		});
-		(stock || []).forEach(function (i) { if (isOpened(i)) add(i); });
 		function order(x) { return x.status.kind === "expired" ? -2 : x.status.kind === "bestBeforePassed" ? -1 : x.days == null ? Infinity : x.days; }
 		return out.map(function (x, i) { return { x: x, i: i }; }).sort(function (a, b) {
 			var l = order(a.x), r = order(b.x);
 			return l !== r ? (l < r ? -1 : 1) : a.i - b.i;
 		}).map(function (o) { return o.x; });
+	}
+
+	/// RecipeIngredientMatch.uses: per recipe, how many of the targets its lines list (the target, its parent or a child)
+	/// and the summed amount.
+	function ingredientUses(targets, positions, products) {
+		var parentOf = {}, family = {}, seen = {}, uses = {};
+		(products || []).forEach(function (p) { if (p.parent_product_id) parentOf[+p.id] = +p.parent_product_id; });
+		(targets || []).forEach(function (t) {
+			t = +t;
+			if (family[t] == null) family[t] = t;
+			var parent = parentOf[t];
+			if (parent != null && family[parent] == null) family[parent] = t;
+			Object.keys(parentOf).forEach(function (child) { if (parentOf[child] === t && family[child] == null) family[child] = t; });
+		});
+		(positions || []).forEach(function (p) {
+			var target = family[+p.product_id], rid = +p.recipe_id;
+			if (target == null) return;
+			var u = uses[rid] = uses[rid] || { items: 0, amount: 0 }, s = seen[rid] = seen[rid] || {};
+			if (!s[target]) { s[target] = true; u.items++; }
+			u.amount += Math.max(num(p.amount), 0);
+		});
+		return uses;
+	}
+	/// CookSoon.suggestions: only recipes using a use-soon product, most of them first, then the largest amount,
+	/// then Grocy's due score, fewest missing and name.
+	function cookSoon(recipes, fulfillment, uses, limit) {
+		var byId = {};
+		(fulfillment || []).forEach(function (f) { if (!byId[+f.recipe_id]) byId[+f.recipe_id] = f; });
+		return (recipes || []).filter(function (r) { return byId[+r.id] && uses[+r.id]; }).map(function (r) {
+			return { recipe: r, fulfillment: byId[+r.id], use: uses[+r.id] };
+		}).sort(function (a, b) {
+			return (b.use.items - a.use.items) || (b.use.amount - a.use.amount) || (num(b.fulfillment.due_score) - num(a.fulfillment.due_score)) ||
+				(num(a.fulfillment.missing_products_count) - num(b.fulfillment.missing_products_count)) || String(a.recipe.name).localeCompare(String(b.recipe.name));
+		}).slice(0, limit == null ? 5 : Math.max(0, limit));
 	}
 
 	function mealName(row, recipes, names) {
@@ -102,7 +152,8 @@
 		return out.filter(function (t) { return t.name; });
 	}
 
-	var G = { dueStatus: dueStatus, tint: tint, useSoon: useSoon, meals: meals, thaw: thaw, isOpened: isOpened, WINDOW: WINDOW };
+	var G = { dueStatus: dueStatus, tint: tint, useSoon: useSoon, windowDays: windowDays, ingredientUses: ingredientUses, cookSoon: cookSoon,
+		meals: meals, thaw: thaw, isOpened: isOpened, WINDOW: WINDOW };
 	if (typeof module !== "undefined" && module.exports) module.exports = G; else root.GCD = G;
 })(this);
 </script>
