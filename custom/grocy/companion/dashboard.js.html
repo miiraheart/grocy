@@ -24,15 +24,18 @@
 		"db.mealsEmpty": ["No meal planned for today.", "Aucun repas prévu aujourd'hui."], "db.meals": ["Meals", "Repas"],
 		"db.use": ["Use", "Utiliser"], "db.open": ["Open", "Ouvrir"], "db.throw": ["Throw away", "Jeter"], "db.opened": ["Opened", "Entamé"],
 		"db.used": ["Used 1 {name}", "1 {name} utilisé"], "db.didOpen": ["Opened 1 {name}", "1 {name} ouvert"], "db.threw": ["Threw away 1 {name}", "1 {name} jeté"],
-		"db.more": ["Show {n} more", "Afficher {n} de plus"], "db.less": ["Show less", "Afficher moins"], "db.allTasks": ["Show all {n} in Tasks", "Voir les {n} dans Tâches"],
+		"db.more": ["See all {n}", "Tout voir ({n})"], "db.less": ["Show less", "Afficher moins"], "db.allTasks": ["Show all {n} in Tasks", "Voir les {n} dans Tâches"],
 		"db.thaw": ["Thaw {name}", "Décongeler {name}"], "db.thawNow": ["Now, for {meal}", "Maintenant, pour {meal}"],
 		"db.thawTonight": ["Tonight, for {meal} tomorrow", "Ce soir, pour {meal} demain"], "db.expiredToList": ["Expired to list", "Périmés vers la liste"],
 		"db.addedToList": ["{n} added to the shopping list", "{n} ajoutés à la liste de courses"],
 		"due.expired": ["Expired {n} d ago", "Périmé depuis {n} j"], "due.bestBeforePassed": ["Best before passed", "DLUO dépassée"],
 		"due.today": ["Today", "Aujourd'hui"], "due.tomorrow": ["Tomorrow", "Demain"], "due.soon": ["In {n} days", "Dans {n} jours"],
+		"db.cookSoon": ["Cook soon", "À cuisiner bientôt"], "db.cookPast": ["Uses food past its date", "Utilise un produit périmé"],
+		"db.cookUses": ["Uses food to use soon", "Utilise des produits à utiliser vite"],
+		"db.cookEmpty": ["None of your recipes use what needs using. Import one from Recipes.", "Aucune de tes recettes n'utilise ce qui doit être utilisé. Importe-en une depuis Recettes."],
 		"due.fresh": ["In {n} days", "Dans {n} jours"], "due.noDate": ["No date", "Sans date"]
 	});
-	var SHOWN = 5, SHOWN_TASKS = 6, UI = GC.agendaUI, ctx = { data: null }, expanded = false, working = {};
+	var SHOWN = 8, SHOWN_COOK = 5, PAST_DATE_SCORE = 10, SHOWN_TASKS = 6, UI = GC.agendaUI, ctx = { data: null }, expanded = false, working = {};
 
 	function dayText(offset) { return moment().add(offset || 0, "days").format("YYYY-MM-DD"); }
 	function dueLabel(s) { return GL.t("due." + s.kind, { n: s.kind === "expired" ? s.late : s.days }); }
@@ -85,13 +88,13 @@
 		return $r;
 	}
 
-	function useSoonCard(d) {
-		var items = GCD.useSoon(d.volatile, d.stock, dayText(0)), $c = card("fa-hourglass-half", GL.t("db.useSoon"), items.length, GC.url("/stockoverview"), "warn");
+	function useSoonCard(d, items) {
+		var $c = card("fa-hourglass-half", GL.t("db.useSoon"), items.length, GC.url("/stockoverview"), "warn");
 		if (!items.length) return $c.append(emptyLine("fa-circle-check", GL.t("db.useSoonEmpty")));
 		var $list = $('<div class="gc-db-list"></div>').appendTo($c);
 		(expanded ? items : items.slice(0, SHOWN)).forEach(function (i) { $list.append(useRow(i)); });
 		if (items.length > SHOWN) {
-			$('<button type="button" class="gc-db-link"></button>').text(expanded ? GL.t("db.less") : GL.t("db.more", { n: items.length - SHOWN }))
+			$('<button type="button" class="gc-db-link"></button>').text(expanded ? GL.t("db.less") : GL.t("db.more", { n: items.length }))
 				.on("click", function () { expanded = !expanded; render(); }).appendTo($c);
 		}
 		var past = items.filter(function (i) { return i.days != null && i.days < 0; });
@@ -116,6 +119,28 @@
 				});
 			}, Promise.resolve()).then(function () { GC.clearNavCounts(); GC.toast("success", GL.t("db.addedToList", { n: added })); });
 		}).catch(function (err) { GC.toast("error", err.message); });
+	}
+
+	/// Cook soon: only recipes whose lines are a use-soon product, its parent or a child product (projects-rcmf).
+	function cookSoonCard(d, items) {
+		var uses = GCD.ingredientUses(items.map(function (i) { return i.productId; }), d.positions, d.productList);
+		var list = GCD.cookSoon(d.recipes, d.fulfillment, uses, SHOWN_COOK);
+		if (!list.length && !items.length) return null;
+		var $c = card("fa-fire-burner", GL.t("db.cookSoon"), list.length, GC.url("/recipes"), "accent");
+		if (!list.length) return $c.append(emptyLine("fa-file-import", GL.t("db.cookEmpty")));
+		var $list = $('<div class="gc-db-list"></div>').appendTo($c);
+		list.forEach(function (s) {
+			var f = s.fulfillment, past = GC.num(f.due_score) >= PAST_DATE_SCORE, missing = GC.num(f.missing_products_count);
+			var $top = $('<a class="gc-db-top"></a>').attr("href", GC.url("/recipes?recipe=" + s.recipe.id));
+			$top.append($('<span class="gc-db-dot"></span>').attr("data-tint", past ? "red" : "orange"));
+			var $main = $('<span class="gc-db-main"></span>').appendTo($top);
+			$("<b></b>").text(s.recipe.name).appendTo($main);
+			var $chips = $('<span class="gc-db-chips"></span>').appendTo($main);
+			$('<span class="gc-db-chip"></span>').attr("data-tint", past ? "red" : "orange").text(GL.t(past ? "db.cookPast" : "db.cookUses")).appendTo($chips);
+			$('<span class="gc-db-chip"></span>').attr("data-tint", missing ? "" : "green").text(missing ? GL.t("tonight.missing", { n: missing }) : GL.t("tonight.all")).appendTo($chips);
+			$list.append($('<div class="gc-db-row"></div>').append($top));
+		});
+		return $c;
 	}
 
 	function mealRow(icon, title, sub, tone, done) {
@@ -148,7 +173,8 @@
 	function render() {
 		if (!page || !last) return;
 		var $p = page.panes.home.empty();
-		$('<div class="gc-db-grid"></div>').append(useSoonCard(last)).append(todayCard(last)).appendTo($p);
+		var items = GCD.useSoon(last.volatile, last.stock, dayText(0));
+		$('<div class="gc-db-grid"></div>').append(useSoonCard(last, items)).append(cookSoonCard(last, items)).append(todayCard(last)).appendTo($p);
 	}
 
 	function load() {
@@ -157,7 +183,7 @@
 			GC.api("GET", "stock/volatile?due_soon_days=30"), GC.api("GET", "stock"), GC.api("GET", "objects/stock"), GC.master(),
 			GC.api("GET", "objects/meal_plan?query[]=day>=" + today + "&query[]=day<=" + tomorrow), GC.api("GET", "objects/meal_plan_sections"),
 			GC.api("GET", "objects/recipes?query[]=type=normal"), GC.api("GET", "objects/products"), GC.api("GET", "objects/recipes_pos"),
-			GC.agenda.load().catch(function () { return null; })
+			GC.agenda.load().catch(function () { return null; }), GC.api("GET", "recipes/fulfillment")
 		]).then(function (r) {
 			var names = {}, positions = {}, rows = r[4] || [];
 			(r[7] || []).forEach(function (p) { names[p.id] = p.name; });
@@ -165,7 +191,7 @@
 			var freezers = r[3].locations.filter(function (l) { return String(l.is_freezer) === "1"; }).map(function (l) { return +l.id; });
 			var on = function (day) { return rows.filter(function (x) { return String(x.day).slice(0, 10) === day; }); };
 			ctx.data = r[9];
-			last = { volatile: r[0], stock: r[1], agenda: r[9], products: GC.byId(r[7]), meals: GCD.meals(rows, today, r[5], r[6], names),
+			last = { volatile: r[0], stock: r[1], agenda: r[9], products: GC.byId(r[7]), productList: r[7] || [], positions: r[8] || [], recipes: r[6] || [], fulfillment: r[10] || [], meals: GCD.meals(rows, today, r[5], r[6], names),
 				thaw: GCD.thaw(on(today), on(tomorrow), positions, r[2], freezers, r[6], names) };
 			render();
 		});

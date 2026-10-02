@@ -49,6 +49,22 @@ test("today meals and thaw: shared cases", () => {
 	}
 });
 
+test("cook soon: only recipes listing a use-soon product, its parent or a child, most used first", () => {
+	const products = [{ id: 1, name: "Milk" }, { id: 2, name: "Oat milk", parent_product_id: 1 }, { id: 3, name: "Eggs" }, { id: 4, name: "Flour" }];
+	const positions = [
+		{ recipe_id: 10, product_id: 2, amount: 0.5 }, { recipe_id: 10, product_id: 4, amount: 1 },
+		{ recipe_id: 11, product_id: 1, amount: 1 }, { recipe_id: 11, product_id: 3, amount: 2 },
+		{ recipe_id: 12, product_id: 4, amount: 3 }, { recipe_id: 13, product_id: 1, amount: 2 }
+	];
+	const uses = G.ingredientUses([1, 3], positions, products);
+	assert.deepEqual(uses, { 10: { items: 1, amount: 0.5 }, 11: { items: 2, amount: 3 }, 13: { items: 1, amount: 2 } });
+	const recipes = [10, 11, 12, 13].map((id) => ({ id, name: "R" + id }));
+	const fulfillment = recipes.map((r) => ({ recipe_id: r.id, due_score: r.id === 12 ? 30 : 0, missing_products_count: 0 }));
+	assert.deepEqual(G.cookSoon(recipes, fulfillment, uses).map((s) => s.recipe.id), [11, 13, 10]);
+	assert.deepEqual(G.cookSoon(recipes, fulfillment, {}), []);
+	assert.deepEqual(G.ingredientUses([2], positions, products)[11], { items: 1, amount: 1 });
+});
+
 test("due status tints follow the app", () => {
 	assert.equal(G.tint(G.dueStatus("2026-10-03", 2, "2026-10-01")), "red");
 	assert.equal(G.tint(G.dueStatus("2026-10-06", 2, "2026-10-01")), "orange");

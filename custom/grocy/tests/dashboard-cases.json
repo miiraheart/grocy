@@ -3,7 +3,7 @@
   "today": "2026-10-01",
   "useSoon": [
     {
-      "name": "past dates first, expired before best before passed, then days left, no duplicates",
+      "name": "past dates first, expired before best before passed, then days left, no duplicates; an opened fresh item 9 days out stays off",
       "volatile": {
         "expired_products": [{ "product_id": 1, "amount": 2, "amount_opened": 0, "best_before_date": "2026-09-28", "product": { "id": 1, "name": "Milk", "active": 1, "due_type": 2 } }],
         "overdue_products": [{ "product_id": 2, "amount": 2, "amount_opened": 0, "best_before_date": "2026-09-30", "product": { "id": 2, "name": "Rice cakes", "active": 1, "due_type": 1 } }],
@@ -21,12 +21,11 @@
         { "productId": 1, "status": "expired", "days": -1, "opened": false, "canOpen": true },
         { "productId": 2, "status": "bestBeforePassed", "days": -1, "opened": false, "canOpen": true },
         { "productId": 4, "status": "soon", "days": 2, "opened": true, "canOpen": true },
-        { "productId": 3, "status": "soon", "days": 4, "opened": false, "canOpen": true },
-        { "productId": 6, "status": "fresh", "days": 9, "opened": true, "canOpen": true }
+        { "productId": 3, "status": "soon", "days": 4, "opened": false, "canOpen": true }
       ]
     },
     {
-      "name": "today, tomorrow and the five day window; a fully opened item offers no Open",
+      "name": "today and tomorrow; long-life without a shelf life caps at 14 days; an opened item without a date is not urgent; a fully opened item offers no Open",
       "volatile": {
         "expired_products": [],
         "overdue_products": [],
@@ -38,13 +37,40 @@
         ]
       },
       "stock": [
-        { "product_id": 14, "amount": 1, "amount_opened": 1, "best_before_date": "2999-12-31", "product": { "id": 14, "name": "Olive oil", "active": 1, "due_type": 1 } }
+        { "product_id": 14, "amount": 1, "amount_opened": 1, "best_before_date": "2999-12-31", "product": { "id": 14, "name": "Olive oil", "active": 1, "due_type": 1 } },
+        { "product_id": 15, "amount": 1, "amount_opened": 1, "best_before_date": "2026-10-03", "product": { "id": 15, "name": "Cream", "active": 1, "due_type": 2 } }
       ],
       "expect": [
         { "productId": 11, "status": "today", "days": 0, "opened": false, "canOpen": true },
         { "productId": 10, "status": "tomorrow", "days": 1, "opened": false, "canOpen": true },
+        { "productId": 15, "status": "soon", "days": 2, "opened": true, "canOpen": false },
         { "productId": 12, "status": "soon", "days": 5, "opened": false, "canOpen": true },
-        { "productId": 14, "status": "noDate", "days": null, "opened": true, "canOpen": false }
+        { "productId": 13, "status": "soon", "days": 6, "opened": false, "canOpen": true }
+      ]
+    },
+    {
+      "name": "the last quarter of each product's shelf life, capped at 3 days fresh and 14 long-life; opened on its opened limit; thawed on its after-thawing days",
+      "volatile": {
+        "expired_products": [],
+        "overdue_products": [],
+        "due_products": [
+          { "product_id": 20, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-04", "product": { "id": 20, "name": "Milk", "active": 1, "due_type": 2, "default_best_before_days": 10 } },
+          { "product_id": 21, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-05", "product": { "id": 21, "name": "Yogurt", "active": 1, "due_type": 2, "default_best_before_days": 20 } },
+          { "product_id": 22, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-15", "product": { "id": 22, "name": "Pasta", "active": 1, "due_type": 1, "default_best_before_days": 730 } },
+          { "product_id": 23, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-21", "product": { "id": 23, "name": "Rice", "active": 1, "due_type": 1, "default_best_before_days": 730 } },
+          { "product_id": 24, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-13", "product": { "id": 24, "name": "Crackers", "active": 1, "due_type": 1, "default_best_before_days": 40 } },
+          { "product_id": 27, "amount": 1, "amount_opened": 0, "best_before_date": "2026-10-04", "product": { "id": 27, "name": "Chicken", "active": 1, "due_type": 2, "default_best_before_days": 8, "default_best_before_days_after_thawing": 3 } }
+        ]
+      },
+      "stock": [
+        { "product_id": 25, "amount": 2, "amount_opened": 1, "best_before_date": "2026-10-03", "product": { "id": 25, "name": "Cream", "active": 1, "due_type": 2, "default_best_before_days": 30, "default_best_before_days_after_open": 4 } },
+        { "product_id": 26, "amount": 2, "amount_opened": 1, "best_before_date": "2026-10-04", "product": { "id": 26, "name": "Jam", "active": 1, "due_type": 1, "default_best_before_days": 365, "default_best_before_days_after_open": 30 } }
+      ],
+      "expect": [
+        { "productId": 20, "status": "soon", "days": 3, "opened": false, "canOpen": true },
+        { "productId": 27, "status": "soon", "days": 3, "opened": false, "canOpen": true },
+        { "productId": 26, "status": "soon", "days": 3, "opened": true, "canOpen": true },
+        { "productId": 22, "status": "fresh", "days": 14, "opened": false, "canOpen": true }
       ]
     }
   ],
