@@ -13,10 +13,14 @@ const MONTHS = { janv: 1, janvier: 1, fevr: 2, fevrier: 2, mars: 3, avr: 4, avri
   aout: 8, sept: 9, septembre: 9, oct: 10, octobre: 10, nov: 11, novembre: 11, dec: 12, decembre: 12 };
 
 const AMOUNT = String.raw`-?\s?\d{1,4}[.,]\d{2}`;
-const TAIL = new RegExp(String.raw`(${AMOUNT})\s*(?:€|EUR|E)?\s*\*?(?:\s+([A-Z]|\d{1,2}))?\s*$`);
-const QTY_LINE = new RegExp(String.raw`^(\d{1,3})\s*x\s*(\d{1,4}[.,]\d{2})\s*(?:€|EUR)?(?:\s+(${AMOUNT}))?\s*(?:€|EUR)?(?:\s+[A-Z])?\s*$`, 'i');
+// The VAT code after a price is a letter or digits, bare ("3,95 1") or in brackets as on Biocoop tickets ("3,95 (1)").
+const VAT_CODE = String.raw`(?:\s*\(([A-Z]|\d{1,2})\)|\s+([A-Z]|\d{1,2}))?`;
+const TAIL = new RegExp(String.raw`(${AMOUNT})\s*(?:€|EUR|E)?\s*\*?${VAT_CODE}\s*$`);
+const QTY_LINE = new RegExp(String.raw`^(\d{1,3})\s*x\s*(\d{1,4}[.,]\d{2})\s*(?:€|EUR)?(?:\s+(${AMOUNT}))?\s*(?:€|EUR)?${VAT_CODE}\s*$`, 'i');
 const WEIGHT_LINE = new RegExp(String.raw`^(\d{1,3}[.,]\d{1,4})\s*kg\s*x\s*(\d{1,4}[.,]\d{2})\s*(?:€|EUR)?\s*/\s*kg(?:\s+(${AMOUNT}))?`, 'i');
 const INLINE_QTY = /^(.*\S)\s+(\d{1,3})\s*x\s*(\d{1,4}[.,]\d{2})\s*(?:€|EUR)?\s*$/i;
+const COLUMN_QTY = /^(.*[A-Za-z].*\S)\s+(\d{1,3}(?:[.,]\d{1,3})?)\s+(\d{1,4}[.,]\d{2})\s*(?:€|EUR)?$/i;  // "LAIT 2 1,69 3,38"
+const PRICE_INSIDE = /\d[.,]\d{2}\b/;
 
 const FINAL_TOTAL = /(\bA\s?PAYER\b|\bMONTANT\s+DU\b|\bNET\s+A\s+PAYER\b|\bTOTAL\s+AVEC\s+AVANTAGES\b|^=?\s*T\s?[O0]\s?T\s?A\s?L\b(?!\s+(ACHATS|ALIMENTAIRE|NON|DES|REMISES|AVANT|POINTS|AVANTAGES|TVA|HT|ELIGIBLE))|^TOTAL\s*(€|EUR)|\bTOTAL\s+\d+\s+ARTICLES?\b)/;
 const SUBTOTAL = /\bTOTAL\b|\bSOUS[- ]TOTAL\b|\bEUR[*xX]?\s*TOT\b/;
@@ -24,7 +28,8 @@ const PAYMENT = /\b(CB|CARTE|CARTE BANCAIRE|CARTE BLEUE|CARTE CREDIT|EMV|SANS CO
 const POST_TOTAL_START = /\bTOTAL\s+(ACHATS|AVANT\s+REMISES?)\b|\bEUR[*xX]?\s*TOT\b|\bSOUS[- ]TOTAL\b/;
 const PHONE = /\b0\d([ .]?\d{2}){4}\b/;
 const DISCOUNT = /\b(REMISE|PROMO|AVANTAGE|REDUCTION|BON|COUPON|FIDELITE|IMMEDIATE|LOT|OFFRE)\b/;
-const VAT_ROW = /^(?:([A-Z]|\d{1,2})\s+)?(\d{1,2}[.,]\d{1,2})\s*%\s+(?:TVA\s+DE\s+)?(\d+[.,]\d{2})\s+(\d+[.,]\d{2})(?:\s+(\d+[.,]\d{2}))?/;
+const VAT_ROW = /^(?:\(([A-Z]|\d{1,2})\)\s*|([A-Z]|\d{1,2})\s+)?(?:T\.?V\.?A\.?\s+)?(\d{1,2}[.,]\d{1,2})\s*%\s+(?:TVA\s+DE\s+)?(\d+[.,]\d{2})\s+(\d+[.,]\d{2})(?:\s+(\d+[.,]\d{2}))?/;
+const VAT_WORDS = /\bT\.?V\.?A\b|\bHT\b|\bTTC\b/;
 const NOISE = /\b(TEL|T[EÉ]L[EÉ]PHONE|SIRET|SIREN|RCS|TVA\s+INTRA|NAF|WWW|HTTP|BIENVENUE|MERCI|HORAIRES?|OUVERT|LUNDI|MARDI|DIMANCHE|CAISSE|CAISSIER|VENDEUR|OPERATEUR|TICKET|NOMBRE|ARTICLES?\b|DESCRIPTION|DESIGNATION|QTE|MONTANT\s*€?$|SOLDE|CUMUL|POINTS|S.MILES|VIGNETTE|CONSERVER|GARANTIE)\b/;
 
 function normalizeLine(raw) {
@@ -77,17 +82,19 @@ function parseReceipt(rawText) {
   out.totals.paid = payments.find((p) => Math.abs(p - (out.totals.total ?? -1)) < 0.011) ?? null;
   for (const u of U) {
     const vat = u.match(VAT_ROW);
-    if (vat && /%/.test(u) && !out.vat.some((v) => v.code === (vat[1] || null))) out.vat.push({ code: vat[1] || null, rate: num(vat[2]) });
+    const code = vat ? vat[1] || vat[2] || null : null;
+    if (vat && /%/.test(u) && !out.vat.some((v) => v.code === code)) out.vat.push({ code, rate: num(vat[3]) });
   }
 
   let pending = null;       // label seen without a price, waiting for a qty/weight line
   let inPostTotal = false;  // between first subtotal and final total: only discount details count
   const end = finalIdx >= 0 ? finalIdx : lines.length;
+  let unparsed = 0;         // lines that show a price but became nothing: the regex missed a format, the model should look
 
   for (let i = 0; i < end; i++) {
     const L = lines[i], u = U[i];
     if (i >= firstTotal && firstTotal >= 0) inPostTotal = true;
-    if (VAT_ROW.test(u) && /%/.test(u)) continue;
+    if (/%/.test(u) && (VAT_ROW.test(u) || VAT_WORDS.test(u))) continue;
 
     const w = L.match(WEIGHT_LINE);
     if (w && !inPostTotal) {
@@ -111,6 +118,7 @@ function parseReceipt(rawText) {
     if (!(negative && (DISCOUNT.test(u) || !PAYMENT.test(u))) && (PAYMENT.test(u) || NOISE.test(u) || PHONE.test(u) || /^[>=*\s]+$/.test(L))) continue;
 
     if (!t) {
+      if (!inPostTotal && /[A-Za-z]{2}/.test(L) && PRICE_INSIDE.test(L)) unparsed++;
       if (!inPostTotal && /[A-Za-z]{2}/.test(L) && !/^>+/.test(L) && i > 0 && looksLikeLabel(L, U[i + 1])) pending = item(L, 1, 'piece', null, null, null, i);
       continue;
     }
@@ -119,17 +127,22 @@ function parseReceipt(rawText) {
     if (!/[A-Za-z]{2}/.test(label)) continue;
     const discountWord = /^(REMISE|PROMO|REDUC|AVANTAGE|BON|COUPON)/.test(up(label));
     if (amount < 0 || discountWord || (inPostTotal && DISCOUNT.test(up(label)))) {
-      const d = { ...item(label, 1, 'piece', null, -Math.abs(amount), t[2], i), is_discount: true };
+      const d = { ...item(label, 1, 'piece', null, -Math.abs(amount), t[2] ?? t[3], i), is_discount: true };
       if (amount > 0) d.flags.push('sign_inferred');
       out.lines.push(d);
       continue;
     }
     if (inPostTotal) continue;
-    let qty = 1, unitPrice = amount;
+    let qty = 1, unitPrice = amount, unit = 'piece';
     const iq = label.match(INLINE_QTY);
+    const cq = iq ? null : label.match(COLUMN_QTY);
     if (iq) { label = iq[1]; qty = num(iq[2]); unitPrice = num(iq[3]); }
+    else if (cq && Math.abs(round2(num(cq[2]) * num(cq[3])) - amount) < 0.011) {
+      label = cq[1]; qty = num(cq[2]); unitPrice = num(cq[3]);
+      if (/[.,]/.test(cq[2])) unit = 'kg';
+    }
     pending = null;
-    out.lines.push(item(label, qty, 'piece', unitPrice, amount, t[2], i));
+    out.lines.push(item(label, qty, unit, unitPrice, amount, t[2] ?? t[3], i));
   }
 
   const vatCodes = new Map(out.vat.filter((v) => v.code).map((v) => [v.code, v.rate]));
@@ -144,6 +157,7 @@ function parseReceipt(rawText) {
   out.totals.discounts = round2(out.lines.filter((l) => l.is_discount).reduce((s, l) => s + l.total, 0));
   const ref = out.totals.total;
   const matches = ref != null && Math.abs(sumLines - ref) < 0.011;
+  if (unparsed) out.warnings.push(`unparsed_lines: ${unparsed}`);
   if (ref == null) out.warnings.push('no_total_found');
   else if (!matches) out.warnings.push(`sum_mismatch: lines ${sumLines} vs total ${ref}`);
   out.confidence = round2((out.store ? 0.15 : 0) + (out.date ? 0.15 : 0) + (ref != null ? 0.2 : 0) + (matches ? 0.4 : 0)

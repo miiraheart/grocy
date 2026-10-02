@@ -24,7 +24,7 @@ const receipt = {
 };
 const warnings = [...parsed.warnings];
 if (body.image_b64) warnings.push("image_ignored: send OCR lines, the server does not read photos");
-const needs_repair = parsed.warnings.some((w) => /sum_mismatch|no_total_found/.test(w)) || !parsed.lines.length;
+const needs_repair = parsed.warnings.some((w) => /sum_mismatch|no_total_found|unparsed_lines/.test(w)) || !parsed.lines.length;
 
 const SYSTEM = `Tu transformes le texte OCR d'un ticket de caisse de supermarché français en lignes d'articles structurées.
 Particularités des tickets français à gérer:
