@@ -28,7 +28,7 @@ function applyRepair(data, source) {
   Object.assign(receipt, { lines, lines_sum: sum, total, parser: "regex-v1+llm:" + source });
   if (!receipt.store && data.store) receipt.store = data.store;
   if (!receipt.date && data.purchase_date) receipt.date = data.purchase_date;
-  for (let i = warnings.length - 1; i >= 0; i--) if (/sum_mismatch|no_total_found/.test(warnings[i])) warnings.splice(i, 1);
+  for (let i = warnings.length - 1; i >= 0; i--) if (/sum_mismatch|no_total_found|unparsed_lines/.test(warnings[i])) warnings.splice(i, 1);
   return null;
 }
 const parseJson = (t) => { try { return JSON.parse(String(t).replace(/^```(?:json)?|```$/g, "").trim()); } catch (e) { return null; } };
